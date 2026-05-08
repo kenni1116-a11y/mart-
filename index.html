@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f1e7">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Einkaufszettel">
+    <meta name="description" content="Eine schlichte Einkaufszettel-App mit Marktsimulation und Favoriten.">
+    <title>Einkaufszettel</title>
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./icon.svg">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Marktsimulation</p>
+          <h1>Einkaufszettel</h1>
+        </div>
+        <button class="icon-button" id="clearDoneButton" type="button" title="Erledigte entfernen" aria-label="Erledigte entfernen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 15h8l1-15M10 11v6M14 11v6"/></svg>
+        </button>
+      </header>
+
+      <main class="layout">
+        <section class="market-panel" aria-label="Artikel auswählen">
+          <nav class="tabs" aria-label="Auswahlmodus">
+            <button class="tab is-active" type="button" data-view="market">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16l-1 10H5L4 10Zm2-4h12l2 4H4l2-4Zm4 8h4"/></svg>
+              Markt
+            </button>
+            <button class="tab" type="button" data-view="favorites">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></svg>
+              Favoriten
+            </button>
+          </nav>
+
+          <div class="search-row">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"/></svg>
+            <input id="searchInput" type="search" placeholder="Artikel suchen">
+          </div>
+
+          <div id="marketView">
+            <div class="section-head">
+              <h2>Regale</h2>
+              <span id="shelfCount"></span>
+            </div>
+            <div class="shelf-grid" id="shelfGrid"></div>
+          </div>
+
+          <div id="productsView" class="is-hidden">
+            <div class="section-head">
+              <button class="back-button" id="backButton" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"/></svg>
+                Regale
+              </button>
+              <h2 id="currentShelfTitle"></h2>
+            </div>
+            <div class="product-grid" id="productGrid"></div>
+          </div>
+
+          <div id="favoritesView" class="is-hidden">
+            <div class="section-head">
+              <h2>Favoriten</h2>
+              <span id="favoriteCount"></span>
+            </div>
+            <div class="product-grid" id="favoriteGrid"></div>
+          </div>
+        </section>
+
+        <aside class="list-panel" aria-label="Einkaufszettel">
+          <div class="section-head">
+            <h2>Dein Zettel</h2>
+            <span id="listCount"></span>
+          </div>
+          <div class="manual-add">
+            <input id="manualInput" type="text" placeholder="Eigener Artikel">
+            <button id="manualAddButton" type="button" title="Hinzufügen" aria-label="Hinzufügen">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+          <ul class="shopping-list" id="shoppingList"></ul>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js");
+        });
+      }
+    </script>
+  </body>
+</html>
