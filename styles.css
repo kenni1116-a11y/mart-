@@ -1,16 +1,16 @@
 :root {
   color-scheme: light;
-  --bg: #f4f1e7;
-  --surface: rgba(255, 254, 249, 0.92);
-  --paper: #fffdf6;
-  --ink: #232323;
-  --muted: #77756f;
-  --line: #d4cfc2;
-  --accent: #343434;
-  --accent-strong: #151515;
-  --silver: #a7a7a2;
-  --gold: #77756f;
-  --shadow: 0 14px 32px rgba(32, 30, 24, 0.08);
+  --bg: #f7f3ea;
+  --surface: rgba(255, 254, 249, 0.82);
+  --paper: #fffdf7;
+  --ink: #272421;
+  --muted: #7d776d;
+  --line: #ddd4c5;
+  --accent: #2b2926;
+  --accent-strong: #171614;
+  --silver: #aaa49a;
+  --gold: #8a7b55;
+  --shadow: 0 18px 44px rgba(36, 31, 23, 0.07);
 }
 
 * {
@@ -21,9 +21,9 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.72), transparent 28%),
-    repeating-linear-gradient(96deg, rgba(41, 37, 28, 0.014) 0 1px, transparent 1px 9px),
-    repeating-linear-gradient(4deg, rgba(255, 255, 255, 0.34) 0 2px, transparent 2px 14px),
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.78), transparent 30%),
+    repeating-linear-gradient(96deg, rgba(41, 37, 28, 0.01) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(4deg, rgba(255, 255, 255, 0.25) 0 2px, transparent 2px 18px),
     var(--bg);
   color: var(--ink);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -81,12 +81,12 @@ svg {
   flex: 0 0 auto;
   min-height: 32px;
   padding: 0 9px;
-  border: 1px solid rgba(212, 207, 194, 0.9);
-  border-radius: 8px;
-  background: rgba(255, 253, 246, 0.72);
+  border: 1px solid rgba(204, 195, 179, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 253, 246, 0.42);
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
+  font-size: 0.68rem;
+  font-weight: 560;
   text-transform: lowercase;
 }
 
@@ -103,9 +103,9 @@ h1 {
   font-family: "Bodoni 72", Didot, Cochin, Baskerville, "Iowan Old Style", Georgia, serif;
   font-size: clamp(1.8rem, 6vw, 2.65rem);
   font-style: italic;
-  font-weight: 500;
+  font-weight: 430;
   font-feature-settings: "liga" 1, "swsh" 1;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
   line-height: 1;
   text-align: center;
   white-space: nowrap;
@@ -138,7 +138,7 @@ h2 {
 .list-panel {
   background: var(--surface);
   border: 1px solid rgba(216, 211, 198, 0.92);
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(4px);
   min-width: 0;
@@ -152,18 +152,18 @@ h2 {
 
 .list-panel {
   order: 1;
-  padding: 16px;
+  padding: 18px 16px 16px;
   position: relative;
   overflow: hidden;
-  transform: rotate(-0.35deg);
-  border-color: rgba(218, 197, 104, 0.8);
+  transform: rotate(-0.12deg);
+  border-color: rgba(213, 191, 98, 0.62);
   background:
-    repeating-linear-gradient(0deg, transparent 0 35px, rgba(118, 100, 34, 0.1) 36px 37px),
-    linear-gradient(180deg, #fff4a8 0%, #ffef86 100%);
+    repeating-linear-gradient(0deg, transparent 0 35px, rgba(111, 94, 36, 0.07) 36px 37px),
+    linear-gradient(180deg, #fff8bf 0%, #f9ed9d 100%);
   box-shadow:
-    0 22px 34px rgba(82, 70, 28, 0.16),
+    0 24px 42px rgba(86, 73, 31, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  font-family: "Bradley Hand", "Marker Felt", "Segoe Print", "Comic Sans MS", cursive;
+  font-family: "Noteworthy", "Bradley Hand", "Apple Chancery", "Segoe Print", cursive;
 }
 
 .list-panel::before {
@@ -171,13 +171,13 @@ h2 {
   position: absolute;
   top: -14px;
   left: 50%;
-  width: 110px;
-  height: 34px;
-  transform: translateX(-50%) rotate(1.5deg);
-  border: 1px solid rgba(190, 176, 124, 0.3);
+  width: 96px;
+  height: 30px;
+  transform: translateX(-50%) rotate(0.8deg);
+  border: 1px solid rgba(178, 163, 106, 0.22);
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.34);
-  box-shadow: 0 2px 7px rgba(80, 72, 40, 0.08);
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 2px 9px rgba(80, 72, 40, 0.06);
 }
 
 .list-panel > * {
@@ -186,7 +186,7 @@ h2 {
 
 .list-panel h2 {
   font-family: inherit;
-  font-size: 1.45rem;
+  font-size: 1.5rem;
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -195,6 +195,7 @@ h2 {
   font-family: inherit;
   font-size: 1rem;
   font-weight: 500;
+  color: rgba(68, 63, 46, 0.58);
 }
 
 .tabs {
@@ -217,14 +218,14 @@ h2 {
   justify-content: center;
   gap: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
   color: var(--ink);
 }
 
 .tab {
   min-height: 42px;
-  font-weight: 680;
+  font-weight: 590;
   text-transform: lowercase;
 }
 
@@ -256,7 +257,7 @@ h2 {
   min-height: 44px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--paper);
   color: var(--muted);
 }
@@ -280,13 +281,14 @@ h2 {
 .manual-add {
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--paper);
 }
 
 .list-panel .manual-add {
-  border-color: rgba(177, 154, 59, 0.32);
-  background: rgba(255, 250, 191, 0.58);
+  border-color: rgba(142, 122, 48, 0.18);
+  background: rgba(255, 248, 181, 0.32);
+  box-shadow: inset 0 -1px 0 rgba(103, 87, 31, 0.08);
 }
 
 .list-panel .manual-add input {
@@ -343,9 +345,9 @@ h2 {
   min-height: 0;
   padding: 16px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(255, 254, 249, 0.92), rgba(251, 248, 239, 0.82));
+    linear-gradient(180deg, rgba(255, 254, 249, 0.72), rgba(249, 246, 238, 0.58));
   color: var(--ink);
   text-align: center;
 }
@@ -371,9 +373,9 @@ h2 {
   height: 50px;
   place-items: center;
   border: 1px solid #d0cbc0;
-  border-radius: 11px;
+  border-radius: 14px;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(235, 232, 224, 0.62));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(238, 234, 224, 0.5));
   color: #343434;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
 }
@@ -393,7 +395,7 @@ h2 {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   font-size: clamp(0.98rem, 3.8vw, 1.35rem);
-  font-weight: 680;
+  font-weight: 600;
   line-height: 1.06;
   text-align: center;
   text-transform: lowercase;
@@ -425,7 +427,7 @@ h2 {
   min-height: 0;
   padding: 7px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background:
     linear-gradient(180deg, rgba(255, 254, 249, 0.92), rgba(251, 248, 239, 0.82));
 }
@@ -524,8 +526,11 @@ h2 {
 }
 
 .list-panel .list-item {
-  border-color: rgba(177, 154, 59, 0.28);
-  background: rgba(255, 250, 191, 0.5);
+  padding: 11px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(120, 100, 33, 0.14);
+  border-radius: 0;
+  background: transparent;
 }
 
 .list-item input[type="checkbox"] {
@@ -541,7 +546,7 @@ h2 {
 
 .list-name {
   overflow-wrap: anywhere;
-  font-size: 1.2rem;
+  font-size: 1.22rem;
   font-weight: 500;
   line-height: 1.05;
   text-transform: lowercase;
@@ -550,7 +555,8 @@ h2 {
 .list-shelf {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  color: rgba(78, 72, 51, 0.58);
   text-transform: lowercase;
 }
 
@@ -585,6 +591,11 @@ h2 {
   color: var(--muted);
   text-align: center;
   text-transform: lowercase;
+}
+
+.list-panel .empty-state {
+  border-color: rgba(120, 100, 33, 0.16);
+  color: rgba(78, 72, 51, 0.62);
 }
 
 .is-hidden {
