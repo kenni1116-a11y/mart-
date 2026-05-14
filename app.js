@@ -61,7 +61,7 @@ const shelves = [
     title: "Backwaren",
     emoji: "🍞",
     color: "#b26b36",
-    icon: "home",
+    icon: "bread",
     products: [
       "Toastbrot", "Mischbrot", "Vollkornbrot", "Brötchen", "Croissants", "Baguette", "Knäckebrot", "Laugenbrezel", "Kuchen", "Muffins",
       "Wraps", "Tortillas", "Burgerbrötchen", "Hotdogbrötchen", "Zwieback", "Toasties", "Ciabatta", "Pita", "Bagels"
@@ -84,7 +84,7 @@ const shelves = [
     title: "Nudeln, Reis & Konserven",
     emoji: "🍝",
     color: "#a26642",
-    icon: "home",
+    icon: "jar",
     products: [
       "Spaghetti", "Penne", "Fusilli", "Reis", "Couscous", "Bulgur", "Kartoffelpüree", "Ravioli", "Dosentomaten", "Kidneybohnen",
       "Maisdose", "Erbsen", "Thunfischdose", "Kokosmilch", "Suppen", "Instantnudeln", "Linsen", "Kichererbsen", "Passierte Tomaten",
@@ -96,7 +96,7 @@ const shelves = [
     title: "Fleisch & Wurst",
     emoji: "🥩",
     color: "#9b4542",
-    icon: "home",
+    icon: "steak",
     products: [
       "Hähnchenbrust", "Hackfleisch", "Rindersteak", "Schweinefilet", "Würstchen", "Salami", "Schinken", "Mortadella", "Aufschnitt", "Bacon",
       "Frikadellen", "Leberwurst", "Hähnchenaufschnitt", "Wiener Würstchen", "Gyros"
@@ -107,7 +107,7 @@ const shelves = [
     title: "Fisch",
     emoji: "🐟",
     color: "#397da1",
-    icon: "bottle",
+    icon: "fish",
     products: [
       "Lachs", "Thunfisch", "Fischstäbchen", "Garnelen", "Forelle", "Matjes", "Räucherlachs", "Backfisch", "Calamari", "Krabben"
     ]
@@ -172,7 +172,7 @@ const shelves = [
     title: "Haushalt",
     emoji: "🧽",
     color: "#6d6f75",
-    icon: "home",
+    icon: "clean",
     products: [
       "Glasreiniger", "Badreiniger", "Kloreiniger", "Kalkentferner", "Schimmelentferner", "Allzweckreiniger", "Küchenrolle", "Müllbeutel", "Spülschwämme", "Mikrofasertücher",
       "Lappen", "Alufolie", "Frischhaltefolie", "Backpapier", "Waschmittel Pulver", "Waschmittel Flüssig", "Weichspüler", "Geschirrspültabs", "Batterien", "Kerzen",
@@ -184,7 +184,7 @@ const shelves = [
     title: "Tierbedarf",
     emoji: "🐶",
     color: "#7a684c",
-    icon: "home",
+    icon: "paw",
     products: [
       "Hundefutter", "Katzenfutter", "Leckerlis", "Katzenstreu", "Vogelfutter", "Hundekotbeutel", "Kauspielzeug", "Tierstreu", "Aquariumfutter", "Heu"
     ]
@@ -194,7 +194,7 @@ const shelves = [
     title: "Gesundheit & Apotheke",
     emoji: "💊",
     color: "#4f8b77",
-    icon: "sparkle",
+    icon: "pill",
     products: [
       "Schmerztabletten", "Pflaster", "Vitamine", "Magnesium", "Taschentücher", "Nasenspray", "Hustensaft", "Fieberthermometer", "Desinfektionsmittel", "Kondome"
     ]
@@ -214,7 +214,7 @@ const shelves = [
     title: "Gewürze & Backzutaten",
     emoji: "🧂",
     color: "#7f766a",
-    icon: "sparkle",
+    icon: "spice",
     products: [
       "Salz", "Pfeffer", "Paprika", "Curry", "Zimt", "Mehl", "Backpulver", "Vanillezucker", "Hefe"
     ]
@@ -244,7 +244,7 @@ const shelves = [
     title: "Büro & Sonstiges",
     emoji: "✏️",
     color: "#6f7175",
-    icon: "home",
+    icon: "pencil",
     products: [
       "Klebeband", "Stifte", "Briefumschläge", "Geschenkpapier", "Kleber"
     ]
@@ -267,6 +267,15 @@ const iconPaths = {
   cup: '<path d="M5 8h12v7a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V8Zm12 2h2a3 3 0 0 1 0 6h-2M8 3v2M12 3v2M16 3v2"/>',
   bottle: '<path d="M10 2h4v5l2 3v10a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V10l2-3V2Zm-1 10h6"/>',
   glass: '<path d="M8 3h8l-1 9a3 3 0 0 1-6 0L8 3Zm4 12v6M9 21h6M9 8h6"/>',
+  bread: '<path d="M5 12c0-4 3-7 7-7s7 3 7 7v7H5v-7Zm3-1h.01M12 9h.01M16 12h.01"/>',
+  jar: '<path d="M9 2h6v4l2 3v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9l2-3V2Zm0 4h6M8 12h8"/>',
+  steak: '<path d="M5 13c0-5 5-9 10-7 4 1 6 5 4 9-2 5-8 7-12 5-2-1-2-4-2-7Zm6 0a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z"/>',
+  fish: '<path d="M3 12s4-6 10-6 8 6 8 6-2 6-8 6-10-6-10-6Zm0 0 4 4m-4-4 4-4m10 4h.01"/>',
+  clean: '<path d="M7 3h10l-1 7H8L7 3Zm1 7h8l2 11H6l2-11Zm1 5h6"/>',
+  paw: '<path d="M8 10c-2 0-3 2-3 4m11-4c2 0 3 2 3 4M9 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-7 6c3 0 5 2 5 5 0 2-2 3-5 3s-5-1-5-3c0-3 2-5 5-5Z"/>',
+  pill: '<path d="M10 21 4 15a4 4 0 0 1 0-6l5-5a4 4 0 0 1 6 6l-5 5m-3-3 5 5m3-10 5 5"/>',
+  spice: '<path d="M8 3h8v5H8V3Zm1 5h6l2 13H7L9 8Zm2 4h2m-3 4h4"/>',
+  pencil: '<path d="m4 20 4-1 11-11a2 2 0 0 0-3-3L5 16l-1 4Zm11-14 3 3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   cart: '<path d="M3 4h2l2 12h10l3-8H6M9 20h.01M17 20h.01"/>'
@@ -341,12 +350,6 @@ function escapeText(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-function chunk(items, size) {
-  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
-    items.slice(index * size, index * size + size)
-  );
 }
 
 function setView(view) {
@@ -437,16 +440,12 @@ function renderShelves() {
   });
 
   elements.shelfCount.textContent = `${matchingShelves.length} Regale`;
-  elements.shelfGrid.innerHTML = chunk(matchingShelves, 16).map((page) => `
-    <div class="grid-page">
-      ${page.map((shelf) => `
-        <button class="shelf-card" type="button" data-shelf="${escapeText(shelf.id)}">
-          <span class="shelf-icon">${icon(shelf.icon)}</span>
-          <span class="shelf-title">${escapeText(shelf.title)}</span>
-          <span class="shelf-meta">${shelf.products.length} Artikel</span>
-        </button>
-      `).join("")}
-    </div>
+  elements.shelfGrid.innerHTML = matchingShelves.map((shelf) => `
+    <button class="shelf-card" type="button" data-shelf="${escapeText(shelf.id)}">
+      <span class="shelf-icon">${icon(shelf.icon)}</span>
+      <span class="shelf-title">${escapeText(shelf.title)}</span>
+      <span class="shelf-meta">${shelf.products.length} Artikel</span>
+    </button>
   `).join("");
 
   elements.shelfGrid.querySelectorAll("[data-shelf]").forEach((button) => {
@@ -460,9 +459,7 @@ function renderProductGrid(container, products) {
     return;
   }
 
-  container.innerHTML = chunk(products, 16).map((page) => `
-    <div class="grid-page">
-      ${page.map((product) => {
+  container.innerHTML = products.map((product) => {
     const isFavorite = favorites.includes(product.id);
     return `
       <article class="product-card">
@@ -481,9 +478,7 @@ function renderProductGrid(container, products) {
         </div>
       </article>
     `;
-      }).join("")}
-    </div>
-  `).join("");
+  }).join("");
 
   container.querySelectorAll("[data-add]").forEach((button) => {
     button.addEventListener("click", () => addToList(allProducts().find((product) => product.id === button.dataset.add)));
