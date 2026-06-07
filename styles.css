@@ -382,19 +382,11 @@ h2 {
   text-align: center;
 }
 
-.shelf-card:nth-child(even) {
-  transform: translateY(42px);
-}
-
 .shelf-card:hover,
 .product-card:hover {
   border-color: #9a968d;
   transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(35, 32, 25, 0.07);
-}
-
-.shelf-card:nth-child(even):hover {
-  transform: translateY(40px);
 }
 
 .shelf-icon {
