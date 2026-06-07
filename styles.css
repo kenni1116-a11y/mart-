@@ -560,6 +560,18 @@ h2 {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.add-button.is-added {
+  border-color: rgba(58, 112, 82, 0.42);
+  background: #f4fbf2;
+  color: #2f6b49;
+  transform: scale(1.08);
+}
+
+.add-button.is-added svg {
+  stroke-width: 2.6;
 }
 
 .shopping-list {

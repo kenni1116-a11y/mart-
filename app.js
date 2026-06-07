@@ -335,6 +335,7 @@ const iconPaths = {
   diaper: '<path d="M5 7h14v7c0 4-3 7-7 7s-7-3-7-7V7Zm0 0c2 2 4 3 7 3s5-1 7-3M8 14h.01M16 14h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
   cart: '<path d="M3 4h2l2 12h10l3-8H6M9 20h.01M17 20h.01"/>'
 };
 
@@ -567,7 +568,28 @@ function backToShelves() {
   render();
 }
 
+function triggerHapticFeedback() {
+  if (!navigator.vibrate) return;
+  navigator.vibrate(28);
+}
+
+function showAddFeedback(button) {
+  button.classList.add("is-added");
+  button.innerHTML = icon("check");
+  button.setAttribute("aria-label", "Hinzugefügt");
+  button.setAttribute("title", "Hinzugefügt");
+
+  window.setTimeout(() => {
+    if (!button.isConnected) return;
+    button.classList.remove("is-added");
+    button.innerHTML = icon("cart");
+    button.setAttribute("aria-label", "Auf den Zettel");
+    button.setAttribute("title", "Auf den Zettel");
+  }, 720);
+}
+
 function addToList(product) {
+  triggerHapticFeedback();
   const existing = list.find((item) => item.id === product.id);
   if (existing) {
     existing.quantity += 1;
@@ -675,7 +697,12 @@ function renderProductGrid(container, products) {
   }).join("");
 
   container.querySelectorAll("[data-add]").forEach((button) => {
-    button.addEventListener("click", () => addToList(allProducts().find((product) => product.id === button.dataset.add)));
+    button.addEventListener("click", () => {
+      const product = allProducts().find((item) => item.id === button.dataset.add);
+      if (!product) return;
+      addToList(product);
+      showAddFeedback(button);
+    });
   });
   container.querySelectorAll("[data-favorite]").forEach((button) => {
     button.addEventListener("click", () => toggleFavorite(allProducts().find((product) => product.id === button.dataset.favorite)));
