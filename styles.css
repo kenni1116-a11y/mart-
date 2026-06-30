@@ -91,7 +91,6 @@ svg {
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 560;
-  text-transform: lowercase;
 }
 
 h1,
@@ -116,7 +115,6 @@ h1 {
 h2 {
   font-size: 1.05rem;
   font-weight: 680;
-  text-transform: lowercase;
 }
 
 .layout {
@@ -235,7 +233,6 @@ h2 {
 .tab {
   min-height: 42px;
   font-weight: 590;
-  text-transform: lowercase;
 }
 
 .tab.is-active {
@@ -281,12 +278,6 @@ h2 {
   outline: 0;
   background: transparent;
   color: var(--ink);
-  text-transform: lowercase;
-}
-
-.search-row input::placeholder,
-.manual-add input::placeholder {
-  text-transform: lowercase;
 }
 
 .manual-add {
@@ -327,7 +318,6 @@ h2 {
   font-size: 0.98rem;
   font-weight: 500;
   line-height: 1;
-  text-transform: lowercase;
 }
 
 .share-button:hover {
@@ -348,14 +338,12 @@ h2 {
   font-size: 0.9rem;
   font-weight: 520;
   white-space: nowrap;
-  text-transform: lowercase;
 }
 
 .back-button {
   min-height: 38px;
   padding: 0 12px;
   font-weight: 680;
-  text-transform: lowercase;
 }
 
 .shelf-grid {
@@ -420,7 +408,6 @@ h2 {
   font-weight: 600;
   line-height: 1.06;
   text-align: center;
-  text-transform: lowercase;
 }
 
 .shelf-meta {
@@ -429,7 +416,6 @@ h2 {
   font-size: 0.68rem;
   line-height: 1;
   text-align: center;
-  text-transform: lowercase;
 }
 
 .product-grid {
@@ -507,7 +493,6 @@ h2 {
   font-weight: 680;
   line-height: 1.05;
   text-align: center;
-  text-transform: lowercase;
 }
 
 .product-shelf {
@@ -519,7 +504,6 @@ h2 {
   line-height: 1;
   text-align: center;
   text-overflow: ellipsis;
-  text-transform: lowercase;
   white-space: nowrap;
 }
 
@@ -611,7 +595,6 @@ h2 {
   font-size: 1.22rem;
   font-weight: 500;
   line-height: 1.05;
-  text-transform: lowercase;
 }
 
 .list-shelf {
@@ -619,7 +602,6 @@ h2 {
   color: var(--muted);
   font-size: 0.82rem;
   color: rgba(78, 72, 51, 0.58);
-  text-transform: lowercase;
 }
 
 .quantity {
@@ -652,7 +634,6 @@ h2 {
   border-radius: 8px;
   color: var(--muted);
   text-align: center;
-  text-transform: lowercase;
 }
 
 .list-panel .empty-state {
