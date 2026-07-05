@@ -49,7 +49,7 @@ svg {
 }
 
 .app-shell {
-  width: min(1120px, calc(100% - 32px));
+  width: min(1120px, calc(100% - 24px));
   margin: 0 auto;
   padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 calc(env(safe-area-inset-bottom, 0px) + 28px);
 }
@@ -60,9 +60,9 @@ svg {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
-  min-height: 88px;
-  margin-bottom: 10px;
+  gap: 5px;
+  min-height: 78px;
+  margin-bottom: 8px;
 }
 
 .brand-zone {
@@ -97,35 +97,35 @@ svg {
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 40px;
-  padding: 0 58px;
+  min-height: 36px;
+  padding: 0;
 }
 
 .top-options {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  width: min(100%, 430px);
+  gap: 8px;
+  width: min(100%, 480px);
   min-width: 0;
-  overflow: auto;
-  scrollbar-width: none;
-}
-
-.top-options::-webkit-scrollbar {
-  display: none;
+  overflow: visible;
 }
 
 .top-options button {
-  flex: 0 0 auto;
+  min-width: 0;
+  width: 100%;
   min-height: 32px;
-  padding: 0 9px;
+  padding: 0 10px;
   border: 1px solid rgba(204, 195, 179, 0.72);
   border-radius: 999px;
   background: rgba(255, 253, 246, 0.42);
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 h1,
@@ -188,7 +188,7 @@ h2 {
 
 .list-panel {
   order: 1;
-  padding: 16px 14px 14px;
+  padding: 15px 14px 12px;
   position: relative;
   overflow: hidden;
   transform: rotate(-0.12deg);
@@ -221,14 +221,14 @@ h2 {
 
 .list-panel h2 {
   font-family: inherit;
-  font-size: 1.42rem;
+  font-size: 1.34rem;
   font-weight: 500;
   letter-spacing: 0;
 }
 
 .list-panel .section-head span {
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 500;
   color: rgba(68, 63, 46, 0.58);
 }
@@ -236,7 +236,8 @@ h2 {
 .list-tools {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -282,12 +283,6 @@ h2 {
   height: 44px;
 }
 
-.topbar-actions > .icon-button {
-  position: absolute;
-  top: 0;
-  right: 0;
-}
-
 .search-row,
 .manual-add {
   display: flex;
@@ -330,7 +325,7 @@ h2 {
 
 .list-panel .manual-add input {
   font-family: inherit;
-  font-size: 1.08rem;
+  font-size: 1rem;
 }
 
 .manual-add button {
@@ -343,14 +338,14 @@ h2 {
 }
 
 .share-button {
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 26px;
+  padding: 0 9px;
   border: 1px solid rgba(124, 103, 30, 0.22);
   border-radius: 999px;
   background: rgba(255, 253, 224, 0.36);
   color: rgba(68, 63, 46, 0.72);
   font-family: inherit;
-  font-size: 0.98rem;
+  font-size: 0.9rem;
   font-weight: 500;
   line-height: 1;
 }
@@ -366,6 +361,100 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 9px;
+}
+
+.list-head {
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.list-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+}
+
+.list-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-title-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  color: rgba(42, 38, 30, 0.78);
+  stroke-width: 1.55;
+}
+
+.list-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0 1px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.list-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.list-tab,
+.list-add-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 30px;
+  border: 1px solid rgba(134, 116, 50, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 253, 222, 0.35);
+  color: rgba(55, 50, 38, 0.72);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.list-tab {
+  max-width: 132px;
+  gap: 5px;
+  padding: 0 9px;
+}
+
+.list-tab svg,
+.list-add-tab svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
+
+.list-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-tab.is-active {
+  border-color: rgba(70, 59, 24, 0.38);
+  background: rgba(255, 246, 160, 0.5);
+  color: rgba(37, 34, 28, 0.86);
+}
+
+.list-add-tab {
+  width: 30px;
+  padding: 0;
+  border-color: rgba(94, 78, 30, 0.34);
+  border-style: dashed;
+  background: rgba(255, 249, 178, 0.46);
+  color: rgba(48, 43, 32, 0.82);
 }
 
 .section-head span {
@@ -655,7 +744,7 @@ h2 {
 
 .shopping-list {
   display: grid;
-  gap: 4px;
+  gap: 0;
   max-height: none;
   margin: 0;
   padding: 0;
@@ -675,7 +764,7 @@ h2 {
 }
 
 .list-panel .list-item {
-  padding: 8px 2px;
+  padding: 6px 1px;
   border: 0;
   border-bottom: 1px solid rgba(120, 100, 33, 0.14);
   border-radius: 0;
@@ -683,8 +772,8 @@ h2 {
 }
 
 .list-item input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   accent-color: var(--accent);
 }
 
@@ -695,7 +784,7 @@ h2 {
 
 .list-name {
   overflow-wrap: anywhere;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 500;
   line-height: 1.05;
 }
@@ -703,27 +792,27 @@ h2 {
 .list-shelf {
   margin-top: 1px;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   color: rgba(78, 72, 51, 0.58);
 }
 
 .quantity {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .quantity-button,
 .remove-button {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
 }
 
 .quantity span {
-  min-width: 20px;
+  min-width: 16px;
   text-align: center;
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 500;
 }
 
@@ -756,14 +845,14 @@ h2 {
 
 @media (max-width: 620px) {
   .app-shell {
-    width: min(100% - 18px, 1180px);
+    width: min(100% - 16px, 1180px);
     padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 calc(env(safe-area-inset-bottom, 0px) + 14px);
   }
 
   .topbar {
-    gap: 6px;
-    min-height: 86px;
-    margin-bottom: 9px;
+    gap: 5px;
+    min-height: 76px;
+    margin-bottom: 7px;
   }
 
   .brand-zone {
@@ -777,29 +866,87 @@ h2 {
   }
 
   .topbar-actions {
-    min-height: 39px;
-    padding: 0 54px;
+    min-height: 34px;
+    padding: 0;
   }
 
   .top-options {
-    width: min(100%, 306px);
-    max-width: calc(100% - 18px);
-    justify-content: center;
+    width: 100%;
+    max-width: 460px;
   }
 
   .top-options button {
-    width: auto;
-    min-width: 82px;
-    padding: 0 10px;
+    min-width: 0;
+    min-height: 31px;
+    padding: 0 6px;
+    font-size: 0.7rem;
   }
 
   h1 {
     font-size: clamp(1.65rem, 8vw, 2.2rem);
   }
 
-  .topbar-actions > .icon-button {
-    top: 0;
-    right: 0;
+  .list-panel {
+    padding: 14px 13px 11px;
+  }
+
+  .list-panel h2 {
+    font-size: 1.26rem;
+  }
+
+  .list-title-icon {
+    flex-basis: 22px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .list-tools {
+    gap: 5px;
+  }
+
+  .list-panel .section-head span {
+    font-size: 0.84rem;
+  }
+
+  .share-button {
+    min-height: 25px;
+    padding: 0 8px;
+    font-size: 0.84rem;
+  }
+
+  .manual-add {
+    gap: 7px;
+    margin-bottom: 9px;
+    padding: 6px;
+  }
+
+  .manual-add button {
+    flex-basis: 36px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .list-panel .manual-add input {
+    font-size: 0.96rem;
+  }
+
+  .list-panel .list-item {
+    gap: 7px;
+    padding: 6px 0;
+  }
+
+  .list-name {
+    font-size: 0.96rem;
+  }
+
+  .list-shelf {
+    font-size: 0.64rem;
+  }
+
+  .quantity-button,
+  .remove-button {
+    width: 25px;
+    height: 25px;
   }
 
   .shelf-grid {
