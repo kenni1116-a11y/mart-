@@ -480,6 +480,7 @@ let shelfReorderMode = false;
 let draggedShelfId = null;
 let backgroundTheme = localStorage.getItem(storageKeys.background) || "paper";
 let pendingRenameListId = null;
+let pendingItemNoteEdit = null;
 
 const elements = {
   body: document.body,
@@ -757,7 +758,8 @@ function sanitizeSharedList(items) {
         shelfTitle: typeof item.shelfTitle === "string" ? item.shelfTitle : knownProduct?.shelfTitle ?? "Geteilter Zettel",
         shelfIcon: typeof item.shelfIcon === "string" ? item.shelfIcon : knownProduct?.shelfIcon,
         quantity,
-        done: Boolean(item.done)
+        done: Boolean(item.done),
+        note: typeof item.note === "string" ? item.note.trim().slice(0, 48) : ""
       };
     })
     .filter(Boolean);
@@ -1284,6 +1286,62 @@ function saveRenamedList() {
   renderNotes();
 }
 
+function itemById(listId, itemId) {
+  return listById(listId).items.find((item) => item.id === itemId);
+}
+
+function editItemNote(listId, itemId) {
+  const item = itemById(listId, itemId);
+  if (!item) return;
+  pendingItemNoteEdit = { listId, itemId };
+  openModal(`
+    <h2 id="modalTitle">Notiz zu ${escapeText(item.name)}</h2>
+    <div class="item-note-form">
+      <input id="itemNoteInput" type="text" maxlength="48" placeholder="z.B. Braeburn" value="${escapeText(item.note ?? "")}">
+      <div class="modal-actions">
+        <button type="button" data-save-item-note>Speichern</button>
+        <button class="is-muted" type="button" data-clear-item-note>Notiz entfernen</button>
+      </div>
+    </div>
+  `);
+  window.setTimeout(() => {
+    const input = elements.modalContent.querySelector("#itemNoteInput");
+    input?.focus();
+    input?.select();
+  }, 0);
+}
+
+function saveItemNote() {
+  if (!pendingItemNoteEdit) return;
+  const input = elements.modalContent.querySelector("#itemNoteInput");
+  if (!input) return;
+  const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
+  if (!item) return;
+  const cleanNote = input.value.trim().slice(0, 48);
+  if (cleanNote) {
+    item.note = cleanNote;
+  } else {
+    delete item.note;
+  }
+  activeListId = pendingItemNoteEdit.listId;
+  pendingItemNoteEdit = null;
+  save();
+  closeModal();
+  renderNotes();
+}
+
+function clearItemNote() {
+  if (!pendingItemNoteEdit) return;
+  const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
+  if (!item) return;
+  delete item.note;
+  activeListId = pendingItemNoteEdit.listId;
+  pendingItemNoteEdit = null;
+  save();
+  closeModal();
+  renderNotes();
+}
+
 function attachNoteLongPress(element, listId) {
   let longPressTimer = 0;
   let didLongPress = false;
@@ -1345,13 +1403,16 @@ function noteItemsMarkup(listData) {
     return '<li class="empty-state">Noch nichts auf dem Zettel.</li>';
   }
 
-  return items.map((item) => `
+  return items.map((item) => {
+    const itemNote = typeof item.note === "string" ? item.note.trim() : "";
+    const itemDetail = itemNote || item.shelfTitle;
+    return `
     <li class="list-item ${item.done ? "is-done" : ""}">
       <input type="checkbox" ${item.done ? "checked" : ""} aria-label="${escapeText(item.name)} erledigt" data-done="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
-      <div>
+      <button class="list-copy-button" type="button" aria-label="Notiz zu ${escapeText(item.name)} bearbeiten" data-edit-item-note="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
         <p class="list-name">${escapeText(item.name)}</p>
-        <p class="list-shelf">${escapeText(item.shelfTitle)}</p>
-      </div>
+        <p class="list-shelf ${itemNote ? "is-note" : ""}">${escapeText(itemDetail)}</p>
+      </button>
       <div class="quantity">
         <button class="quantity-button" type="button" title="Weniger" aria-label="Weniger" data-minus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("minus")}</button>
         <span>${item.quantity}</span>
@@ -1361,7 +1422,8 @@ function noteItemsMarkup(listData) {
         </button>
       </div>
     </li>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function noteMarkup(listData) {
@@ -1411,6 +1473,9 @@ function renderNotes() {
   });
   elements.notesStack.querySelectorAll("[data-share-list]").forEach((button) => {
     button.addEventListener("click", () => shareList(button.dataset.shareList));
+  });
+  elements.notesStack.querySelectorAll("[data-edit-item-note]").forEach((button) => {
+    button.addEventListener("click", () => editItemNote(button.dataset.listId, button.dataset.editItemNote));
   });
   elements.notesStack.querySelectorAll("[data-manual-add]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1481,11 +1546,22 @@ elements.modalContent.addEventListener("click", (event) => {
   }
   if (event.target.closest("[data-save-rename]")) {
     saveRenamedList();
+    return;
+  }
+  if (event.target.closest("[data-save-item-note]")) {
+    saveItemNote();
+    return;
+  }
+  if (event.target.closest("[data-clear-item-note]")) {
+    clearItemNote();
   }
 });
 elements.modalContent.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.id === "renameListInput") {
     saveRenamedList();
+  }
+  if (event.key === "Enter" && event.target.id === "itemNoteInput") {
+    saveItemNote();
   }
 });
 
