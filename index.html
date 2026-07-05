@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=26">
+    <link rel="stylesheet" href="./styles.css?v=30">
   </head>
   <body>
     <div class="app-shell">
@@ -22,9 +22,9 @@
         </div>
         <div class="topbar-actions">
           <nav class="top-options" aria-label="Optionen">
-            <button type="button">Impressum</button>
-            <button type="button">Bugreport</button>
-            <button type="button">Mehr</button>
+            <button id="imprintButton" type="button">Impressum</button>
+            <button id="bugreportButton" type="button">Bugreport</button>
+            <button id="moreButton" type="button">Mehr</button>
           </nav>
         </div>
       </header>
@@ -50,7 +50,10 @@
           <div id="marketView">
             <div class="section-head">
               <h2>Regale</h2>
-              <span id="shelfCount"></span>
+              <div class="shelf-tools">
+                <span id="shelfCount"></span>
+                <button class="reorder-done-button is-hidden" id="reorderDoneButton" type="button">Fertig</button>
+              </div>
             </div>
             <div class="shelf-grid" id="shelfGrid"></div>
           </div>
@@ -75,30 +78,28 @@
           </div>
         </section>
 
-        <aside class="list-panel" aria-label="Einkaufszettel">
-          <div class="section-head list-head">
-            <h2 class="list-title">
-              <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
-              <span id="activeListTitle">Dein Zettel</span>
-            </h2>
-            <div class="list-tools">
-              <span id="listCount"></span>
-              <button class="share-button" id="shareListButton" type="button">Teilen</button>
-            </div>
-          </div>
-          <div class="list-tabs" id="listTabs" aria-label="Zettel auswählen"></div>
-          <div class="manual-add">
-            <input id="manualInput" type="text" placeholder="Eigener Artikel">
-            <button id="manualAddButton" type="button" title="Hinzufügen" aria-label="Hinzufügen">
+        <aside class="notes-board" aria-label="Einkaufszettel">
+          <div class="notes-board-actions">
+            <button class="add-note-button" id="addListButton" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              Neuer Zettel
             </button>
           </div>
-          <ul class="shopping-list" id="shoppingList"></ul>
+          <div class="notes-stack" id="notesStack"></div>
         </aside>
       </main>
     </div>
 
-    <script src="./app.js?v=26"></script>
+    <div class="modal-layer is-hidden" id="modalLayer" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <button class="modal-close" id="modalCloseButton" type="button" aria-label="Schließen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <div id="modalContent"></div>
+      </div>
+    </div>
+
+    <script src="./app.js?v=30"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
