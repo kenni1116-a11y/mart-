@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=25">
+    <link rel="stylesheet" href="./styles.css?v=26">
   </head>
   <body>
     <div class="app-shell">
@@ -26,9 +26,6 @@
             <button type="button">Bugreport</button>
             <button type="button">Mehr</button>
           </nav>
-          <button class="icon-button" id="clearDoneButton" type="button" title="Erledigte entfernen" aria-label="Erledigte entfernen">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 15h8l1-15M10 11v6M14 11v6"/></svg>
-          </button>
         </div>
       </header>
 
@@ -79,13 +76,17 @@
         </section>
 
         <aside class="list-panel" aria-label="Einkaufszettel">
-          <div class="section-head">
-            <h2>Dein Zettel</h2>
+          <div class="section-head list-head">
+            <h2 class="list-title">
+              <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
+              <span id="activeListTitle">Dein Zettel</span>
+            </h2>
             <div class="list-tools">
               <span id="listCount"></span>
               <button class="share-button" id="shareListButton" type="button">Teilen</button>
             </div>
           </div>
+          <div class="list-tabs" id="listTabs" aria-label="Zettel auswählen"></div>
           <div class="manual-add">
             <input id="manualInput" type="text" placeholder="Eigener Artikel">
             <button id="manualAddButton" type="button" title="Hinzufügen" aria-label="Hinzufügen">
@@ -97,7 +98,7 @@
       </main>
     </div>
 
-    <script src="./app.js?v=25"></script>
+    <script src="./app.js?v=26"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
