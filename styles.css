@@ -953,6 +953,24 @@ h2 {
   text-decoration: line-through;
 }
 
+.list-copy-button {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+}
+
+.list-copy-button:focus-visible {
+  outline: 2px solid rgba(43, 41, 38, 0.28);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
 .list-name {
   overflow-wrap: anywhere;
   font-size: 1rem;
@@ -965,6 +983,11 @@ h2 {
   color: var(--muted);
   font-size: 0.68rem;
   color: rgba(78, 72, 51, 0.58);
+}
+
+.list-shelf.is-note {
+  color: rgba(58, 51, 35, 0.78);
+  font-weight: 600;
 }
 
 .quantity {
@@ -1064,16 +1087,27 @@ h2 {
   gap: 12px;
 }
 
-.bug-form textarea {
+.rename-form,
+.item-note-form {
+  display: grid;
+  gap: 12px;
+}
+
+.bug-form textarea,
+.rename-form input,
+.item-note-form input {
   width: 100%;
-  min-height: 190px;
-  resize: vertical;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   outline: 0;
   background: var(--paper);
   color: var(--ink);
+}
+
+.bug-form textarea {
+  min-height: 190px;
+  resize: vertical;
 }
 
 .modal-actions {
@@ -1102,6 +1136,10 @@ h2 {
   font-size: 0.88rem;
   font-weight: 640;
   text-decoration: none;
+}
+
+.modal-actions button.is-muted {
+  color: var(--muted);
 }
 
 .background-options {
