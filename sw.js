@@ -1,4 +1,4 @@
-const CACHE_NAME = "einkaufszettel-v30";
+const CACHE_NAME = "einkaufszettel-v31";
 // Keep this file changing when the installed iPhone app needs a fresh cache.
 const ASSETS = [
   "./",
