@@ -366,6 +366,105 @@ const sketchRules = [
   [["windel"], "diaper"], [["baby", "schnuller"], "milk"], [["stifte", "brief", "papier", "kleber", "klebeband"], "pencil"]
 ];
 
+const productIconPalettes = {
+  tomato: ["#f0442e", "#ff9a1f", "#1fb65b", "#7c1c14"],
+  cucumber: ["#34bf59", "#a7f05a", "#18874c", "#134f32"],
+  pepper: ["#f0442e", "#ffcc24", "#29b84d", "#7c1c14"],
+  onion: ["#d7a7ff", "#ffe0a8", "#7c58b8", "#5c3d75"],
+  carrot: ["#ff7a1f", "#ffd21f", "#32ad4e", "#8b3b12"],
+  potato: ["#c58b48", "#ffe0a3", "#8c6330", "#6d3f1f"],
+  broccoli: ["#32b85b", "#99e34f", "#177747", "#0e5132"],
+  celery: ["#6ccd52", "#d6f15c", "#2e8a43", "#236231"],
+  eggplant: ["#6d43c7", "#ff7fb4", "#35a857", "#3c286f"],
+  corn: ["#ffd233", "#ff8f1f", "#3bb44a", "#8b6a08"],
+  mushroom: ["#d9b48f", "#fff0c4", "#8d5b39", "#5a3824"],
+  radish: ["#f04375", "#ffffff", "#6ecf46", "#8a1639"],
+  ginger: ["#d89a45", "#ffe08a", "#a56228", "#704018"],
+  asparagus: ["#3cab5e", "#e0ef66", "#1f7d41", "#15542e"],
+  fennel: ["#9bd861", "#f4ffbf", "#43a35c", "#285d37"],
+  apple: ["#e94334", "#ffb22a", "#35a857", "#7c1c14"],
+  banana: ["#ffd52d", "#ff9b2f", "#8f6b14", "#76510c"],
+  citrus: ["#ff9b24", "#ffe534", "#44b94f", "#9d4b10"],
+  berry: ["#e9325c", "#ff9ec1", "#7a2fbc", "#76162e"],
+  grapes: ["#8d55d6", "#ff7fb4", "#56c74f", "#4b2b7f"],
+  pear: ["#9ed44a", "#ffe76d", "#38a54f", "#566d18"],
+  pineapple: ["#ffd32a", "#ff7d22", "#36b45c", "#7d5f0c"],
+  melon: ["#ff6f6a", "#b5ef56", "#40b35b", "#8a2732"],
+  avocado: ["#74b947", "#ffe485", "#2d7a43", "#31521f"],
+  stonefruit: ["#ff8a3d", "#ffd66a", "#f04d76", "#91421f"],
+  olive: ["#6f9a37", "#d4e86a", "#3b6824", "#314315"],
+  salad: ["#40bb62", "#f4ef71", "#22a2a0", "#1f663a"],
+  cheese: ["#ffd449", "#ff8b1f", "#f04d34", "#8d5c0c"],
+  milk: ["#6ab7ff", "#ffffff", "#245db3", "#1b4775"],
+  yogurt: ["#80c8ff", "#ffe2f1", "#ff6e9d", "#315f8a"],
+  butter: ["#ffd95a", "#fff1a8", "#d98b1b", "#8b5c10"],
+  bread: ["#d59044", "#ffe0a0", "#8b4f20", "#6b3514"],
+  cup: ["#8b5a35", "#ffcf7a", "#2e7bd8", "#49301f"],
+  jar: ["#35a8d8", "#fff3a1", "#ff7d39", "#245f7c"],
+  honey: ["#ffbc24", "#fff064", "#a46416", "#70410e"],
+  pasta: ["#ffd66a", "#ff9d30", "#d36a20", "#7e3d12"],
+  rice: ["#f7f2df", "#8ed5ff", "#d7b75f", "#6d5b34"],
+  can: ["#67c9e8", "#ff6d54", "#2d73b7", "#274a67"],
+  steak: ["#d94a47", "#ff9d69", "#7b211f", "#5b1413"],
+  sausage: ["#d84d40", "#ffb14f", "#7d281e", "#5d1b15"],
+  fish: ["#48b5e5", "#b6efff", "#236aa7", "#17496f"],
+  shrimp: ["#ff7b54", "#ffd08f", "#db3d3d", "#8a2c22"],
+  pizza: ["#ffbf37", "#e94b36", "#4caf42", "#8a3f14"],
+  fries: ["#ffd63d", "#ff8e24", "#d1452e", "#8a5b0b"],
+  icecream: ["#ff8ac2", "#fff0a6", "#6ec7ff", "#7d3d66"],
+  chocolate: ["#7a4328", "#ffcf7a", "#d94b3c", "#4f2a18"],
+  chips: ["#ffd044", "#ff7a2b", "#d9462c", "#815b0c"],
+  cookie: ["#c98a42", "#ffe0a3", "#6b3e24", "#5f351d"],
+  nuts: ["#b9783a", "#f4cc6c", "#7c4a22", "#4f2f19"],
+  candy: ["#ff4f8b", "#52d4ff", "#ffd641", "#8c1f48"],
+  bar: ["#6b3a24", "#ffcf55", "#df553f", "#422315"],
+  bottle: ["#2f86df", "#69d6ff", "#ff8d28", "#164d83"],
+  glass: ["#79d6ff", "#ffd84a", "#8d67d6", "#285d7a"],
+  soap: ["#ff81b3", "#90e7ff", "#7b57d0", "#85405d"],
+  toothbrush: ["#39b8e5", "#ff7aa8", "#ffffff", "#1d6283"],
+  razor: ["#bfc6cc", "#ff8f35", "#555b63", "#31363b"],
+  toilet: ["#ffffff", "#9ad9ff", "#6a7782", "#343c44"],
+  tissue: ["#ffffff", "#8bcfff", "#d7a2ff", "#596776"],
+  cleaner: ["#36b8e8", "#ffdf40", "#1f7bb2", "#195170"],
+  clean: ["#68c7e8", "#f0f0f0", "#6f7b86", "#37424b"],
+  sponge: ["#ffd33f", "#69d66d", "#db7226", "#7f5b13"],
+  roll: ["#ffffff", "#c7d4df", "#ff9345", "#5c6670"],
+  trashbag: ["#45494d", "#8b9298", "#1f2328", "#141719"],
+  battery: ["#36b858", "#ffd53b", "#2d343b", "#172016"],
+  candle: ["#fff2aa", "#ff8d27", "#d64935", "#7a3d12"],
+  paw: ["#bf7a3e", "#ffd27b", "#6e4529", "#4a2d1c"],
+  pill: ["#ff5f78", "#ffffff", "#45b9ff", "#80303d"],
+  bandage: ["#f0bd84", "#fff0d0", "#dc664c", "#835235"],
+  thermometer: ["#ffffff", "#ff4a57", "#52b8ff", "#7d2e36"],
+  spice: ["#d9462e", "#ffd44a", "#7f4128", "#59301e"],
+  egg: ["#fff1c7", "#ffbf4a", "#d8a25c", "#7b5c34"],
+  diaper: ["#ffffff", "#7fd6ff", "#ff9ed1", "#596c7a"],
+  pencil: ["#ffd24d", "#ff8740", "#2c7bd3", "#815615"],
+  sparkle: ["#ffe55b", "#ff70ad", "#5cc7ff", "#8a6d0c"],
+  cart: ["#2d2d2d", "#e7e1d2", "#8e8a80", "#1b1a18"]
+};
+
+const productMarkerShapes = [
+  "M8 18c12-8 31-9 47-2l-5 35c-14 8-32 7-43-3Z",
+  "M11 12c16 1 31 4 44 13L48 55c-17 2-31-1-43-10Z",
+  "M7 28c8-14 26-20 47-17l3 28c-12 10-31 14-48 8Z",
+  "M13 10c14 7 29 8 42 4l-3 36c-13 6-28 5-43 0Z"
+];
+
+const productHighlightPaths = [
+  "M22 20c5-4 13-5 20-3",
+  "M18 25c7-5 16-6 26-4",
+  "M21 18c4-3 10-4 17-3",
+  "M25 23c5-3 11-4 17-2"
+];
+
+const productHatchPaths = [
+  "M35 42l7-5m-3 10 8-6m-16 2 7-5",
+  "M20 43l8-6m-4 10 9-7m9-1 6-5",
+  "M38 34l8-5m-5 10 8-6m-18 8 8-6",
+  "M18 35l6-4m-2 9 8-6m13 6 7-5"
+];
+
 let activeView = "market";
 let selectedShelfId = null;
 let list = load(storageKeys.list, []);
@@ -451,6 +550,54 @@ function escapeText(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function hashString(value) {
+  return Array.from(String(value)).reduce((hash, char) => {
+    return ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+  }, 0);
+}
+
+function productIconPalette(product, iconKey) {
+  const palette = productIconPalettes[iconKey] ?? productIconPalettes.cart;
+  const hash = Math.abs(hashString(`${product.id}:${product.name}`));
+  const markerIndex = hash % productMarkerShapes.length;
+  const tilt = (hash % 9) - 4;
+
+  return {
+    fill: palette[0],
+    accent: palette[1],
+    marker: palette[2],
+    shadow: palette[3],
+    markerShape: productMarkerShapes[markerIndex],
+    highlightPath: productHighlightPaths[hash % productHighlightPaths.length],
+    hatchPath: productHatchPaths[(hash >> 2) % productHatchPaths.length],
+    tilt
+  };
+}
+
+function productIconSvg(product) {
+  const iconKey = sketchIconFor(product);
+  const palette = productIconPalette(product, iconKey);
+  const shape = iconPaths[iconKey] ?? iconPaths.cart;
+  const label = escapeText(product.name);
+
+  return `
+    <svg class="product-pop-icon" viewBox="0 0 64 64" aria-hidden="true" style="--product-fill: ${palette.fill}; --product-accent: ${palette.accent}; --product-marker: ${palette.marker}; --product-shadow: ${palette.shadow}; --product-tilt: ${palette.tilt}deg;">
+      <title>${label}</title>
+      <path class="product-marker product-marker-one" d="${palette.markerShape}"></path>
+      <path class="product-marker product-marker-two" d="M16 18c9-4 22-5 34-1l-3 27c-11 6-23 5-33-2Z"></path>
+      <g class="product-symbol-shadow" transform="translate(10 11) scale(1.84)">${shape}</g>
+      <g class="product-symbol-color" transform="translate(8 8) scale(1.86)">${shape}</g>
+      <g class="product-symbol-ink" transform="translate(8 8) scale(1.86)">${shape}</g>
+      <path class="product-highlight" d="${palette.highlightPath}"></path>
+      <path class="product-hatch" d="${palette.hatchPath}"></path>
+    </svg>
+  `;
+}
+
+function productIconMarkup(product) {
+  return `<span class="product-icon product-sketch">${productIconSvg(product)}</span>`;
 }
 
 function encodeShareValue(value) {
@@ -679,7 +826,7 @@ function renderProductGrid(container, products) {
     const isFavorite = favorites.includes(product.id);
     return `
       <article class="product-card">
-        <span class="product-icon product-sketch">${icon(sketchIconFor(product))}</span>
+        ${productIconMarkup(product)}
         <div>
           <p class="product-name">${escapeText(product.name)}</p>
           <p class="product-shelf">${escapeText(product.shelfTitle)}</p>
