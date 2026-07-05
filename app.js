@@ -125,7 +125,7 @@ const shelves = [
   },
   {
     id: "getraenke",
-    title: "Getränke alkoholfrei",
+    title: "Getränke",
     emoji: "🥤",
     color: "#2878a8",
     icon: "bottle",
@@ -255,7 +255,9 @@ const storageKeys = {
   list: "shopping-list-app.items",
   lists: "shopping-list-app.lists",
   activeList: "shopping-list-app.active-list",
-  favorites: "shopping-list-app.favorites"
+  favorites: "shopping-list-app.favorites",
+  shelfOrder: "shopping-list-app.shelf-order",
+  background: "shopping-list-app.background"
 };
 
 const iconPaths = {
@@ -473,9 +475,18 @@ let selectedShelfId = null;
 let lists = loadLists();
 let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id;
 let favorites = load(storageKeys.favorites, []);
+let shelfOrder = load(storageKeys.shelfOrder, []);
+let shelfReorderMode = false;
+let draggedShelfId = null;
+let backgroundTheme = localStorage.getItem(storageKeys.background) || "paper";
+let pendingRenameListId = null;
 
 const elements = {
+  body: document.body,
   tabs: document.querySelectorAll(".tab"),
+  imprintButton: document.querySelector("#imprintButton"),
+  bugreportButton: document.querySelector("#bugreportButton"),
+  moreButton: document.querySelector("#moreButton"),
   searchInput: document.querySelector("#searchInput"),
   marketView: document.querySelector("#marketView"),
   productsView: document.querySelector("#productsView"),
@@ -485,15 +496,14 @@ const elements = {
   favoriteGrid: document.querySelector("#favoriteGrid"),
   currentShelfTitle: document.querySelector("#currentShelfTitle"),
   shelfCount: document.querySelector("#shelfCount"),
+  reorderDoneButton: document.querySelector("#reorderDoneButton"),
   favoriteCount: document.querySelector("#favoriteCount"),
   backButton: document.querySelector("#backButton"),
-  shoppingList: document.querySelector("#shoppingList"),
-  listTabs: document.querySelector("#listTabs"),
-  activeListTitle: document.querySelector("#activeListTitle"),
-  listCount: document.querySelector("#listCount"),
-  manualInput: document.querySelector("#manualInput"),
-  manualAddButton: document.querySelector("#manualAddButton"),
-  shareListButton: document.querySelector("#shareListButton")
+  notesStack: document.querySelector("#notesStack"),
+  addListButton: document.querySelector("#addListButton"),
+  modalLayer: document.querySelector("#modalLayer"),
+  modalContent: document.querySelector("#modalContent"),
+  modalCloseButton: document.querySelector("#modalCloseButton")
 };
 
 function load(key, fallback) {
@@ -545,6 +555,47 @@ function save() {
   localStorage.setItem(storageKeys.activeList, activeListId);
   localStorage.setItem(storageKeys.list, JSON.stringify(activeItems()));
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
+  localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
+  localStorage.setItem(storageKeys.background, backgroundTheme);
+}
+
+function applyBackgroundTheme() {
+  elements.body.dataset.background = backgroundTheme;
+}
+
+function favoritesShelf() {
+  return {
+    id: "eigenes-regal",
+    title: "Eigenes Regal",
+    emoji: "★",
+    color: "#6f6a5d",
+    icon: "sparkle",
+    products: favoriteProducts()
+  };
+}
+
+function marketShelves() {
+  const shelfItems = [...shelves, favoritesShelf()];
+  const knownIds = new Set(shelfItems.map((shelf) => shelf.id));
+  const orderedIds = shelfOrder.filter((id) => knownIds.has(id));
+  const missingIds = shelfItems.map((shelf) => shelf.id).filter((id) => !orderedIds.includes(id));
+  const nextOrder = [...orderedIds, ...missingIds];
+  if (nextOrder.join("|") !== shelfOrder.join("|")) {
+    shelfOrder = nextOrder;
+    save();
+  }
+  return nextOrder.map((id) => shelfItems.find((shelf) => shelf.id === id)).filter(Boolean);
+}
+
+function getShelfProducts(shelf) {
+  return shelf.id === "eigenes-regal" ? favoriteProducts() : shelf.products.map((name) => {
+    const product = allProducts().find((item) => item.id === productId(shelf.id, name));
+    return product;
+  }).filter(Boolean);
+}
+
+function favoriteProducts() {
+  return allProducts().filter((product) => favorites.includes(product.id));
 }
 
 function productId(shelfId, name) {
@@ -643,6 +694,35 @@ function productIconMarkup(product) {
   return `<span class="product-icon product-sketch">${productIconSvg(product)}</span>`;
 }
 
+function shelfIllustrationMarkup(shelf) {
+  const hash = Math.abs(hashString(shelf.id));
+  const colors = [
+    shelf.color,
+    productIconPalettes[shelf.icon]?.[0] ?? "#f2c94c",
+    productIconPalettes[shelf.icon]?.[1] ?? "#67c9e8"
+  ];
+  const productShapes = Array.from({ length: 7 }).map((_, index) => {
+    const x = 12 + (index % 4) * 10 + ((hash + index) % 3);
+    const y = index < 4 ? 21 + ((hash + index) % 3) : 38 + ((hash + index) % 3);
+    const color = colors[(index + hash) % colors.length];
+    const rotate = ((hash >> index) % 9) - 4;
+    return `<path class="shelf-good" style="--good-color: ${color}; --good-rotate: ${rotate}deg;" d="M${x} ${y}c4-5 10-4 12 1 2 6-3 11-8 10-6-1-8-7-4-11Z"/>`;
+  }).join("");
+
+  return `
+    <span class="shelf-illustration" style="--shelf-color: ${shelf.color};">
+      <svg viewBox="0 0 72 72" aria-hidden="true">
+        <path class="shelf-marker" d="M8 12c14-7 38-8 55 1l-5 48c-15 7-35 6-50-2Z"></path>
+        <path class="shelf-frame" d="M12 16h48v43H12V16Z"></path>
+        <path class="shelf-board" d="M14 31h44M14 48h44"></path>
+        ${productShapes}
+        <path class="shelf-sign" d="M24 10h24l3 10H21l3-10Z"></path>
+        <g class="shelf-symbol" transform="translate(24 9) scale(1.02)">${iconPaths[shelf.icon] ?? iconPaths.sparkle}</g>
+      </svg>
+    </span>
+  `;
+}
+
 function encodeShareValue(value) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
@@ -706,8 +786,9 @@ function importSharedListFromUrl() {
   }
 }
 
-async function shareList() {
-  const items = activeItems();
+async function shareList(listId = activeListId) {
+  const listData = lists.find((item) => item.id === listId) ?? activeList();
+  const items = listData.items;
   if (!items.length) {
     window.alert("Dein Zettel ist noch leer.");
     return;
@@ -718,7 +799,7 @@ async function shareList() {
   url.hash = "";
   const shareData = {
     title: "Zettel",
-    text: "Mein Einkaufszettel",
+    text: listData.title,
     url: url.href
   };
 
@@ -736,7 +817,104 @@ async function shareList() {
     if (error.name === "AbortError") return;
   }
 
-  window.prompt("Link zum Zettel kopieren:", url.href);
+  openModal(`
+    <h2 id="modalTitle">Zettel teilen</h2>
+    <div class="bug-form">
+      <textarea readonly rows="4">${escapeText(url.href)}</textarea>
+    </div>
+  `);
+}
+
+function openModal(content) {
+  elements.modalContent.innerHTML = content;
+  elements.modalLayer.classList.remove("is-hidden");
+  elements.modalLayer.setAttribute("aria-hidden", "false");
+}
+
+function closeModal() {
+  elements.modalLayer.classList.add("is-hidden");
+  elements.modalLayer.setAttribute("aria-hidden", "true");
+  elements.modalContent.innerHTML = "";
+}
+
+function showImprint() {
+  openModal(`
+    <h2 id="modalTitle">Impressum</h2>
+    <div class="modal-copy">
+      <p><strong>Zettel</strong></p>
+      <p>Angaben zum Betreiber werden hier ergänzt.</p>
+      <p>Kontakt: bitte noch eintragen</p>
+      <p>Verantwortlich für den Inhalt: bitte noch eintragen</p>
+    </div>
+  `);
+}
+
+function bugReportText() {
+  return [
+    "Bugreport für Zettel",
+    "",
+    `Zeitpunkt: ${new Date().toLocaleString("de-DE")}`,
+    `Adresse: ${window.location.href}`,
+    `Gerät/Browser: ${navigator.userAgent}`,
+    "",
+    "Was ist passiert?",
+    ""
+  ].join("\n");
+}
+
+function showBugreport() {
+  openModal(`
+    <h2 id="modalTitle">Bugreport</h2>
+    <div class="bug-form">
+      <textarea id="bugReportText" rows="9">${escapeText(bugReportText())}</textarea>
+      <div class="modal-actions">
+        <button type="button" data-copy-bug>Bericht kopieren</button>
+        <a class="modal-link" href="https://github.com/kenni1116-a11y/mart-/issues/new" target="_blank" rel="noreferrer">GitHub öffnen</a>
+      </div>
+    </div>
+  `);
+}
+
+function showBackgroundOptions() {
+  openModal(`
+    <h2 id="modalTitle">Hintergrund</h2>
+    <div class="background-options">
+      <button class="background-choice ${backgroundTheme === "paper" ? "is-active" : ""}" type="button" data-background="paper">
+        <span class="background-swatch background-swatch-paper"></span>
+        Papier
+      </button>
+      <button class="background-choice ${backgroundTheme === "linen" ? "is-active" : ""}" type="button" data-background="linen">
+        <span class="background-swatch background-swatch-linen"></span>
+        Leinen
+      </button>
+      <button class="background-choice ${backgroundTheme === "clean" ? "is-active" : ""}" type="button" data-background="clean">
+        <span class="background-swatch background-swatch-clean"></span>
+        Hell
+      </button>
+    </div>
+  `);
+}
+
+function showMore() {
+  openModal(`
+    <h2 id="modalTitle">Mehr</h2>
+    <div class="modal-actions modal-actions-stack">
+      <button type="button" data-open-background>Hintergrund anpassen</button>
+    </div>
+  `);
+}
+
+async function copyBugReport() {
+  const textarea = elements.modalContent.querySelector("#bugReportText");
+  if (!textarea) return;
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+    window.alert("Bugreport kopiert.");
+  } catch {
+    textarea.select();
+    document.execCommand("copy");
+    window.alert("Bugreport kopiert.");
+  }
 }
 
 function setView(view) {
@@ -790,19 +968,20 @@ function addToList(product) {
     items.push({ ...product, quantity: 1, done: false });
   }
   save();
-  renderList();
+  renderNotes();
 }
 
-function addManualItem() {
-  const name = elements.manualInput.value.trim();
+function addManualItem(listId, input) {
+  const name = input.value.trim();
   if (!name) return;
+  activeListId = listId;
   addToList({
     id: `manual:${Date.now()}`,
     name,
     shelfId: "manual",
     shelfTitle: "Eigener Artikel"
   });
-  elements.manualInput.value = "";
+  input.value = "";
 }
 
 function toggleFavorite(product) {
@@ -815,54 +994,61 @@ function toggleFavorite(product) {
   render();
 }
 
-function updateQuantity(id, delta) {
-  const currentList = activeList();
+function listById(id) {
+  return lists.find((listData) => listData.id === id) ?? activeList();
+}
+
+function updateQuantity(id, delta, listId = activeListId) {
+  const currentList = listById(listId);
   currentList.items = currentList.items
     .map((item) => item.id === id ? { ...item, quantity: item.quantity + delta } : item)
     .filter((item) => item.quantity > 0);
   save();
-  renderList();
+  renderNotes();
 }
 
-function toggleDone(id) {
-  const currentList = activeList();
+function toggleDone(id, listId = activeListId) {
+  const currentList = listById(listId);
   currentList.items = currentList.items.map((item) => item.id === id ? { ...item, done: !item.done } : item);
   save();
-  renderList();
+  renderNotes();
 }
 
-function removeItem(id) {
-  const currentList = activeList();
+function removeItem(id, listId = activeListId) {
+  const currentList = listById(listId);
   currentList.items = currentList.items.filter((item) => item.id !== id);
   save();
-  renderList();
+  renderNotes();
 }
 
-function clearDone() {
-  const currentList = activeList();
+function clearDone(listId = activeListId) {
+  const currentList = listById(listId);
   currentList.items = currentList.items.filter((item) => !item.done);
   save();
-  renderList();
+  renderNotes();
 }
 
 function renderShelves() {
   const query = normalize(elements.searchInput.value);
-  const matchingShelves = shelves.filter((shelf) => {
+  const matchingShelves = marketShelves().filter((shelf) => {
     if (!query) return true;
-    return shelf.title.toLowerCase().includes(query) || shelf.products.some((name) => name.toLowerCase().includes(query));
+    const products = getShelfProducts(shelf);
+    return shelf.title.toLowerCase().includes(query) || products.some((product) => product.name.toLowerCase().includes(query));
   });
 
   elements.shelfCount.textContent = `${matchingShelves.length} Regale`;
+  elements.shelfGrid.classList.toggle("is-reordering", shelfReorderMode);
+  elements.reorderDoneButton.classList.toggle("is-hidden", !shelfReorderMode);
   elements.shelfGrid.innerHTML = matchingShelves.map((shelf) => `
-    <button class="shelf-card" type="button" data-shelf="${escapeText(shelf.id)}">
-      <span class="shelf-icon">${icon(shelf.icon)}</span>
+    <button class="shelf-card ${shelfReorderMode ? "is-wiggling" : ""}" type="button" data-shelf="${escapeText(shelf.id)}">
+      ${shelfIllustrationMarkup(shelf)}
       <span class="shelf-title">${escapeText(shelf.title)}</span>
-      <span class="shelf-meta">${shelf.products.length} Artikel</span>
+      <span class="shelf-meta">${getShelfProducts(shelf).length} Artikel</span>
     </button>
   `).join("");
 
   elements.shelfGrid.querySelectorAll("[data-shelf]").forEach((button) => {
-    button.addEventListener("click", () => openShelf(button.dataset.shelf));
+    attachShelfCardEvents(button);
   });
 }
 
@@ -908,28 +1094,114 @@ function renderProductGrid(container, products) {
 
 function renderProducts() {
   const query = normalize(elements.searchInput.value);
-  const shelf = shelves.find((item) => item.id === selectedShelfId);
+  const shelf = marketShelves().find((item) => item.id === selectedShelfId);
   if (!shelf) return;
 
   elements.currentShelfTitle.textContent = shelf.title;
-  const products = allProducts().filter((product) => {
-    const inShelf = product.shelfId === shelf.id;
+  const products = getShelfProducts(shelf).filter((product) => {
     const matchesQuery = !query || product.name.toLowerCase().includes(query);
-    return inShelf && matchesQuery;
+    return matchesQuery;
   });
   renderProductGrid(elements.productGrid, products);
 }
 
 function renderFavorites() {
   const query = normalize(elements.searchInput.value);
-  const products = allProducts().filter((product) => {
-    const isFavorite = favorites.includes(product.id);
+  const products = favoriteProducts().filter((product) => {
     const matchesQuery = !query || product.name.toLowerCase().includes(query) || product.shelfTitle.toLowerCase().includes(query);
-    return isFavorite && matchesQuery;
+    return matchesQuery;
   });
 
   elements.favoriteCount.textContent = `${products.length} Artikel`;
   renderProductGrid(elements.favoriteGrid, products);
+}
+
+function enterShelfReorderMode() {
+  shelfReorderMode = true;
+  renderShelves();
+}
+
+function exitShelfReorderMode() {
+  shelfReorderMode = false;
+  draggedShelfId = null;
+  renderShelves();
+}
+
+function reorderShelf(draggedId, targetId) {
+  if (!draggedId || !targetId || draggedId === targetId) return;
+  const order = marketShelves().map((shelf) => shelf.id);
+  const draggedIndex = order.indexOf(draggedId);
+  const targetIndex = order.indexOf(targetId);
+  if (draggedIndex === -1 || targetIndex === -1) return;
+  order.splice(draggedIndex, 1);
+  order.splice(targetIndex, 0, draggedId);
+  shelfOrder = order;
+  save();
+}
+
+function attachShelfCardEvents(button) {
+  let longPressTimer = 0;
+  let didLongPress = false;
+  let dropTargetId = null;
+
+  const clearTimer = () => {
+    if (!longPressTimer) return;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = 0;
+  };
+
+  button.addEventListener("pointerdown", (event) => {
+    didLongPress = false;
+    dropTargetId = null;
+    clearTimer();
+
+    if (shelfReorderMode) {
+      draggedShelfId = button.dataset.shelf;
+      button.classList.add("is-dragging");
+      button.setPointerCapture?.(event.pointerId);
+      return;
+    }
+
+    longPressTimer = window.setTimeout(() => {
+      didLongPress = true;
+      clearTimer();
+      enterShelfReorderMode();
+    }, 620);
+  });
+
+  button.addEventListener("pointermove", (event) => {
+    if (!shelfReorderMode || !draggedShelfId) {
+      if (Math.abs(event.movementX) > 5 || Math.abs(event.movementY) > 5) clearTimer();
+      return;
+    }
+
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-shelf]");
+    dropTargetId = target?.dataset.shelf ?? dropTargetId;
+  });
+
+  button.addEventListener("pointerleave", () => {
+    if (!shelfReorderMode) clearTimer();
+  });
+
+  ["pointerup", "pointercancel"].forEach((eventName) => {
+    button.addEventListener(eventName, () => {
+      clearTimer();
+      button.classList.remove("is-dragging");
+      if (shelfReorderMode && draggedShelfId) {
+        reorderShelf(draggedShelfId, dropTargetId);
+        draggedShelfId = null;
+        renderShelves();
+      }
+    });
+  });
+
+  button.addEventListener("click", (event) => {
+    if (didLongPress || shelfReorderMode) {
+      event.preventDefault();
+      return;
+    }
+    openShelf(button.dataset.shelf);
+  });
 }
 
 function nextListTitle() {
@@ -945,16 +1217,14 @@ function addList() {
   lists.push(newList);
   activeListId = newList.id;
   save();
-  renderListTabs();
-  renderList();
+  renderNotes();
 }
 
 function selectList(id) {
   if (!lists.some((listData) => listData.id === id)) return;
   activeListId = id;
   save();
-  renderListTabs();
-  renderList();
+  renderNotes();
 }
 
 function deleteList(id) {
@@ -966,8 +1236,7 @@ function deleteList(id) {
     if (!window.confirm("Diesen Zettel wirklich vollständig leeren?")) return;
     listToDelete.items = [];
     save();
-    renderListTabs();
-    renderList();
+    renderNotes();
     return;
   }
 
@@ -977,11 +1246,45 @@ function deleteList(id) {
     activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0].id;
   }
   save();
-  renderListTabs();
-  renderList();
+  renderNotes();
 }
 
-function attachListTabEvents(button) {
+function renameList(id) {
+  const listData = listById(id);
+  pendingRenameListId = listData.id;
+  openModal(`
+    <h2 id="modalTitle">Zettel benennen</h2>
+    <div class="rename-form">
+      <input id="renameListInput" type="text" maxlength="24" value="${escapeText(listData.title)}">
+      <div class="modal-actions">
+        <button type="button" data-save-rename>Speichern</button>
+      </div>
+    </div>
+  `);
+  window.setTimeout(() => {
+    const input = elements.modalContent.querySelector("#renameListInput");
+    input?.focus();
+    input?.select();
+  }, 0);
+}
+
+function saveRenamedList() {
+  if (!pendingRenameListId) return;
+  const input = elements.modalContent.querySelector("#renameListInput");
+  if (!input) return;
+  const listData = listById(pendingRenameListId);
+  const nextTitle = input.value;
+  const cleanTitle = nextTitle.trim().slice(0, 24);
+  if (!cleanTitle) return;
+  listData.title = cleanTitle;
+  activeListId = listData.id;
+  pendingRenameListId = null;
+  save();
+  closeModal();
+  renderNotes();
+}
+
+function attachNoteLongPress(element, listId) {
   let longPressTimer = 0;
   let didLongPress = false;
   let startX = 0;
@@ -993,7 +1296,7 @@ function attachListTabEvents(button) {
     longPressTimer = 0;
   };
 
-  button.addEventListener("pointerdown", (event) => {
+  element.addEventListener("pointerdown", (event) => {
     didLongPress = false;
     startX = event.clientX;
     startY = event.clientY;
@@ -1001,29 +1304,29 @@ function attachListTabEvents(button) {
     longPressTimer = window.setTimeout(() => {
       didLongPress = true;
       clearTimer();
-      deleteList(button.dataset.listTab);
+      deleteList(listId);
     }, 650);
   });
 
-  button.addEventListener("pointermove", (event) => {
+  element.addEventListener("pointermove", (event) => {
     const distanceX = Math.abs(event.clientX - startX);
     const distanceY = Math.abs(event.clientY - startY);
     if (distanceX > 10 || distanceY > 10) clearTimer();
   });
 
   ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
-    button.addEventListener(eventName, clearTimer);
+    element.addEventListener(eventName, clearTimer);
   });
 
-  button.addEventListener("contextmenu", (event) => {
+  element.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     if (didLongPress) return;
     didLongPress = true;
     clearTimer();
-    deleteList(button.dataset.listTab);
+    deleteList(listId);
   });
 
-  button.addEventListener("click", (event) => {
+  element.addEventListener("click", (event) => {
     if (didLongPress) {
       event.preventDefault();
       event.stopPropagation();
@@ -1032,66 +1335,107 @@ function attachListTabEvents(button) {
       }, 0);
       return;
     }
-    selectList(button.dataset.listTab);
+    selectList(listId);
   });
 }
 
-function renderListTabs() {
-  elements.listTabs.innerHTML = `
-    ${lists.map((listData) => `
-      <button class="list-tab ${listData.id === activeListId ? "is-active" : ""}" type="button" data-list-tab="${escapeText(listData.id)}" title="Zum Wechseln tippen, zum Löschen lang drücken">
-        ${icon("note")}
-        <span>${escapeText(listData.title)}</span>
-      </button>
-    `).join("")}
-    <button class="list-add-tab" type="button" title="Neuen Zettel" aria-label="Neuen Zettel" data-add-list>
-      ${icon("plus")}
-    </button>
-  `;
-
-  elements.listTabs.querySelectorAll("[data-list-tab]").forEach(attachListTabEvents);
-  elements.listTabs.querySelector("[data-add-list]").addEventListener("click", addList);
-}
-
-function renderList() {
-  const currentList = activeList();
-  const items = currentList.items;
-  elements.activeListTitle.textContent = currentList.title;
-  elements.listCount.textContent = `${items.reduce((sum, item) => sum + item.quantity, 0)} Artikel`;
+function noteItemsMarkup(listData) {
+  const items = listData.items;
   if (!items.length) {
-    elements.shoppingList.innerHTML = '<li class="empty-state">Noch nichts auf dem Zettel.</li>';
-    return;
+    return '<li class="empty-state">Noch nichts auf dem Zettel.</li>';
   }
 
-  elements.shoppingList.innerHTML = items.map((item) => `
+  return items.map((item) => `
     <li class="list-item ${item.done ? "is-done" : ""}">
-      <input type="checkbox" ${item.done ? "checked" : ""} aria-label="${escapeText(item.name)} erledigt" data-done="${escapeText(item.id)}">
+      <input type="checkbox" ${item.done ? "checked" : ""} aria-label="${escapeText(item.name)} erledigt" data-done="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
       <div>
         <p class="list-name">${escapeText(item.name)}</p>
         <p class="list-shelf">${escapeText(item.shelfTitle)}</p>
       </div>
       <div class="quantity">
-        <button class="quantity-button" type="button" title="Weniger" aria-label="Weniger" data-minus="${escapeText(item.id)}">${icon("minus")}</button>
+        <button class="quantity-button" type="button" title="Weniger" aria-label="Weniger" data-minus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("minus")}</button>
         <span>${item.quantity}</span>
-        <button class="quantity-button" type="button" title="Mehr" aria-label="Mehr" data-plus="${escapeText(item.id)}">${icon("plus")}</button>
-        <button class="remove-button" type="button" title="Entfernen" aria-label="Entfernen" data-remove="${escapeText(item.id)}">
+        <button class="quantity-button" type="button" title="Mehr" aria-label="Mehr" data-plus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("plus")}</button>
+        <button class="remove-button" type="button" title="Entfernen" aria-label="Entfernen" data-remove="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
     </li>
   `).join("");
+}
 
-  elements.shoppingList.querySelectorAll("[data-done]").forEach((input) => {
-    input.addEventListener("change", () => toggleDone(input.dataset.done));
+function noteMarkup(listData) {
+  const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
+  return `
+    <article class="list-panel note-card ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
+      <button class="edit-note-button" type="button" title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
+        ${icon("pencil")}
+      </button>
+      <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
+        <h2 class="list-title">
+          <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
+          <span>${escapeText(listData.title)}</span>
+        </h2>
+        <div class="list-tools">
+          <span>${count} Artikel</span>
+          <button class="share-button" type="button" data-share-list="${escapeText(listData.id)}">Teilen</button>
+        </div>
+      </div>
+      <div class="manual-add">
+        <input type="text" placeholder="Eigener Artikel" data-manual-input="${escapeText(listData.id)}">
+        <button type="button" title="Hinzufügen" aria-label="Hinzufügen" data-manual-add="${escapeText(listData.id)}">
+          ${icon("plus")}
+        </button>
+      </div>
+      <ul class="shopping-list">
+        ${noteItemsMarkup(listData)}
+      </ul>
+    </article>
+  `;
+}
+
+function renderNotes() {
+  elements.notesStack.innerHTML = lists.map(noteMarkup).join("");
+
+  elements.notesStack.querySelectorAll("[data-note]").forEach((note) => {
+    note.addEventListener("click", (event) => {
+      if (event.target.closest("button, input")) return;
+      selectList(note.dataset.note);
+    });
   });
-  elements.shoppingList.querySelectorAll("[data-minus]").forEach((button) => {
-    button.addEventListener("click", () => updateQuantity(button.dataset.minus, -1));
+  elements.notesStack.querySelectorAll("[data-note-grip]").forEach((grip) => {
+    attachNoteLongPress(grip, grip.dataset.noteGrip);
   });
-  elements.shoppingList.querySelectorAll("[data-plus]").forEach((button) => {
-    button.addEventListener("click", () => updateQuantity(button.dataset.plus, 1));
+  elements.notesStack.querySelectorAll("[data-rename-list]").forEach((button) => {
+    button.addEventListener("click", () => renameList(button.dataset.renameList));
   });
-  elements.shoppingList.querySelectorAll("[data-remove]").forEach((button) => {
-    button.addEventListener("click", () => removeItem(button.dataset.remove));
+  elements.notesStack.querySelectorAll("[data-share-list]").forEach((button) => {
+    button.addEventListener("click", () => shareList(button.dataset.shareList));
+  });
+  elements.notesStack.querySelectorAll("[data-manual-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = elements.notesStack.querySelector(`[data-manual-input="${CSS.escape(button.dataset.manualAdd)}"]`);
+      if (!input) return;
+      addManualItem(button.dataset.manualAdd, input);
+    });
+  });
+  elements.notesStack.querySelectorAll("[data-manual-input]").forEach((input) => {
+    input.addEventListener("focus", () => selectList(input.dataset.manualInput));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") addManualItem(input.dataset.manualInput, input);
+    });
+  });
+  elements.notesStack.querySelectorAll("[data-done]").forEach((input) => {
+    input.addEventListener("change", () => toggleDone(input.dataset.done, input.dataset.listId));
+  });
+  elements.notesStack.querySelectorAll("[data-minus]").forEach((button) => {
+    button.addEventListener("click", () => updateQuantity(button.dataset.minus, -1, button.dataset.listId));
+  });
+  elements.notesStack.querySelectorAll("[data-plus]").forEach((button) => {
+    button.addEventListener("click", () => updateQuantity(button.dataset.plus, 1, button.dataset.listId));
+  });
+  elements.notesStack.querySelectorAll("[data-remove]").forEach((button) => {
+    button.addEventListener("click", () => removeItem(button.dataset.remove, button.dataset.listId));
   });
 }
 
@@ -1103,18 +1447,48 @@ function render() {
   if (activeView === "market") renderShelves();
   if (activeView === "products") renderProducts();
   if (activeView === "favorites") renderFavorites();
-  renderListTabs();
-  renderList();
+  renderNotes();
 }
 
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 elements.searchInput.addEventListener("input", render);
 elements.backButton.addEventListener("click", backToShelves);
-elements.manualAddButton.addEventListener("click", addManualItem);
-elements.manualInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") addManualItem();
+elements.addListButton.addEventListener("click", addList);
+elements.reorderDoneButton.addEventListener("click", exitShelfReorderMode);
+elements.imprintButton.addEventListener("click", showImprint);
+elements.bugreportButton.addEventListener("click", showBugreport);
+elements.moreButton.addEventListener("click", showMore);
+elements.modalCloseButton.addEventListener("click", closeModal);
+elements.modalLayer.addEventListener("click", (event) => {
+  if (event.target === elements.modalLayer) closeModal();
 });
-elements.shareListButton.addEventListener("click", shareList);
+elements.modalContent.addEventListener("click", (event) => {
+  const backgroundButton = event.target.closest(".background-choice[data-background]");
+  if (backgroundButton) {
+    backgroundTheme = backgroundButton.dataset.background;
+    save();
+    applyBackgroundTheme();
+    showBackgroundOptions();
+    return;
+  }
+  if (event.target.closest("[data-open-background]")) {
+    showBackgroundOptions();
+    return;
+  }
+  if (event.target.closest("[data-copy-bug]")) {
+    copyBugReport();
+    return;
+  }
+  if (event.target.closest("[data-save-rename]")) {
+    saveRenamedList();
+  }
+});
+elements.modalContent.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target.id === "renameListInput") {
+    saveRenamedList();
+  }
+});
 
+applyBackgroundTheme();
 importSharedListFromUrl();
 render();
