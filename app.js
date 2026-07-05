@@ -253,6 +253,8 @@ const shelves = [
 
 const storageKeys = {
   list: "shopping-list-app.items",
+  lists: "shopping-list-app.lists",
+  activeList: "shopping-list-app.active-list",
   favorites: "shopping-list-app.favorites"
 };
 
@@ -336,6 +338,7 @@ const iconPaths = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
+  note: '<path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/>',
   cart: '<path d="M3 4h2l2 12h10l3-8H6M9 20h.01M17 20h.01"/>'
 };
 
@@ -467,7 +470,8 @@ const productHatchPaths = [
 
 let activeView = "market";
 let selectedShelfId = null;
-let list = load(storageKeys.list, []);
+let lists = loadLists();
+let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id;
 let favorites = load(storageKeys.favorites, []);
 
 const elements = {
@@ -484,11 +488,12 @@ const elements = {
   favoriteCount: document.querySelector("#favoriteCount"),
   backButton: document.querySelector("#backButton"),
   shoppingList: document.querySelector("#shoppingList"),
+  listTabs: document.querySelector("#listTabs"),
+  activeListTitle: document.querySelector("#activeListTitle"),
   listCount: document.querySelector("#listCount"),
   manualInput: document.querySelector("#manualInput"),
   manualAddButton: document.querySelector("#manualAddButton"),
-  shareListButton: document.querySelector("#shareListButton"),
-  clearDoneButton: document.querySelector("#clearDoneButton")
+  shareListButton: document.querySelector("#shareListButton")
 };
 
 function load(key, fallback) {
@@ -499,8 +504,46 @@ function load(key, fallback) {
   }
 }
 
+function createList(title = "Dein Zettel", items = [], id = null) {
+  return {
+    id: id ?? `zettel:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    title,
+    items: Array.isArray(items) ? items : []
+  };
+}
+
+function loadLists() {
+  const storedLists = load(storageKeys.lists, null);
+  if (Array.isArray(storedLists) && storedLists.length) {
+    return storedLists.map((listData, index) => createList(
+      typeof listData.title === "string" && listData.title.trim() ? listData.title.trim() : (index === 0 ? "Dein Zettel" : `Zettel ${index + 1}`),
+      Array.isArray(listData.items) ? listData.items : [],
+      typeof listData.id === "string" && listData.id ? listData.id : `zettel:${index + 1}`
+    ));
+  }
+
+  const legacyList = load(storageKeys.list, []);
+  return [createList("Dein Zettel", Array.isArray(legacyList) ? legacyList : [], "zettel:1")];
+}
+
+function activeList() {
+  let currentList = lists.find((item) => item.id === activeListId);
+  if (!currentList) {
+    currentList = lists[0] ?? createList("Dein Zettel", [], "zettel:1");
+    lists = lists.length ? lists : [currentList];
+    activeListId = currentList.id;
+  }
+  return currentList;
+}
+
+function activeItems() {
+  return activeList().items;
+}
+
 function save() {
-  localStorage.setItem(storageKeys.list, JSON.stringify(list));
+  localStorage.setItem(storageKeys.lists, JSON.stringify(lists));
+  localStorage.setItem(storageKeys.activeList, activeListId);
+  localStorage.setItem(storageKeys.list, JSON.stringify(activeItems()));
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
 }
 
@@ -649,9 +692,10 @@ function importSharedListFromUrl() {
     const sharedList = sanitizeSharedList(decodeShareValue(payload));
     if (!sharedList.length) throw new Error("empty shared list");
 
-    const shouldImport = !list.length || window.confirm("Geteilten Zettel übernehmen und deinen aktuellen Zettel ersetzen?");
+    const currentList = activeList();
+    const shouldImport = !currentList.items.length || window.confirm("Geteilten Zettel übernehmen und deinen aktuellen Zettel ersetzen?");
     if (shouldImport) {
-      list = sharedList;
+      currentList.items = sharedList;
       save();
     }
   } catch {
@@ -663,13 +707,14 @@ function importSharedListFromUrl() {
 }
 
 async function shareList() {
-  if (!list.length) {
+  const items = activeItems();
+  if (!items.length) {
     window.alert("Dein Zettel ist noch leer.");
     return;
   }
 
   const url = new URL(window.location.href);
-  url.searchParams.set("zettel", encodeShareValue(list));
+  url.searchParams.set("zettel", encodeShareValue(items));
   url.hash = "";
   const shareData = {
     title: "Zettel",
@@ -737,11 +782,12 @@ function showAddFeedback(button) {
 
 function addToList(product) {
   triggerHapticFeedback();
-  const existing = list.find((item) => item.id === product.id);
+  const items = activeItems();
+  const existing = items.find((item) => item.id === product.id);
   if (existing) {
     existing.quantity += 1;
   } else {
-    list.push({ ...product, quantity: 1, done: false });
+    items.push({ ...product, quantity: 1, done: false });
   }
   save();
   renderList();
@@ -770,7 +816,8 @@ function toggleFavorite(product) {
 }
 
 function updateQuantity(id, delta) {
-  list = list
+  const currentList = activeList();
+  currentList.items = currentList.items
     .map((item) => item.id === id ? { ...item, quantity: item.quantity + delta } : item)
     .filter((item) => item.quantity > 0);
   save();
@@ -778,19 +825,22 @@ function updateQuantity(id, delta) {
 }
 
 function toggleDone(id) {
-  list = list.map((item) => item.id === id ? { ...item, done: !item.done } : item);
+  const currentList = activeList();
+  currentList.items = currentList.items.map((item) => item.id === id ? { ...item, done: !item.done } : item);
   save();
   renderList();
 }
 
 function removeItem(id) {
-  list = list.filter((item) => item.id !== id);
+  const currentList = activeList();
+  currentList.items = currentList.items.filter((item) => item.id !== id);
   save();
   renderList();
 }
 
 function clearDone() {
-  list = list.filter((item) => !item.done);
+  const currentList = activeList();
+  currentList.items = currentList.items.filter((item) => !item.done);
   save();
   renderList();
 }
@@ -882,14 +932,138 @@ function renderFavorites() {
   renderProductGrid(elements.favoriteGrid, products);
 }
 
+function nextListTitle() {
+  const highestNumber = lists.reduce((highest, listData) => {
+    const match = listData.title.match(/^Zettel\s+(\d+)$/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 1);
+  return `Zettel ${highestNumber + 1}`;
+}
+
+function addList() {
+  const newList = createList(nextListTitle());
+  lists.push(newList);
+  activeListId = newList.id;
+  save();
+  renderListTabs();
+  renderList();
+}
+
+function selectList(id) {
+  if (!lists.some((listData) => listData.id === id)) return;
+  activeListId = id;
+  save();
+  renderListTabs();
+  renderList();
+}
+
+function deleteList(id) {
+  const index = lists.findIndex((listData) => listData.id === id);
+  if (index === -1) return;
+
+  const listToDelete = lists[index];
+  if (lists.length === 1) {
+    if (!window.confirm("Diesen Zettel wirklich vollständig leeren?")) return;
+    listToDelete.items = [];
+    save();
+    renderListTabs();
+    renderList();
+    return;
+  }
+
+  if (!window.confirm(`"${listToDelete.title}" wirklich vollständig löschen?`)) return;
+  lists = lists.filter((listData) => listData.id !== id);
+  if (activeListId === id) {
+    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0].id;
+  }
+  save();
+  renderListTabs();
+  renderList();
+}
+
+function attachListTabEvents(button) {
+  let longPressTimer = 0;
+  let didLongPress = false;
+  let startX = 0;
+  let startY = 0;
+
+  const clearTimer = () => {
+    if (!longPressTimer) return;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = 0;
+  };
+
+  button.addEventListener("pointerdown", (event) => {
+    didLongPress = false;
+    startX = event.clientX;
+    startY = event.clientY;
+    clearTimer();
+    longPressTimer = window.setTimeout(() => {
+      didLongPress = true;
+      clearTimer();
+      deleteList(button.dataset.listTab);
+    }, 650);
+  });
+
+  button.addEventListener("pointermove", (event) => {
+    const distanceX = Math.abs(event.clientX - startX);
+    const distanceY = Math.abs(event.clientY - startY);
+    if (distanceX > 10 || distanceY > 10) clearTimer();
+  });
+
+  ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+    button.addEventListener(eventName, clearTimer);
+  });
+
+  button.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    if (didLongPress) return;
+    didLongPress = true;
+    clearTimer();
+    deleteList(button.dataset.listTab);
+  });
+
+  button.addEventListener("click", (event) => {
+    if (didLongPress) {
+      event.preventDefault();
+      event.stopPropagation();
+      window.setTimeout(() => {
+        didLongPress = false;
+      }, 0);
+      return;
+    }
+    selectList(button.dataset.listTab);
+  });
+}
+
+function renderListTabs() {
+  elements.listTabs.innerHTML = `
+    ${lists.map((listData) => `
+      <button class="list-tab ${listData.id === activeListId ? "is-active" : ""}" type="button" data-list-tab="${escapeText(listData.id)}" title="Zum Wechseln tippen, zum Löschen lang drücken">
+        ${icon("note")}
+        <span>${escapeText(listData.title)}</span>
+      </button>
+    `).join("")}
+    <button class="list-add-tab" type="button" title="Neuen Zettel" aria-label="Neuen Zettel" data-add-list>
+      ${icon("plus")}
+    </button>
+  `;
+
+  elements.listTabs.querySelectorAll("[data-list-tab]").forEach(attachListTabEvents);
+  elements.listTabs.querySelector("[data-add-list]").addEventListener("click", addList);
+}
+
 function renderList() {
-  elements.listCount.textContent = `${list.reduce((sum, item) => sum + item.quantity, 0)} Artikel`;
-  if (!list.length) {
+  const currentList = activeList();
+  const items = currentList.items;
+  elements.activeListTitle.textContent = currentList.title;
+  elements.listCount.textContent = `${items.reduce((sum, item) => sum + item.quantity, 0)} Artikel`;
+  if (!items.length) {
     elements.shoppingList.innerHTML = '<li class="empty-state">Noch nichts auf dem Zettel.</li>';
     return;
   }
 
-  elements.shoppingList.innerHTML = list.map((item) => `
+  elements.shoppingList.innerHTML = items.map((item) => `
     <li class="list-item ${item.done ? "is-done" : ""}">
       <input type="checkbox" ${item.done ? "checked" : ""} aria-label="${escapeText(item.name)} erledigt" data-done="${escapeText(item.id)}">
       <div>
@@ -929,6 +1103,7 @@ function render() {
   if (activeView === "market") renderShelves();
   if (activeView === "products") renderProducts();
   if (activeView === "favorites") renderFavorites();
+  renderListTabs();
   renderList();
 }
 
@@ -940,7 +1115,6 @@ elements.manualInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") addManualItem();
 });
 elements.shareListButton.addEventListener("click", shareList);
-elements.clearDoneButton.addEventListener("click", clearDone);
 
 importSharedListFromUrl();
 render();
