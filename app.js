@@ -2480,8 +2480,9 @@ function noteItemsMarkup(listData) {
 }
 
 function noteMarkup(listData) {
+  const member = ensureCurrentMember(listData);
   const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
-  const canAdd = canPerform(listData, "add");
+  const canAdd = Boolean(member) && canPerform(listData, "add");
   return `
     <article class="list-panel note-card ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
       <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
