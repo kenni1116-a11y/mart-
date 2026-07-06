@@ -2198,6 +2198,7 @@ function addList() {
 
 function selectList(id) {
   if (!lists.some((listData) => listData.id === id)) return;
+  if (activeListId === id) return;
   activeListId = id;
   save();
   renderNotes();
@@ -2545,9 +2546,6 @@ function renderNotes() {
       const input = form.querySelector("[data-manual-input]");
       addManualItem(form.dataset.manualForm, input);
     });
-  });
-  elements.notesStack.querySelectorAll("[data-manual-input]").forEach((input) => {
-    input.addEventListener("focus", () => selectList(input.dataset.manualInput));
   });
   elements.notesStack.querySelectorAll("[data-done]").forEach((input) => {
     input.addEventListener("change", () => toggleDone(input.dataset.done, input.dataset.listId));
