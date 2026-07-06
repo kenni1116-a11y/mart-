@@ -625,6 +625,7 @@ const storageKeys = {
   realtime: "shopping-list-app.mock-realtime",
   presence: "shopping-list-app.mock-presence",
   outbox: "shopping-list-app.sync-outbox",
+  syncQueue: "shopping-list-app.sync-write-queue",
   markets: "shopping-list-app.markets",
   productPrices: "shopping-list-app.product-prices",
   priceSync: "shopping-list-app.price-sync"
@@ -1087,10 +1088,12 @@ class SupabaseRealtimeService {
     this.listChannel = channel;
   }
 
-  publishLists(nextLists) {
+  publishLists(nextLists, options = {}) {
     this.fallback.publishLists(nextLists);
     if (!this.client) {
-      this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
+      if (options.queueOnFail !== false) {
+        this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
+      }
       return Promise.resolve({ ok: false, offline: true });
     }
 
@@ -1110,12 +1113,14 @@ class SupabaseRealtimeService {
       .upsert(rows, { onConflict: "id" })
       .then(({ error }) => {
         if (error) {
-          this.queueOffline({
-            type: "lists",
-            createdAt: isoNow(),
-            error: error.message,
-            lists: rows.map((row) => row.payload)
-          });
+          if (options.queueOnFail !== false) {
+            this.queueOffline({
+              type: "lists",
+              createdAt: isoNow(),
+              error: error.message,
+              lists: rows.map((row) => row.payload)
+            });
+          }
           return { ok: false, error: error.message };
         }
         return { ok: true };
@@ -1386,11 +1391,17 @@ let syncState = {
   lastSyncedAt: "",
   lastAttemptAt: "",
   lastError: "",
-  realtimeStatus: ""
+  realtimeStatus: "",
+  pendingWrites: 0
 };
 let remoteSyncPromise = null;
 let syncRenderTimer = 0;
 let pendingNotesRender = false;
+let pendingFullRender = false;
+let syncFlushTimer = 0;
+let isFlushingSyncQueue = false;
+let mainSearchRenderTimer = 0;
+let modalSearchRenderTimer = 0;
 
 const collaborationService = createCollaborationService();
 const marketService = new MockMarketService(defaultMarkets);
@@ -1852,11 +1863,52 @@ function activeItems() {
   return activeList().items;
 }
 
-function renderNotesSoon() {
+function captureScrollState() {
+  return {
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+    layoutLeft: document.querySelector(".layout")?.scrollLeft ?? 0,
+    modalTop: elements.modalLayer.classList.contains("is-hidden") ? 0 : (elements.modalLayer.querySelector(".modal-card")?.scrollTop ?? 0)
+  };
+}
+
+function restoreScrollState(snapshot) {
+  window.requestAnimationFrame(() => {
+    window.scrollTo(snapshot.windowX, snapshot.windowY);
+    const layout = document.querySelector(".layout");
+    if (layout) layout.scrollLeft = snapshot.layoutLeft;
+    const modalCard = elements.modalLayer.querySelector(".modal-card");
+    if (modalCard && !elements.modalLayer.classList.contains("is-hidden")) modalCard.scrollTop = snapshot.modalTop;
+  });
+}
+
+function withScrollPreserved(callback) {
+  const snapshot = captureScrollState();
+  callback();
+  restoreScrollState(snapshot);
+}
+
+function isModalOpen() {
+  return !elements.modalLayer.classList.contains("is-hidden");
+}
+
+function focusedEditableElement() {
+  const activeElement = document.activeElement;
+  if (!activeElement || activeElement === document.body) return null;
+  return activeElement.matches?.("input:not([type='checkbox']):not([type='radio']), textarea, [contenteditable='true']")
+    ? activeElement
+    : null;
+}
+
+function uiIsBusy() {
+  return Boolean(focusedEditableElement()) || isModalOpen();
+}
+
+function renderNotesSoon(options = {}) {
   if (!elements?.notesStack || syncRenderTimer) return;
   syncRenderTimer = window.setTimeout(() => {
     syncRenderTimer = 0;
-    renderNotes();
+    renderNotes(options);
   }, 0);
 }
 
@@ -1866,13 +1918,21 @@ function focusedManualInput() {
 }
 
 function shouldHoldNotesRender(options = {}) {
-  return !options.force && Boolean(focusedManualInput());
+  return options.background && !options.force && uiIsBusy();
+}
+
+function shouldHoldFullRender(options = {}) {
+  return options.background && !options.force && uiIsBusy();
 }
 
 function flushPendingNotesRender(delay = 180) {
-  if (!pendingNotesRender) return;
+  if (!pendingNotesRender && !pendingFullRender) return;
   window.setTimeout(() => {
-    if (focusedManualInput()) return;
+    if (uiIsBusy()) return;
+    if (pendingFullRender) {
+      render({ force: true });
+      return;
+    }
     renderNotes({ force: true });
   }, delay);
 }
@@ -1880,10 +1940,11 @@ function flushPendingNotesRender(delay = 180) {
 function setSyncState(status, details = {}) {
   syncState = {
     ...syncState,
+    pendingWrites: syncQueueLength(),
     status,
     ...details
   };
-  renderNotesSoon();
+  renderNotesSoon({ background: true });
 }
 
 function markSyncAttempt() {
@@ -1908,6 +1969,117 @@ function markSyncError(error) {
   });
 }
 
+function syncQueue() {
+  const queue = load(storageKeys.syncQueue, []);
+  return Array.isArray(queue) ? queue.filter((operation) => operation?.type === "lists" && Array.isArray(operation.lists)) : [];
+}
+
+function syncQueueLength() {
+  return syncQueue().length;
+}
+
+function storeSyncQueue(queue) {
+  const nextQueue = queue.slice(-30);
+  localStorage.setItem(storageKeys.syncQueue, JSON.stringify(nextQueue));
+  syncState.pendingWrites = nextQueue.length;
+}
+
+function syncSnapshot(sourceLists = lists) {
+  return sourceLists.map(exportCollaborativeList);
+}
+
+function queueSyncWrite(sourceLists = lists, reason = "save", error = "") {
+  const payload = syncSnapshot(sourceLists);
+  const signature = JSON.stringify(payload.map((listData) => [listData.listId, listData.updatedAt, listData.items?.length ?? 0]));
+  const queue = syncQueue().filter((operation) => operation.signature !== signature);
+  queue.push({
+    id: `sync:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    type: "lists",
+    reason,
+    signature,
+    createdAt: isoNow(),
+    lastAttemptAt: "",
+    attempts: 0,
+    error: typeof error === "string" ? error : (error?.message ?? ""),
+    lists: payload
+  });
+  storeSyncQueue(queue);
+  scheduleSyncFlush(2500);
+}
+
+function listsFromSyncOperation(operation) {
+  return operation.lists.map(importedListFromValue).filter(Boolean);
+}
+
+async function publishListSnapshot(sourceLists = lists, reason = "save", options = {}) {
+  markSyncAttempt();
+  try {
+    const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
+    if (result?.ok === false) {
+      if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, result.error || "Änderungen warten auf Verbindung");
+      markSyncError(result.error || "Änderungen warten auf Verbindung");
+      return false;
+    }
+    markSyncSuccess();
+    if (syncQueueLength()) scheduleSyncFlush(400);
+    pullRemoteListsSoon("after-write", 900);
+    return true;
+  } catch (error) {
+    if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, error);
+    markSyncError(error);
+    return false;
+  }
+}
+
+function scheduleSyncFlush(delay = 1200) {
+  if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
+  syncFlushTimer = window.setTimeout(() => {
+    syncFlushTimer = 0;
+    flushSyncQueue();
+  }, delay);
+}
+
+async function flushSyncQueue() {
+  if (isFlushingSyncQueue || !navigator.onLine) return false;
+  let queue = syncQueue();
+  if (!queue.length) {
+    storeSyncQueue([]);
+    return true;
+  }
+  isFlushingSyncQueue = true;
+  markSyncAttempt();
+  try {
+    for (let index = 0; index < queue.length; index += 1) {
+      const operation = queue[index];
+      const sourceLists = listsFromSyncOperation(operation);
+      if (!sourceLists.length) continue;
+      const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
+      if (result?.ok === false) {
+        const failedOperation = {
+          ...operation,
+          attempts: Number(operation.attempts || 0) + 1,
+          lastAttemptAt: isoNow(),
+          error: result.error || "Sync wartet auf Verbindung"
+        };
+        storeSyncQueue([failedOperation, ...queue.slice(index + 1)].slice(-30));
+        markSyncError(failedOperation.error);
+        scheduleSyncFlush(8000);
+        return false;
+      }
+    }
+    storeSyncQueue([]);
+    markSyncSuccess();
+    pullRemoteListsSoon("outbox-flushed", 900);
+    return true;
+  } catch (error) {
+    markSyncError(error);
+    scheduleSyncFlush(8000);
+    return false;
+  } finally {
+    isFlushingSyncQueue = false;
+  }
+}
+
 function save(options = {}) {
   lists = lists.map(normalizeListData);
   localStorage.setItem(storageKeys.lists, JSON.stringify(lists));
@@ -1917,17 +2089,7 @@ function save(options = {}) {
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
   if (options.broadcast !== false) {
-    markSyncAttempt();
-    Promise.resolve(collaborationService.publishLists(lists))
-      .then((result) => {
-        if (result?.ok === false) {
-          markSyncError(result.error || "Änderungen warten auf Verbindung");
-          return;
-        }
-        markSyncSuccess();
-        pullRemoteListsSoon("after-write", 900);
-      })
-      .catch((error) => markSyncError(error));
+    publishListSnapshot(lists, options.reason || "save");
   }
 }
 
@@ -2555,7 +2717,7 @@ function mergeRemoteLists(remoteLists) {
   });
   if (!didChange) return false;
   save({ broadcast: false });
-  render();
+  render({ background: true });
   return true;
 }
 
@@ -2572,7 +2734,7 @@ async function pullRemoteLists(reason = "auto") {
       }
       const didChange = mergeRemoteLists(remoteLists);
       markSyncSuccess();
-      if (!didChange && reason === "manual") renderNotes();
+      if (!didChange && reason === "manual") renderNotes({ force: true });
       return true;
     } catch (error) {
       markSyncError(error);
@@ -2860,9 +3022,14 @@ function openModal(content) {
 }
 
 function closeModal() {
+  if (modalSearchRenderTimer) {
+    window.clearTimeout(modalSearchRenderTimer);
+    modalSearchRenderTimer = 0;
+  }
   elements.modalLayer.classList.add("is-hidden");
   elements.modalLayer.setAttribute("aria-hidden", "true");
   elements.modalContent.innerHTML = "";
+  flushPendingNotesRender();
 }
 
 function showImprint() {
@@ -3878,6 +4045,8 @@ function relativeSyncTime(value) {
 }
 
 function syncStatusLabel() {
+  if (syncState.pendingWrites > 0 && syncState.status === "syncing") return "sendet";
+  if (syncState.pendingWrites > 0) return `wartet · ${syncState.pendingWrites}`;
   if (syncState.status === "syncing") return "sync";
   if (syncState.status === "offline") return "offline";
   if (syncState.status === "error") return "prüfen";
@@ -3886,6 +4055,7 @@ function syncStatusLabel() {
 }
 
 function syncStatusTitle() {
+  if (syncState.pendingWrites > 0) return `${syncState.pendingWrites} Änderung${syncState.pendingWrites === 1 ? "" : "en"} warten auf Synchronisierung.`;
   if (syncState.status === "syncing") return "Synchronisierung läuft.";
   if (syncState.status === "offline") return "Offline. Änderungen werden lokal behalten und später erneut gesendet.";
   if (syncState.status === "error") return `Sync prüfen: ${syncState.lastError || "unbekannter Fehler"}`;
@@ -4055,6 +4225,7 @@ function renderNotes(options = {}) {
     return;
   }
   pendingNotesRender = false;
+  withScrollPreserved(() => {
   elements.notesStack.innerHTML = lists.map(noteMarkup).join("");
 
   elements.notesStack.querySelectorAll("[data-note]").forEach((note) => {
@@ -4115,9 +4286,16 @@ function renderNotes(options = {}) {
   elements.notesStack.querySelectorAll("[data-remove]").forEach((button) => {
     button.addEventListener("click", () => removeItem(button.dataset.remove, button.dataset.listId));
   });
+  });
 }
 
-function render() {
+function render(options = {}) {
+  if (shouldHoldFullRender(options)) {
+    pendingFullRender = true;
+    return;
+  }
+  pendingFullRender = false;
+  withScrollPreserved(() => {
   elements.marketView.classList.toggle("is-hidden", activeView !== "market");
   elements.productsView.classList.toggle("is-hidden", activeView !== "products");
   elements.favoritesView.classList.toggle("is-hidden", activeView !== "favorites");
@@ -4125,11 +4303,36 @@ function render() {
   if (activeView === "market") renderShelves();
   if (activeView === "products") renderProducts();
   if (activeView === "favorites") renderFavorites();
-  renderNotes();
+  renderNotes({ force: options.force });
+  });
+}
+
+function scheduleMainSearchRender() {
+  if (mainSearchRenderTimer) window.clearTimeout(mainSearchRenderTimer);
+  mainSearchRenderTimer = window.setTimeout(() => {
+    mainSearchRenderTimer = 0;
+    render({ force: true });
+  }, 120);
+}
+
+function scheduleMarketSearchRender(query, selectedMarketId) {
+  if (modalSearchRenderTimer) window.clearTimeout(modalSearchRenderTimer);
+  modalSearchRenderTimer = window.setTimeout(() => {
+    modalSearchRenderTimer = 0;
+    renderMarketSearchResults(query, selectedMarketId);
+  }, 140);
+}
+
+function schedulePriceSearchRender(query) {
+  if (modalSearchRenderTimer) window.clearTimeout(modalSearchRenderTimer);
+  modalSearchRenderTimer = window.setTimeout(() => {
+    modalSearchRenderTimer = 0;
+    renderProductPriceRows(query);
+  }, 140);
 }
 
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
-elements.searchInput.addEventListener("input", render);
+elements.searchInput.addEventListener("input", scheduleMainSearchRender);
 elements.backButton.addEventListener("click", backToShelves);
 elements.addListButton.addEventListener("click", addList);
 elements.reorderDoneButton.addEventListener("click", exitShelfReorderMode);
@@ -4265,11 +4468,11 @@ elements.modalContent.addEventListener("click", (event) => {
 });
 elements.modalContent.addEventListener("input", (event) => {
   if (event.target.matches("[data-market-search-input]")) {
-    renderMarketSearchResults(event.target.value, marketSearchState.selectedMarketId);
+    scheduleMarketSearchRender(event.target.value, marketSearchState.selectedMarketId);
     return;
   }
   if (event.target.matches("[data-price-market-search]")) {
-    renderProductPriceRows(event.target.value);
+    schedulePriceSearchRender(event.target.value);
   }
 });
 elements.modalContent.addEventListener("keydown", (event) => {
@@ -4291,8 +4494,14 @@ function updatePresence() {
   activeMembersByList[listData.id] = collaborationService.heartbeat(listData, currentUser);
 }
 
+async function refreshRealtimeNow(reason) {
+  await flushSyncQueue();
+  return pullRemoteLists(reason);
+}
+
 async function bootApp() {
   applyBackgroundTheme();
+  syncState.pendingWrites = syncQueueLength();
   const authUser = await collaborationService.initializeUser?.(currentUser);
   if (authUser?.id) {
     adoptCurrentUserId(authUser.id);
@@ -4316,21 +4525,23 @@ async function bootApp() {
     }
     if (message.type === "presence" && message.listId) {
       activeMembersByList[message.listId] = message.members;
-      renderNotes();
+      renderNotes({ background: true });
       if (message.members.some((member) => member.userId !== currentUser.userId)) {
         pullRemoteListsSoon("presence", 700);
       }
     }
   });
   await pullRemoteLists("boot");
+  scheduleSyncFlush(900);
   updatePresence();
   window.setInterval(updatePresence, 15000);
-  window.setInterval(() => pullRemoteLists("interval"), 12000);
-  window.addEventListener("online", () => pullRemoteLists("online"));
+  window.setInterval(() => refreshRealtimeNow("interval"), 12000);
+  window.addEventListener("online", () => refreshRealtimeNow("online"));
   window.addEventListener("offline", () => markSyncError("offline"));
-  window.addEventListener("focus", () => pullRemoteLists("focus"));
+  window.addEventListener("focus", () => refreshRealtimeNow("focus"));
+  document.addEventListener("focusout", () => flushPendingNotesRender(220));
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) pullRemoteLists("visible");
+    if (!document.hidden) refreshRealtimeNow("visible");
   });
   render();
 }
