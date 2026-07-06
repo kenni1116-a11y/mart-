@@ -242,6 +242,42 @@ h2 {
   gap: 16px;
 }
 
+.notes-board.is-empty {
+  min-height: min(58vh, 620px);
+  display: grid;
+  align-content: center;
+}
+
+.notes-board.is-empty .notes-board-actions {
+  display: none;
+}
+
+.notes-board.is-empty .notes-stack {
+  min-height: 42vh;
+  place-items: center;
+}
+
+.empty-notes-state {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 38vh;
+}
+
+.add-note-button-large {
+  min-height: 54px;
+  padding: 0 24px;
+  border-radius: 999px;
+  background: rgba(255, 253, 246, 0.72);
+  font-size: 1rem;
+  box-shadow: 0 18px 34px rgba(72, 63, 42, 0.12);
+}
+
+.add-note-button-large svg {
+  width: 21px;
+  height: 21px;
+}
+
 .list-panel {
   padding: 15px 14px 12px;
   position: relative;

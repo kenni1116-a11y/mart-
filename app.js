@@ -614,6 +614,209 @@ const defaultMarkets = [
   }
 ];
 
+const externalMarketSeeds = [
+  {
+    id: "osm:node-244914835",
+    name: "REWE",
+    kategorie: "Supermarkt",
+    adresse: "Deutzer Freiheit 84",
+    plz: "50679",
+    ort: "Köln",
+    latitude: 50.936709,
+    longitude: 6.974785,
+    entfernung: 1.2,
+    websiteUrl: "https://www.rewe-rahmati.de/index.php/maerkte/deutzer-freiheit",
+    prospectUrl: "https://www.rewe.de/angebote/",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-348474184",
+    name: "REWE To Go",
+    kategorie: "Convenience",
+    adresse: "Innenstadt",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.936698,
+    longitude: 6.956157,
+    entfernung: 0.3,
+    websiteUrl: "https://www.rewe.de",
+    prospectUrl: "https://www.rewe.de/angebote/",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-360389419",
+    name: "REWE City",
+    kategorie: "Supermarkt",
+    adresse: "Innenstadt",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.935505,
+    longitude: 6.9567,
+    entfernung: 0.4,
+    websiteUrl: "https://www.rewe.de",
+    prospectUrl: "https://www.rewe.de/angebote/",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-257808770",
+    name: "REWE City",
+    kategorie: "Supermarkt",
+    adresse: "Neusser Straße 292-294",
+    plz: "50733",
+    ort: "Köln",
+    latitude: 50.965414,
+    longitude: 6.953752,
+    entfernung: 3.1,
+    websiteUrl: "https://www.rewe.de/marktseite/rewe-city-markt-k%C3%B6ln-neusser-stra%C3%9Fe-292-294",
+    prospectUrl: "https://www.rewe.de/angebote/",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-256665876",
+    name: "Aldi Süd",
+    kategorie: "Discounter",
+    adresse: "Neusser Straße 216",
+    plz: "50733",
+    ort: "Köln",
+    latitude: 50.96177,
+    longitude: 6.954578,
+    entfernung: 2.7,
+    websiteUrl: "https://www.aldi-sued.de/filialen/l/koeln/neusser-strasse-216/b331",
+    prospectUrl: "https://www.aldi-sued.de/de/angebote.html",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-338448083",
+    name: "Aldi Süd",
+    kategorie: "Discounter",
+    adresse: "Venloer Straße 377",
+    plz: "50825",
+    ort: "Köln",
+    latitude: 50.950199,
+    longitude: 6.916348,
+    entfernung: 3.4,
+    websiteUrl: "https://www.aldi-sued.de/filialen/l/koeln/venloer-strasse-377/b371",
+    prospectUrl: "https://www.aldi-sued.de/de/angebote.html",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-242515981",
+    name: "Netto City",
+    kategorie: "Discounter",
+    adresse: "Severinstraße 83",
+    plz: "50678",
+    ort: "Köln",
+    latitude: 50.925526,
+    longitude: 6.958147,
+    entfernung: 1.5,
+    websiteUrl: "https://www.netto-online.de/filialen/koeln/severinstr-83/6979",
+    prospectUrl: "https://www.netto-online.de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-232289350",
+    name: "Netto Marken-Discount",
+    kategorie: "Discounter",
+    adresse: "Merheimer Straße 54",
+    plz: "50733",
+    ort: "Köln",
+    latitude: 50.958592,
+    longitude: 6.9498,
+    entfernung: 2.3,
+    websiteUrl: "https://www.netto-online.de/filialen/koeln/merheimer-str-54/6797",
+    prospectUrl: "https://www.netto-online.de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-266567766",
+    name: "NORMA",
+    kategorie: "Discounter",
+    adresse: "Mülheim",
+    plz: "51063",
+    ort: "Köln",
+    latitude: 50.968977,
+    longitude: 6.97456,
+    entfernung: 3.6,
+    websiteUrl: "https://www.norma-online.de",
+    prospectUrl: "https://www.norma-online.de/de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-366964662",
+    name: "PENNY",
+    kategorie: "Discounter",
+    adresse: "Zollstockgürtel 37",
+    plz: "50969",
+    ort: "Köln",
+    latitude: 50.90559,
+    longitude: 6.938672,
+    entfernung: 4.0,
+    websiteUrl: "https://www.penny.de/",
+    prospectUrl: "https://www.penny.de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  },
+  {
+    id: "osm:node-252043800",
+    name: "Merzenich",
+    kategorie: "Bäckerei",
+    adresse: "Nippes",
+    plz: "50733",
+    ort: "Köln",
+    latitude: 50.963525,
+    longitude: 6.95415,
+    entfernung: 2.9,
+    websiteUrl: "https://www.merzenich.de",
+    prospectUrl: "https://www.merzenich.de",
+    logoUrl: "",
+    icon: "bread",
+    source: "OpenStreetMap/Overpass, Abruf 2026-07-06",
+    isDefaultMarket: false,
+    isUserAdded: false
+  }
+];
+
+const marketBaseCatalog = [...defaultMarkets, ...externalMarketSeeds];
+
 const storageKeys = {
   list: "shopping-list-app.items",
   lists: "shopping-list-app.lists",
@@ -990,6 +1193,10 @@ class SupabaseRealtimeService {
     this.presenceChannels = new Map();
     this.clientId = fallback.clientId;
     this.tableName = this.config.sharedListsTable || "shared_lists";
+    this.listTable = this.config.listsTable || "shopping_lists";
+    this.memberTable = this.config.membersTable || "list_members";
+    this.itemTable = this.config.itemsTable || "list_items";
+    this.profileTable = this.config.profilesTable || "profiles";
     this.url = this.config.url || this.config.projectUrl || "";
     this.publishableKey = this.config.publishableKey || this.config.anonKey || "";
     this.authUserId = "";
@@ -1057,17 +1264,37 @@ class SupabaseRealtimeService {
 
   openListChannel() {
     if (!this.client || this.listChannel) return;
+    const notifyRemoteChange = (payload) => {
+      const row = payload.new ?? payload.old ?? {};
+      this.notify({
+        type: "remote-changed",
+        sourceId: "supabase",
+        sentAt: isoNow(),
+        listId: row.list_id ?? row.id ?? ""
+      });
+    };
     const channel = this.client
-      .channel("mart-shared-lists")
+      .channel("mart-collaboration-tables")
+      .on("postgres_changes", { event: "*", schema: "public", table: this.listTable }, notifyRemoteChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: this.memberTable }, notifyRemoteChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: this.itemTable }, notifyRemoteChange)
       .on("postgres_changes", { event: "*", schema: "public", table: this.tableName }, (payload) => {
         const row = payload.new ?? payload.old;
         const listPayload = row?.payload;
-        if (!listPayload) return;
+        if (listPayload) {
+          this.notify({
+            type: "lists",
+            sourceId: "supabase",
+            sentAt: isoNow(),
+            lists: [listPayload]
+          });
+          return;
+        }
         this.notify({
-          type: "lists",
+          type: "remote-changed",
           sourceId: "supabase",
           sentAt: isoNow(),
-          lists: [listPayload]
+          listId: row?.id ?? ""
         });
       })
       .subscribe((status, error) => {
@@ -1088,7 +1315,260 @@ class SupabaseRealtimeService {
     this.listChannel = channel;
   }
 
-  publishLists(nextLists, options = {}) {
+  isMissingRelationalSchema(error) {
+    const message = `${error?.code ?? ""} ${error?.message ?? ""}`;
+    return message.includes("42P01")
+      || message.includes("PGRST205")
+      || message.includes(this.listTable)
+      || message.includes(this.memberTable)
+      || message.includes(this.itemTable);
+  }
+
+  userIdValue(value) {
+    return isUuid(value) ? value : null;
+  }
+
+  async upsertProfile(user) {
+    if (!this.client) return { ok: false, offline: true };
+    const authUser = await this.ensureAuthenticated(user);
+    if (!authUser?.id) return { ok: false, error: "Keine Nutzerkennung" };
+    const profileRow = {
+      id: authUser.id,
+      display_name: cleanDisplayName(user.displayName, "Gast"),
+      avatar_url: typeof user.avatarUrl === "string" ? user.avatarUrl : "",
+      updated_at: isoNow(),
+      last_seen_at: isoNow()
+    };
+    const { error } = await this.client
+      .from(this.profileTable)
+      .upsert(profileRow, { onConflict: "id" });
+    return error ? { ok: false, error: error.message, rawError: error } : { ok: true, userId: authUser.id };
+  }
+
+  listRowFromList(listData) {
+    const payload = exportCollaborativeList(listData);
+    return {
+      id: payload.listId,
+      name: payload.listName,
+      owner_user_id: this.userIdValue(payload.ownerId),
+      invite_code: payload.inviteCode,
+      created_at: payload.createdAt,
+      updated_at: payload.updatedAt,
+      updated_by_user_id: this.userIdValue(payload.updatedByUserId),
+      deleted_at: payload.deletedAt || null,
+      deleted_by_user_id: this.userIdValue(payload.deletedByUserId),
+      revision: Number(payload.revision || 0)
+    };
+  }
+
+  memberRowsFromList(listData) {
+    const normalized = normalizeListData(listData);
+    const rowsByUser = new Map();
+    normalized.members.forEach((member) => {
+      if (!this.userIdValue(member.userId)) return;
+      rowsByUser.set(member.userId, {
+        list_id: normalized.id,
+        user_id: member.userId,
+        display_name: cleanDisplayName(member.displayName, "Gast"),
+        avatar_url: typeof member.avatarUrl === "string" ? member.avatarUrl : "",
+        role: normalizeRole(member.role),
+        invited_by_user_id: this.userIdValue(normalized.ownerId),
+        joined_at: safeDate(member.joinedAt, normalized.createdAt),
+        removed_at: null,
+        removed_by_user_id: null
+      });
+    });
+    normalized.removedMembers.forEach((entry) => {
+      if (!this.userIdValue(entry.userId)) return;
+      const existing = rowsByUser.get(entry.userId);
+      rowsByUser.set(entry.userId, {
+        list_id: normalized.id,
+        user_id: entry.userId,
+        display_name: existing?.display_name ?? "Gast",
+        avatar_url: existing?.avatar_url ?? "",
+        role: existing?.role ?? collaborationRoles.editor,
+        invited_by_user_id: existing?.invited_by_user_id ?? this.userIdValue(normalized.ownerId),
+        joined_at: existing?.joined_at ?? normalized.createdAt,
+        removed_at: safeDate(entry.removedAt, normalized.updatedAt),
+        removed_by_user_id: this.userIdValue(entry.removedByUserId)
+      });
+    });
+    return Array.from(rowsByUser.values());
+  }
+
+  itemRowsFromList(listData) {
+    const normalized = normalizeListData(listData);
+    const rowsByItem = new Map();
+    normalized.items.forEach((item) => {
+      rowsByItem.set(item.id, {
+        list_id: normalized.id,
+        item_id: item.id,
+        product_id: item.id.startsWith("manual:") ? null : item.id,
+        name: item.name,
+        shelf_id: item.shelfId,
+        shelf_title: item.shelfTitle,
+        shelf_icon: item.shelfIcon ?? "",
+        quantity: item.quantity,
+        done: item.done,
+        note: item.note ?? "",
+        added_by_user_id: this.userIdValue(item.addedByUserId),
+        added_by_display_name: cleanDisplayName(item.addedByDisplayName, "Gast"),
+        added_by_avatar_url: typeof item.addedByAvatarUrl === "string" ? item.addedByAvatarUrl : "",
+        checked_by_user_id: this.userIdValue(item.checkedByUserId),
+        checked_at: item.checkedAt || null,
+        updated_by_user_id: this.userIdValue(item.updatedByUserId),
+        updated_at: item.updatedAt,
+        deleted_at: null,
+        deleted_by_user_id: null,
+        revision: Number(item.revision || 0)
+      });
+    });
+    normalized.deletedItems.forEach((entry) => {
+      if (!entry?.id) return;
+      const existing = rowsByItem.get(entry.id);
+      rowsByItem.set(entry.id, {
+        ...(existing ?? {
+          list_id: normalized.id,
+          item_id: entry.id,
+          product_id: null,
+          name: "",
+          shelf_id: "",
+          shelf_title: "",
+          shelf_icon: "",
+          quantity: 1,
+          done: false,
+          note: "",
+          added_by_user_id: null,
+          added_by_display_name: "Gast",
+          added_by_avatar_url: "",
+          checked_by_user_id: null,
+          checked_at: null,
+          updated_by_user_id: null,
+          updated_at: safeDate(entry.deletedAt, normalized.updatedAt),
+          revision: 0
+        }),
+        deleted_at: safeDate(entry.deletedAt, normalized.updatedAt),
+        deleted_by_user_id: this.userIdValue(entry.deletedByUserId)
+      });
+    });
+    return Array.from(rowsByItem.values());
+  }
+
+  listFromRelationalRows(listRow, memberRows, itemRows) {
+    const members = memberRows
+      .filter((row) => row.list_id === listRow.id && !row.removed_at)
+      .map((row) => ({
+        userId: row.user_id,
+        displayName: cleanDisplayName(row.display_name, row.user_id === listRow.owner_user_id ? "Owner" : "Gast"),
+        avatarUrl: typeof row.avatar_url === "string" ? row.avatar_url : "",
+        role: row.user_id === listRow.owner_user_id ? collaborationRoles.owner : normalizeRole(row.role),
+        joinedAt: safeDate(row.joined_at, listRow.created_at)
+      }));
+    const removedMembers = memberRows
+      .filter((row) => row.list_id === listRow.id && row.removed_at)
+      .map((row) => ({
+        userId: row.user_id,
+        removedByUserId: row.removed_by_user_id ?? "",
+        removedAt: safeDate(row.removed_at, listRow.updated_at)
+      }));
+    const listItems = itemRows.filter((row) => row.list_id === listRow.id);
+    const deletedItems = listItems
+      .filter((row) => row.deleted_at)
+      .map((row) => ({
+        id: row.item_id,
+        deletedByUserId: row.deleted_by_user_id ?? "",
+        deletedAt: safeDate(row.deleted_at, row.updated_at)
+      }));
+    const items = listItems
+      .filter((row) => !row.deleted_at)
+      .map((row, index) => normalizeShoppingItem({
+        id: row.item_id,
+        name: row.name,
+        shelfId: row.shelf_id,
+        shelfTitle: row.shelf_title,
+        shelfIcon: row.shelf_icon,
+        quantity: row.quantity,
+        done: row.done,
+        note: row.note,
+        addedByUserId: row.added_by_user_id,
+        addedByDisplayName: row.added_by_display_name,
+        addedByAvatarUrl: row.added_by_avatar_url,
+        checkedByUserId: row.checked_by_user_id,
+        checkedAt: row.checked_at,
+        updatedByUserId: row.updated_by_user_id,
+        updatedAt: row.updated_at,
+        revision: row.revision
+      }, index))
+      .filter(Boolean);
+    return normalizeListData({
+      id: listRow.id,
+      listId: listRow.id,
+      title: listRow.name,
+      listName: listRow.name,
+      ownerId: listRow.owner_user_id,
+      inviteCode: listRow.invite_code,
+      members,
+      permissions: defaultListPermissions,
+      createdAt: listRow.created_at,
+      updatedAt: listRow.updated_at,
+      updatedByUserId: listRow.updated_by_user_id,
+      deletedAt: listRow.deleted_at,
+      deletedByUserId: listRow.deleted_by_user_id,
+      revision: listRow.revision,
+      deletedItems,
+      removedMembers,
+      items
+    });
+  }
+
+  async publishRelationalLists(nextLists, user = currentUser) {
+    const profileResult = await this.upsertProfile(user);
+    if (profileResult.ok === false) return profileResult;
+    const normalizedLists = nextLists.map(normalizeListData);
+    const listRows = normalizedLists.map((listData) => this.listRowFromList(listData));
+    const memberRows = normalizedLists.flatMap((listData) => this.memberRowsFromList(listData));
+    const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
+
+    if (listRows.length) {
+      const { error } = await this.client.from(this.listTable).upsert(listRows, { onConflict: "id" });
+      if (error) return { ok: false, error: error.message, rawError: error };
+    }
+    if (memberRows.length) {
+      const { error } = await this.client.from(this.memberTable).upsert(memberRows, { onConflict: "list_id,user_id" });
+      if (error) return { ok: false, error: error.message, rawError: error };
+    }
+    if (itemRows.length) {
+      const { error } = await this.client.from(this.itemTable).upsert(itemRows, { onConflict: "list_id,item_id" });
+      if (error) return { ok: false, error: error.message, rawError: error };
+    }
+    return { ok: true, relational: true };
+  }
+
+  async fetchRelationalLists(user) {
+    const profileResult = await this.upsertProfile(user);
+    if (profileResult.ok === false) return profileResult;
+    const { data: listRows, error: listError } = await this.client
+      .from(this.listTable)
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(200);
+    if (listError) return { ok: false, error: listError.message, rawError: listError };
+    const listIds = (Array.isArray(listRows) ? listRows : []).map((row) => row.id);
+    if (!listIds.length) return { ok: true, lists: [] };
+
+    const [{ data: memberRows, error: memberError }, { data: itemRows, error: itemError }] = await Promise.all([
+      this.client.from(this.memberTable).select("*").in("list_id", listIds),
+      this.client.from(this.itemTable).select("*").in("list_id", listIds)
+    ]);
+    if (memberError) return { ok: false, error: memberError.message, rawError: memberError };
+    if (itemError) return { ok: false, error: itemError.message, rawError: itemError };
+    return {
+      ok: true,
+      lists: listRows.map((listRow) => this.listFromRelationalRows(listRow, memberRows ?? [], itemRows ?? []))
+    };
+  }
+
+  publishLegacyLists(nextLists, options = {}) {
     this.fallback.publishLists(nextLists);
     if (!this.client) {
       if (options.queueOnFail !== false) {
@@ -1127,6 +1607,30 @@ class SupabaseRealtimeService {
       });
   }
 
+  async publishLists(nextLists, options = {}) {
+    this.fallback.publishLists(nextLists);
+    if (!this.client) {
+      if (options.queueOnFail !== false) {
+        this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
+      }
+      return Promise.resolve({ ok: false, offline: true });
+    }
+
+    const result = await this.publishRelationalLists(nextLists, currentUser);
+    if (result.ok || !this.isMissingRelationalSchema(result.rawError)) return result;
+    return this.publishLegacyLists(nextLists, options);
+  }
+
+  async fetchLegacyLists() {
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select("payload, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    if (error) return { ok: false, error: error.message, rawError: error };
+    return { ok: true, lists: Array.isArray(data) ? data.map((row) => row.payload).filter(Boolean) : [] };
+  }
+
   async fetchSharedLists(user) {
     if (!this.client) {
       this.queueOffline({
@@ -1138,26 +1642,55 @@ class SupabaseRealtimeService {
     }
     const authUser = await this.ensureAuthenticated(user);
     if (!authUser) return null;
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .select("payload, updated_at")
-      .order("updated_at", { ascending: false })
-      .limit(100);
-    if (error) {
+    const relationalResult = await this.fetchRelationalLists(user);
+    if (relationalResult.ok) {
+      const legacyResult = await this.fetchLegacyLists();
+      const legacyLists = legacyResult.ok ? legacyResult.lists : [];
+      const relationalIds = new Set(relationalResult.lists.map((listData) => listData?.id).filter(Boolean));
+      const fallbackLists = legacyLists.filter((listData) => !relationalIds.has(listData?.id));
+      return [...relationalResult.lists, ...fallbackLists];
+    }
+    if (!this.isMissingRelationalSchema(relationalResult.rawError)) {
       this.queueOffline({
         type: "pull",
         createdAt: isoNow(),
-        error: error.message
+        error: relationalResult.error
       });
       return null;
     }
-    return Array.isArray(data) ? data.map((row) => row.payload).filter(Boolean) : [];
+    const legacyResult = await this.fetchLegacyLists();
+    if (!legacyResult.ok) {
+      this.queueOffline({ type: "pull", createdAt: isoNow(), error: legacyResult.error });
+      return null;
+    }
+    return legacyResult.lists;
   }
 
   async joinSharedList(listData, user) {
     if (!this.client || !listData?.inviteCode) return null;
     const authUser = await this.ensureAuthenticated(user);
     if (!authUser) return null;
+    const relationalJoin = await this.client.rpc("join_shopping_list", {
+      target_list_id: listData.id,
+      target_invite_code: listData.inviteCode,
+      display_name: user.displayName,
+      avatar_url: user.avatarUrl
+    });
+    if (!relationalJoin.error) {
+      const remoteLists = await this.fetchSharedLists(user);
+      return remoteLists?.find((remoteList) => (remoteList.listId ?? remoteList.id) === listData.id) ?? null;
+    }
+    if (!this.isMissingRelationalSchema(relationalJoin.error)) {
+      this.queueOffline({
+        type: "join",
+        createdAt: isoNow(),
+        listId: listData.id,
+        inviteCode: listData.inviteCode,
+        error: relationalJoin.error.message
+      });
+      return null;
+    }
+
     const { data, error } = await this.client.rpc("join_shared_list", {
       target_list_id: listData.id,
       target_invite_code: listData.inviteCode,
@@ -1185,6 +1718,20 @@ class SupabaseRealtimeService {
     }
     const authUser = await this.ensureAuthenticated(user);
     if (!authUser) return null;
+    const relationalLeave = await this.client.rpc("leave_shopping_list", {
+      target_list_id: listData.id
+    });
+    if (!relationalLeave.error) return relationalLeave.data ?? { listId: listData.id };
+    if (!this.isMissingRelationalSchema(relationalLeave.error)) {
+      this.queueOffline({
+        type: "leave",
+        createdAt: isoNow(),
+        listId: listData.id,
+        error: relationalLeave.error.message
+      });
+      return null;
+    }
+
     const { data, error } = await this.client.rpc("leave_shared_list", {
       target_list_id: listData.id
     });
@@ -1198,6 +1745,33 @@ class SupabaseRealtimeService {
       return null;
     }
     return data;
+  }
+
+  async deleteSharedList(listData, user) {
+    if (!listData?.id) return null;
+    if (!this.client) return exportCollaborativeList(listData);
+    const authUser = await this.ensureAuthenticated(user);
+    if (!authUser) return null;
+    const relationalDelete = await this.client.rpc("delete_shopping_list", {
+      target_list_id: listData.id
+    });
+    if (!relationalDelete.error) return relationalDelete.data ?? { listId: listData.id };
+    if (!this.isMissingRelationalSchema(relationalDelete.error)) {
+      this.queueOffline({
+        type: "delete",
+        createdAt: isoNow(),
+        listId: listData.id,
+        error: relationalDelete.error.message
+      });
+      return null;
+    }
+    const deletedList = normalizeListData({
+      ...listData,
+      deletedAt: isoNow(),
+      deletedByUserId: user.userId
+    });
+    await this.publishLegacyLists([deletedList], { queueOnFail: false });
+    return exportCollaborativeList(deletedList);
   }
 
   heartbeat(listData, user) {
@@ -1371,7 +1945,7 @@ let activeView = "market";
 let selectedShelfId = null;
 let currentUser = loadCurrentUser();
 let lists = loadLists();
-let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id;
+let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id || "";
 let favorites = load(storageKeys.favorites, []);
 let shelfOrder = load(storageKeys.shelfOrder, []);
 let markets = loadMarkets();
@@ -1404,7 +1978,7 @@ let mainSearchRenderTimer = 0;
 let modalSearchRenderTimer = 0;
 
 const collaborationService = createCollaborationService();
-const marketService = new MockMarketService(defaultMarkets);
+const marketService = new MockMarketService(marketBaseCatalog);
 const priceService = new MockPriceService();
 
 const elements = {
@@ -1425,6 +1999,7 @@ const elements = {
   reorderDoneButton: document.querySelector("#reorderDoneButton"),
   favoriteCount: document.querySelector("#favoriteCount"),
   backButton: document.querySelector("#backButton"),
+  notesBoard: document.querySelector(".notes-board"),
   notesStack: document.querySelector("#notesStack"),
   addListButton: document.querySelector("#addListButton"),
   modalLayer: document.querySelector("#modalLayer"),
@@ -1524,7 +2099,7 @@ function mergeMarkets(defaultItems, storedItems) {
 }
 
 function loadMarkets() {
-  return mergeMarkets(defaultMarkets, load(storageKeys.markets, []));
+  return mergeMarkets(marketBaseCatalog, load(storageKeys.markets, []));
 }
 
 function normalizeProductPrice(price) {
@@ -1755,6 +2330,7 @@ function normalizeShoppingItem(item, index = 0) {
     checkedAt,
     updatedByUserId: typeof item.updatedByUserId === "string" && item.updatedByUserId ? item.updatedByUserId : addedByUserId,
     updatedAt: safeDate(item.updatedAt ?? item.checkedAt ?? now),
+    revision: Math.max(0, Math.round(Number(item.revision) || 0)),
     conflict: normalizeItemConflict(item.conflict)
   };
 }
@@ -1774,6 +2350,7 @@ function touchList(listData, userId = currentUser.userId) {
   listData.updatedAt = now;
   listData.updatedByUserId = userId;
   listData.listName = listData.title;
+  listData.revision = Math.max(0, Math.round(Number(listData.revision) || 0)) + 1;
   return now;
 }
 
@@ -1781,6 +2358,7 @@ function touchItem(item, listData, user = currentUser) {
   const now = touchList(listData, user.userId);
   item.updatedAt = now;
   item.updatedByUserId = user.userId;
+  item.revision = Math.max(0, Math.round(Number(item.revision) || 0)) + 1;
   item.conflict = null;
   return now;
 }
@@ -1806,6 +2384,9 @@ function normalizeListData(listData, index = 0) {
     createdAt: safeDate(listData?.createdAt ?? now),
     updatedAt: safeDate(listData?.updatedAt ?? now),
     updatedByUserId: typeof listData?.updatedByUserId === "string" ? listData.updatedByUserId : ownerId,
+    deletedAt: listData?.deletedAt ? safeDate(listData.deletedAt, "") : "",
+    deletedByUserId: typeof listData?.deletedByUserId === "string" ? listData.deletedByUserId : "",
+    revision: Math.max(0, Math.round(Number(listData?.revision) || 0)),
     deletedItems: Array.isArray(listData?.deletedItems) ? listData.deletedItems : [],
     removedMembers: Array.isArray(listData?.removedMembers) ? listData.removedMembers : [],
     items: Array.isArray(listData?.items) ? listData.items.map(normalizeShoppingItem).filter(Boolean) : []
@@ -1833,6 +2414,9 @@ function createList(title = "Dein Zettel", items = [], id = null) {
     createdAt: now,
     updatedAt: now,
     updatedByUserId: currentUser.userId,
+    deletedAt: "",
+    deletedByUserId: "",
+    revision: 1,
     deletedItems: [],
     removedMembers: [],
     items: Array.isArray(items) ? items : []
@@ -1841,8 +2425,8 @@ function createList(title = "Dein Zettel", items = [], id = null) {
 
 function loadLists() {
   const storedLists = load(storageKeys.lists, null);
-  if (Array.isArray(storedLists) && storedLists.length) {
-    return storedLists.map(normalizeListData);
+  if (Array.isArray(storedLists)) {
+    return storedLists.map(normalizeListData).filter((listData) => !listData.deletedAt);
   }
 
   const legacyList = load(storageKeys.list, []);
@@ -1852,15 +2436,14 @@ function loadLists() {
 function activeList() {
   let currentList = lists.find((item) => item.id === activeListId);
   if (!currentList) {
-    currentList = lists[0] ?? createList("Dein Zettel", [], "zettel:1");
-    lists = lists.length ? lists : [currentList];
-    activeListId = currentList.id;
+    currentList = lists[0] ?? null;
+    activeListId = currentList?.id ?? "";
   }
   return currentList;
 }
 
 function activeItems() {
-  return activeList().items;
+  return activeList()?.items ?? [];
 }
 
 function captureScrollState() {
@@ -2366,8 +2949,8 @@ function marketAddressLine(market) {
 }
 
 function marketMapStyle(market) {
-  const allLatitudes = defaultMarkets.map((item) => numericValue(item.latitude, 0));
-  const allLongitudes = defaultMarkets.map((item) => numericValue(item.longitude, 0));
+  const allLatitudes = marketBaseCatalog.map((item) => numericValue(item.latitude, 0));
+  const allLongitudes = marketBaseCatalog.map((item) => numericValue(item.longitude, 0));
   const minLat = Math.min(...allLatitudes);
   const maxLat = Math.max(...allLatitudes);
   const minLon = Math.min(...allLongitudes);
@@ -2511,6 +3094,9 @@ function exportCollaborativeList(listData) {
     createdAt: normalizedList.createdAt,
     updatedAt: normalizedList.updatedAt,
     updatedByUserId: normalizedList.updatedByUserId,
+    deletedAt: normalizedList.deletedAt,
+    deletedByUserId: normalizedList.deletedByUserId,
+    revision: normalizedList.revision,
     deletedItems: normalizedList.deletedItems,
     removedMembers: normalizedList.removedMembers,
     items: normalizedList.items
@@ -2534,6 +3120,9 @@ function importedListFromValue(value) {
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     updatedByUserId: value.updatedByUserId,
+    deletedAt: value.deletedAt,
+    deletedByUserId: value.deletedByUserId,
+    revision: value.revision,
     deletedItems: value.deletedItems,
     removedMembers: value.removedMembers,
     items: value.items
@@ -2648,6 +3237,7 @@ function itemConflict(localItem, remoteItem) {
 function mergeList(localList, remoteList) {
   const local = normalizeListData(localList);
   const remote = normalizeListData(remoteList);
+  if (remote.deletedAt) return remote;
   const deletedItems = mergeDeletedItems(local.deletedItems, remote.deletedItems);
   const removedMembers = mergeRemovedMembers(local.removedMembers, remote.removedMembers);
   const itemIds = new Set([...local.items.map((item) => item.id), ...remote.items.map((item) => item.id)]);
@@ -2657,19 +3247,7 @@ function mergeList(localList, remoteList) {
     const deletedAt = latestDeletedAt(deletedItems, itemId);
     const newestItem = !localItem ? remoteItem : (!remoteItem ? localItem : (newerDate(remoteItem.updatedAt, localItem.updatedAt) ? remoteItem : localItem));
     if (deletedAt && (!newestItem || newerDate(deletedAt, newestItem.updatedAt))) return null;
-    if (localItem && remoteItem && onlyQuantityDiffers(localItem, remoteItem)) {
-      return { ...newestItem, quantity: Math.max(localItem.quantity, remoteItem.quantity), conflict: null };
-    }
-    if (localItem && remoteItem && shouldMarkItemConflict(localItem, remoteItem)) {
-      return {
-        ...newestItem,
-        conflict: normalizeItemConflict(newestItem.conflict) ?? itemConflict(localItem, remoteItem)
-      };
-    }
-    if (localItem && remoteItem && localItem.quantity !== remoteItem.quantity) {
-      return { ...newestItem, quantity: Math.max(localItem.quantity, remoteItem.quantity) };
-    }
-    return newestItem;
+    return newestItem ? { ...newestItem, conflict: null } : null;
   }).filter(Boolean);
 
   const metadataSource = newerDate(remote.updatedAt, local.updatedAt) ? remote : local;
@@ -2682,6 +3260,9 @@ function mergeList(localList, remoteList) {
     inviteCode: local.inviteCode || remote.inviteCode,
     members: mergeMembers(local.members, remote.members, local.ownerId || remote.ownerId, removedMembers),
     permissions: normalizePermissions({ ...remote.permissions, ...local.permissions }),
+    deletedAt: metadataSource.deletedAt,
+    deletedByUserId: metadataSource.deletedByUserId,
+    revision: Math.max(Number(local.revision || 0), Number(remote.revision || 0)),
     deletedItems,
     removedMembers,
     items
@@ -2697,6 +3278,13 @@ function mergeRemoteLists(remoteLists) {
     const remoteList = importedListFromValue(remoteListData);
     if (!remoteList) return;
     const index = lists.findIndex((listData) => listData.id === remoteList.id);
+    if (remoteList.deletedAt) {
+      if (index !== -1) {
+        removeLocalList(remoteList.id, index);
+        didChange = true;
+      }
+      return;
+    }
     if (remoteList.ownerId !== currentUser.userId && isMemberRemoved(remoteList, currentUser.userId)) {
       if (index !== -1) {
         removeLocalList(remoteList.id, index);
@@ -2853,13 +3441,20 @@ function shareBaseUrl() {
 
 async function shareList(listId = activeListId) {
   const listData = lists.find((item) => item.id === listId) ?? activeList();
+  if (!listData) return;
   listData.inviteCode = listData.inviteCode || generateInviteCode();
   ensureCurrentMember(listData);
   touchList(listData);
-  save();
+  save({ broadcast: false });
+  await publishListSnapshot([listData], "share");
 
   const url = shareBaseUrl();
-  url.searchParams.set("invite", encodeShareValue(exportCollaborativeList(listData)));
+  url.searchParams.set("invite", encodeShareValue({
+    listId: listData.id,
+    listName: listData.title,
+    ownerId: listData.ownerId,
+    inviteCode: listData.inviteCode
+  }));
   const inviteCode = listData.inviteCode.slice(0, 8).toUpperCase();
   openModal(`
     <h2 id="modalTitle">Zettel teilen</h2>
@@ -2915,6 +3510,7 @@ async function copyInviteLink() {
 
 function removeMember(listId, userId) {
   const listData = listById(listId);
+  if (!listData) return;
   if (!canPerform(listData, "remove") || userId === listData.ownerId) return;
   markMemberRemoved(listData, userId);
   touchList(listData);
@@ -2924,6 +3520,7 @@ function removeMember(listId, userId) {
 
 function setMemberRole(listId, userId, role) {
   const listData = listById(listId);
+  if (!listData) return;
   if (!canManageMembers(listData) || userId === listData.ownerId) return;
   const member = memberFor(listData, userId);
   if (!member) return;
@@ -2935,6 +3532,7 @@ function setMemberRole(listId, userId, role) {
 
 function transferOwnership(listId, userId) {
   const listData = listById(listId);
+  if (!listData) return;
   if (listData.ownerId !== currentUser.userId || userId === listData.ownerId) return;
   const nextOwner = memberFor(listData, userId);
   if (!nextOwner) return;
@@ -2951,6 +3549,7 @@ function transferOwnership(listId, userId) {
 
 function regenerateInvite(listId) {
   const listData = listById(listId);
+  if (!listData) return;
   if (!canPerform(listData, "invite")) return;
   listData.inviteCode = generateInviteCode();
   touchList(listData);
@@ -2969,6 +3568,7 @@ function markMemberRemoved(listData, userId, removedByUserId = currentUser.userI
 
 function showMembers(listId = activeListId) {
   const listData = listById(listId);
+  if (!listData) return;
   const members = activeMembersFor(listData);
   const canRemove = canPerform(listData, "remove");
   const canTransferOwner = listData.ownerId === currentUser.userId;
@@ -3002,7 +3602,6 @@ async function leaveSharedList(listData, index) {
     window.alert("Als Owner kannst du diesen geteilten Zettel nicht verlassen. Entferne zuerst die anderen Nutzer.");
     return;
   }
-  if (!window.confirm(`"${listData.title}" verlassen? Du brauchst danach eine neue Einladung, um wieder beizutreten.`)) return;
   markMemberRemoved(listData, currentUser.userId, currentUser.userId);
   touchList(listData);
   const remotePayload = await collaborationService.leaveSharedList?.(listData, currentUser);
@@ -3464,6 +4063,7 @@ function showAddFeedback(button) {
 
 function addToList(product) {
   const currentList = activeList();
+  if (!currentList) return false;
   ensureCurrentMember(currentList);
   if (!canPerform(currentList, "add")) return false;
   triggerHapticFeedback();
@@ -3524,6 +4124,7 @@ function listById(id) {
 
 function updateQuantity(id, delta, listId = activeListId) {
   const currentList = listById(listId);
+  if (!currentList) return;
   if (!canPerform(currentList, "edit")) return;
   const removedItems = [];
   currentList.items = currentList.items
@@ -3546,6 +4147,7 @@ function updateQuantity(id, delta, listId = activeListId) {
 
 function toggleDone(id, listId = activeListId) {
   const currentList = listById(listId);
+  if (!currentList) return;
   if (!canPerform(currentList, "check")) return;
   currentList.items = currentList.items.map((item) => {
     if (item.id !== id) return item;
@@ -3565,6 +4167,7 @@ function toggleDone(id, listId = activeListId) {
 
 function removeItem(id, listId = activeListId) {
   const currentList = listById(listId);
+  if (!currentList) return;
   if (!canPerform(currentList, "delete")) return;
   currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, [{
     id,
@@ -3579,6 +4182,7 @@ function removeItem(id, listId = activeListId) {
 
 function clearDone(listId = activeListId) {
   const currentList = listById(listId);
+  if (!currentList) return;
   if (!canPerform(currentList, "delete")) return;
   const now = isoNow();
   const deletedItems = currentList.items
@@ -3621,7 +4225,8 @@ function renderProductGrid(container, products) {
     return;
   }
 
-  const canAdd = canPerform(activeList(), "add");
+  const currentList = activeList();
+  const canAdd = Boolean(currentList) && canPerform(currentList, "add");
   container.innerHTML = products.map((product) => {
     const isFavorite = favorites.includes(product.id);
     const priceSummary = priceSummaryForProduct(product);
@@ -3776,6 +4381,7 @@ function attachShelfCardEvents(button) {
 }
 
 function nextListTitle() {
+  if (!lists.length) return "Dein Zettel";
   const highestNumber = lists.reduce((highest, listData) => {
     const match = listData.title.match(/^Zettel\s+(\d+)$/i);
     return match ? Math.max(highest, Number(match[1])) : highest;
@@ -3802,18 +4408,12 @@ function selectList(id) {
 function removeLocalList(id, index = lists.findIndex((listData) => listData.id === id)) {
   if (index === -1) return;
   lists = lists.filter((listData) => listData.id !== id);
-  if (!lists.length) {
-    const fallbackList = createList("Dein Zettel");
-    lists = [fallbackList];
-    activeListId = fallbackList.id;
-    return;
-  }
   if (activeListId === id) {
-    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0].id;
+    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0]?.id ?? "";
   }
 }
 
-function deleteList(id) {
+async function deleteList(id) {
   const index = lists.findIndex((listData) => listData.id === id);
   if (index === -1) return;
 
@@ -3822,27 +4422,24 @@ function deleteList(id) {
     leaveSharedList(listToDelete, index);
     return;
   }
-  if (activeMembersFor(listToDelete).some((member) => member.userId !== currentUser.userId)) {
-    window.alert("Du bist Owner dieses geteilten Zettels. Entferne zuerst die anderen Nutzer, bevor du ihn löschst.");
-    return;
-  }
-
-  if (lists.length === 1) {
-    if (!window.confirm("Diesen Zettel wirklich vollständig leeren?")) return;
-    listToDelete.items = [];
-    save();
-    renderNotes();
-    return;
-  }
 
   if (!window.confirm(`"${listToDelete.title}" wirklich vollständig löschen?`)) return;
+  listToDelete.deletedAt = isoNow();
+  listToDelete.deletedByUserId = currentUser.userId;
+  touchList(listToDelete);
+  const remoteResult = await collaborationService.deleteSharedList?.(listToDelete, currentUser);
+  if (isSharedList(listToDelete) && !remoteResult) {
+    window.alert("Der geteilte Zettel konnte gerade nicht gelöscht werden.");
+    return;
+  }
   removeLocalList(id, index);
-  save();
+  save({ broadcast: false });
   renderNotes();
 }
 
 function renameList(id) {
   const listData = listById(id);
+  if (!listData) return;
   pendingRenameListId = listData.id;
   openModal(`
     <h2 id="modalTitle">Zettel benennen</h2>
@@ -3865,6 +4462,7 @@ function saveRenamedList() {
   const input = elements.modalContent.querySelector("#renameListInput");
   if (!input) return;
   const listData = listById(pendingRenameListId);
+  if (!listData) return;
   if (!canPerform(listData, "edit")) return;
   const nextTitle = input.value;
   const cleanTitle = nextTitle.trim().slice(0, 24);
@@ -3880,7 +4478,7 @@ function saveRenamedList() {
 }
 
 function itemById(listId, itemId) {
-  return listById(listId).items.find((item) => item.id === itemId);
+  return listById(listId)?.items.find((item) => item.id === itemId) ?? null;
 }
 
 function editItemNote(listId, itemId) {
@@ -3909,6 +4507,7 @@ function saveItemNote() {
   const input = elements.modalContent.querySelector("#itemNoteInput");
   if (!input) return;
   const listData = listById(pendingItemNoteEdit.listId);
+  if (!listData) return;
   if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
@@ -3929,6 +4528,7 @@ function saveItemNote() {
 function clearItemNote() {
   if (!pendingItemNoteEdit) return;
   const listData = listById(pendingItemNoteEdit.listId);
+  if (!listData) return;
   if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
@@ -4063,13 +4663,7 @@ function syncStatusTitle() {
 }
 
 function syncStatusMarkup(listData) {
-  if (!isSharedList(listData)) return "";
-  return `
-    <button class="sync-status is-${escapeText(syncState.status)}" type="button" data-sync-now="${escapeText(listData.id)}" title="${escapeText(syncStatusTitle())}" aria-label="${escapeText(syncStatusTitle())}">
-      <span></span>
-      ${escapeText(syncStatusLabel())}
-    </button>
-  `;
+  return "";
 }
 
 function itemUserBadgeMarkup(item, listData) {
@@ -4105,7 +4699,7 @@ function displayNameForUser(listData, userId, fallback = "Gast") {
 function showItemContributor(listId, itemId) {
   const listData = listById(listId);
   const item = itemById(listId, itemId);
-  if (!item) return;
+  if (!listData || !item) return;
   const addedName = cleanDisplayName(item.addedByDisplayName, "Gast");
   const updatedMember = item.updatedByUserId ? (memberFor(listData, item.updatedByUserId) ?? { displayName: item.updatedByUserId }) : null;
   const checkedMember = item.checkedByUserId ? (memberFor(listData, item.checkedByUserId) ?? { displayName: item.checkedByUserId }) : null;
@@ -4124,7 +4718,7 @@ function showItemConflict(listId, itemId) {
   const listData = listById(listId);
   const item = itemById(listId, itemId);
   const conflict = normalizeItemConflict(item?.conflict);
-  if (!item || !conflict) return;
+  if (!listData || !item || !conflict) return;
   openModal(`
     <h2 id="modalTitle">Gleichzeitig geändert</h2>
     <div class="modal-copy">
@@ -4215,6 +4809,17 @@ function noteMarkup(listData) {
   `;
 }
 
+function emptyNotesMarkup() {
+  return `
+    <div class="empty-notes-state">
+      <button class="add-note-button add-note-button-large" type="button" data-empty-add-list>
+        ${icon("plus")}
+        Neuer Zettel
+      </button>
+    </div>
+  `;
+}
+
 function renderNotes(options = {}) {
   const activeManualInput = focusedManualInput();
   if (activeManualInput) {
@@ -4226,7 +4831,12 @@ function renderNotes(options = {}) {
   }
   pendingNotesRender = false;
   withScrollPreserved(() => {
-  elements.notesStack.innerHTML = lists.map(noteMarkup).join("");
+    elements.notesBoard?.classList.toggle("is-empty", !lists.length);
+    elements.notesStack.innerHTML = lists.length ? lists.map(noteMarkup).join("") : emptyNotesMarkup();
+
+  elements.notesStack.querySelectorAll("[data-empty-add-list]").forEach((button) => {
+    button.addEventListener("click", addList);
+  });
 
   elements.notesStack.querySelectorAll("[data-note]").forEach((note) => {
     note.addEventListener("click", (event) => {
@@ -4489,6 +5099,7 @@ elements.modalContent.addEventListener("keydown", (event) => {
 
 function updatePresence() {
   const listData = activeList();
+  if (!listData) return;
   const member = ensureCurrentMember(listData);
   if (!member && isMemberRemoved(listData)) return;
   activeMembersByList[listData.id] = collaborationService.heartbeat(listData, currentUser);
@@ -4521,6 +5132,10 @@ async function bootApp() {
         markSyncError(message.error || message.status);
         pullRemoteListsSoon("realtime-error", 1200);
       }
+      return;
+    }
+    if (message.type === "remote-changed") {
+      pullRemoteListsSoon("remote-change", 250);
       return;
     }
     if (message.type === "presence" && message.listId) {
