@@ -1877,10 +1877,10 @@ function showAddFeedback(button) {
 
 function addToList(product) {
   const currentList = activeList();
-  if (!canPerform(currentList, "add")) return;
+  ensureCurrentMember(currentList);
+  if (!canPerform(currentList, "add")) return false;
   triggerHapticFeedback();
   const items = currentList.items;
-  ensureCurrentMember(currentList);
   const existing = items.find((item) => item.id === product.id);
   if (existing) {
     existing.quantity += 1;
@@ -1901,19 +1901,23 @@ function addToList(product) {
   }
   save();
   renderNotes();
+  return true;
 }
 
 function addManualItem(listId, input) {
+  if (!input) return false;
   const name = input.value.trim();
-  if (!name) return;
+  if (!name) return false;
   activeListId = listId;
-  addToList({
+  const added = addToList({
     id: `manual:${Date.now()}`,
     name,
     shelfId: "manual",
     shelfTitle: "Eigener Artikel"
   });
+  if (!added) return false;
   input.value = "";
+  return true;
 }
 
 function toggleFavorite(product) {
@@ -2497,12 +2501,12 @@ function noteMarkup(listData) {
         ${membersMarkup(listData)}
         <span class="sync-chip">${canManageMembers(listData) ? "Owner" : roleLabels[memberRole(listData)]}</span>
       </div>
-      <div class="manual-add">
-        <input type="text" placeholder="Eigener Artikel" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
-        <button type="button" ${canAdd ? "" : "disabled"} title="Hinzufügen" aria-label="Hinzufügen" data-manual-add="${escapeText(listData.id)}">
+      <form class="manual-add" data-manual-form="${escapeText(listData.id)}">
+        <input type="text" placeholder="Eigener Artikel" autocomplete="off" enterkeyhint="done" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
+        <button type="submit" ${canAdd ? "" : "disabled"} title="Hinzufügen" aria-label="Hinzufügen">
           ${icon("plus")}
         </button>
-      </div>
+      </form>
       <ul class="shopping-list">
         ${noteItemsMarkup(listData)}
       </ul>
@@ -2534,19 +2538,15 @@ function renderNotes() {
   elements.notesStack.querySelectorAll("[data-user-badge]").forEach((button) => {
     button.addEventListener("click", () => showItemContributor(button.dataset.listId, button.dataset.userBadge));
   });
-  elements.notesStack.querySelectorAll("[data-manual-add]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const note = button.closest("[data-note]");
-      const input = note?.querySelector("[data-manual-input]");
-      if (!input) return;
-      addManualItem(button.dataset.manualAdd, input);
+  elements.notesStack.querySelectorAll("[data-manual-form]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = form.querySelector("[data-manual-input]");
+      addManualItem(form.dataset.manualForm, input);
     });
   });
   elements.notesStack.querySelectorAll("[data-manual-input]").forEach((input) => {
     input.addEventListener("focus", () => selectList(input.dataset.manualInput));
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") addManualItem(input.dataset.manualInput, input);
-    });
   });
   elements.notesStack.querySelectorAll("[data-done]").forEach((input) => {
     input.addEventListener("change", () => toggleDone(input.dataset.done, input.dataset.listId));
