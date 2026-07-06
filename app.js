@@ -251,6 +251,369 @@ const shelves = [
   }
 ];
 
+const defaultMarkets = [
+  {
+    id: "market:rewe",
+    name: "Rewe",
+    kategorie: "Supermarkt",
+    adresse: "Musterstraße 12",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.9384,
+    longitude: 6.9599,
+    entfernung: 0.4,
+    websiteUrl: "https://www.rewe.de",
+    prospectUrl: "https://www.rewe.de/angebote/",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:aldi",
+    name: "Aldi",
+    kategorie: "Discounter",
+    adresse: "Marktallee 4",
+    plz: "50668",
+    ort: "Köln",
+    latitude: 50.9445,
+    longitude: 6.9558,
+    entfernung: 0.7,
+    websiteUrl: "https://www.aldi-sued.de",
+    prospectUrl: "https://www.aldi-sued.de/de/angebote.html",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:lidl",
+    name: "Lidl",
+    kategorie: "Discounter",
+    adresse: "Einkaufsring 9",
+    plz: "50670",
+    ort: "Köln",
+    latitude: 50.9512,
+    longitude: 6.9617,
+    entfernung: 0.9,
+    websiteUrl: "https://www.lidl.de",
+    prospectUrl: "https://www.lidl.de/c/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:penny",
+    name: "Penny",
+    kategorie: "Discounter",
+    adresse: "Kassenweg 17",
+    plz: "50672",
+    ort: "Köln",
+    latitude: 50.9367,
+    longitude: 6.9408,
+    entfernung: 1.7,
+    websiteUrl: "https://www.penny.de",
+    prospectUrl: "https://www.penny.de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:netto",
+    name: "Netto",
+    kategorie: "Discounter",
+    adresse: "Sparstraße 3",
+    plz: "50674",
+    ort: "Köln",
+    latitude: 50.9298,
+    longitude: 6.9432,
+    entfernung: 2.0,
+    websiteUrl: "https://www.netto-online.de",
+    prospectUrl: "https://www.netto-online.de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:norma",
+    name: "Norma",
+    kategorie: "Discounter",
+    adresse: "Regalplatz 6",
+    plz: "50676",
+    ort: "Köln",
+    latitude: 50.9329,
+    longitude: 6.9685,
+    entfernung: 2.2,
+    websiteUrl: "https://www.norma-online.de",
+    prospectUrl: "https://www.norma-online.de/de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:dm",
+    name: "DM",
+    kategorie: "Drogerie",
+    adresse: "Pflegepassage 2",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.9418,
+    longitude: 6.9524,
+    entfernung: 1.2,
+    websiteUrl: "https://www.dm.de",
+    prospectUrl: "https://www.dm.de/angebote",
+    logoUrl: "",
+    icon: "sparkle",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:rossmann",
+    name: "Rossmann",
+    kategorie: "Drogerie",
+    adresse: "Seifenstraße 22",
+    plz: "50670",
+    ort: "Köln",
+    latitude: 50.9469,
+    longitude: 6.9497,
+    entfernung: 1.6,
+    websiteUrl: "https://www.rossmann.de",
+    prospectUrl: "https://www.rossmann.de/de/angebote",
+    logoUrl: "",
+    icon: "sparkle",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:shell",
+    name: "Shell",
+    kategorie: "Tankstelle",
+    adresse: "Tankstelle 1",
+    plz: "50679",
+    ort: "Köln",
+    latitude: 50.9345,
+    longitude: 6.9817,
+    entfernung: 2.6,
+    websiteUrl: "https://www.shell.de",
+    prospectUrl: "https://www.shell.de/tankstellen.html",
+    logoUrl: "",
+    icon: "bottle",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:aral",
+    name: "Aral",
+    kategorie: "Tankstelle",
+    adresse: "Zapfweg 8",
+    plz: "50679",
+    ort: "Köln",
+    latitude: 50.9303,
+    longitude: 6.9764,
+    entfernung: 2.8,
+    websiteUrl: "https://www.aral.de",
+    prospectUrl: "https://www.aral.de",
+    logoUrl: "",
+    icon: "bottle",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:hit",
+    name: "Hit",
+    kategorie: "Supermarkt",
+    adresse: "Frischemarkt 5",
+    plz: "50823",
+    ort: "Köln",
+    latitude: 50.9536,
+    longitude: 6.9187,
+    entfernung: 3.4,
+    websiteUrl: "https://www.hit.de",
+    prospectUrl: "https://www.hit.de/angebote",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:globus",
+    name: "Globus",
+    kategorie: "SB-Warenhaus",
+    adresse: "Großmarktstraße 11",
+    plz: "51149",
+    ort: "Köln",
+    latitude: 50.8995,
+    longitude: 7.0467,
+    entfernung: 7.8,
+    websiteUrl: "https://www.globus.de",
+    prospectUrl: "https://www.globus.de/angebote.php",
+    logoUrl: "",
+    icon: "store",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:bauhaus",
+    name: "Bauhaus",
+    kategorie: "Baumarkt",
+    adresse: "Werkzeugdamm 14",
+    plz: "50829",
+    ort: "Köln",
+    latitude: 50.9737,
+    longitude: 6.8819,
+    entfernung: 8.5,
+    websiteUrl: "https://www.bauhaus.info",
+    prospectUrl: "https://www.bauhaus.info/angebote",
+    logoUrl: "",
+    icon: "home",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:obi",
+    name: "OBI",
+    kategorie: "Baumarkt",
+    adresse: "Heimwerkerweg 7",
+    plz: "50825",
+    ort: "Köln",
+    latitude: 50.9511,
+    longitude: 6.8998,
+    entfernung: 5.1,
+    websiteUrl: "https://www.obi.de",
+    prospectUrl: "https://www.obi.de/angebote",
+    logoUrl: "",
+    icon: "home",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:mueller",
+    name: "Müller",
+    kategorie: "Drogerie",
+    adresse: "Sortimentsgasse 10",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.9398,
+    longitude: 6.9582,
+    entfernung: 1.5,
+    websiteUrl: "https://www.mueller.de",
+    prospectUrl: "https://www.mueller.de/angebote/",
+    logoUrl: "",
+    icon: "sparkle",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:kleins",
+    name: "Kleins",
+    kategorie: "Bäckerei",
+    adresse: "Backstubenweg 1",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.9376,
+    longitude: 6.9529,
+    entfernung: 1.8,
+    websiteUrl: "https://www.baeckerei-kleins.de",
+    prospectUrl: "https://www.baeckerei-kleins.de",
+    logoUrl: "",
+    icon: "bread",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:merzenich",
+    name: "Merzenich Bäckerei",
+    kategorie: "Bäckerei",
+    adresse: "Brötchenplatz 3",
+    plz: "50667",
+    ort: "Köln",
+    latitude: 50.9369,
+    longitude: 6.9571,
+    entfernung: 2.0,
+    websiteUrl: "https://www.merzenich.de",
+    prospectUrl: "https://www.merzenich.de",
+    logoUrl: "",
+    icon: "bread",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:ikea",
+    name: "IKEA",
+    kategorie: "Einrichtung",
+    adresse: "Möbelallee 1",
+    plz: "50829",
+    ort: "Köln",
+    latitude: 50.9822,
+    longitude: 6.8785,
+    entfernung: 9.0,
+    websiteUrl: "https://www.ikea.com/de/de/",
+    prospectUrl: "https://www.ikea.com/de/de/offers/",
+    logoUrl: "",
+    icon: "home",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:poco",
+    name: "Poco",
+    kategorie: "Einrichtung",
+    adresse: "Wohnmarkt 19",
+    plz: "50829",
+    ort: "Köln",
+    latitude: 50.9724,
+    longitude: 6.8904,
+    entfernung: 8.0,
+    websiteUrl: "https://www.poco.de",
+    prospectUrl: "https://www.poco.de/angebote",
+    logoUrl: "",
+    icon: "home",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  },
+  {
+    id: "market:hoeffner",
+    name: "Höffner",
+    kategorie: "Einrichtung",
+    adresse: "Möbelring 23",
+    plz: "50858",
+    ort: "Köln",
+    latitude: 50.9278,
+    longitude: 6.8399,
+    entfernung: 10.7,
+    websiteUrl: "https://www.hoeffner.de",
+    prospectUrl: "https://www.hoeffner.de/angebote",
+    logoUrl: "",
+    icon: "home",
+    source: "Platzhalterdaten",
+    isDefaultMarket: true,
+    isUserAdded: false
+  }
+];
+
 const storageKeys = {
   list: "shopping-list-app.items",
   lists: "shopping-list-app.lists",
@@ -261,7 +624,10 @@ const storageKeys = {
   currentUser: "shopping-list-app.current-user",
   realtime: "shopping-list-app.mock-realtime",
   presence: "shopping-list-app.mock-presence",
-  outbox: "shopping-list-app.sync-outbox"
+  outbox: "shopping-list-app.sync-outbox",
+  markets: "shopping-list-app.markets",
+  productPrices: "shopping-list-app.product-prices",
+  priceSync: "shopping-list-app.price-sync"
 };
 
 const iconPaths = {
@@ -345,7 +711,13 @@ const iconPaths = {
   minus: '<path d="M5 12h14"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   note: '<path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/>',
-  cart: '<path d="M3 4h2l2 12h10l3-8H6M9 20h.01M17 20h.01"/>'
+  cart: '<path d="M3 4h2l2 12h10l3-8H6M9 20h.01M17 20h.01"/>',
+  store: '<path d="M4 10h16l-1-5H5l-1 5Zm1 0v10h14V10M8 20v-6h8v6M4 10c0 2 4 2 4 0 0 2 4 2 4 0 0 2 4 2 4 0 0 2 4 2 4 0"/>',
+  mapPin: '<path d="M12 21s7-5 7-12a7 7 0 1 0-14 0c0 7 7 12 7 12Zm0-9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>',
+  external: '<path d="M14 4h6v6m0-6-9 9M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/>',
+  tag: '<path d="M20 12 12 20 4 12V4h8l8 8Zm-12-4h.01"/>',
+  refresh: '<path d="M20 12a8 8 0 0 1-14 5M4 12a8 8 0 0 1 14-5M18 3v4h-4M6 21v-4h4"/>',
+  database: '<path d="M4 6c0-2 4-3 8-3s8 1 8 3-4 3-8 3-8-1-8-3Zm0 0v6c0 2 4 3 8 3s8-1 8-3V6M4 12v6c0 2 4 3 8 3s8-1 8-3v-6"/>'
 };
 
 const sketchRules = [
@@ -838,6 +1210,73 @@ class SupabaseRealtimeService {
   }
 }
 
+const shelfPriceBase = {
+  gemuese: 1.39,
+  obst: 1.79,
+  salat: 2.49,
+  kaese: 2.99,
+  milch: 1.69,
+  backwaren: 1.89,
+  "kaffee-tee-fruehstueck": 3.49,
+  "nudeln-reis-konserven": 1.59,
+  "fleisch-wurst": 4.99,
+  fisch: 5.49,
+  tiefkuehl: 3.19,
+  getraenke: 1.29,
+  alkohol: 5.99,
+  "suessigkeiten-snacks": 1.99,
+  koerperpflege: 2.79,
+  haushalt: 3.49,
+  tierbedarf: 4.29,
+  "gesundheit-apotheke": 4.99,
+  "eier-feinkost": 2.19,
+  "gewuerze-backzutaten": 1.49,
+  "oel-essig-saucen": 2.79,
+  babypflege: 4.49,
+  "buero-sonstiges": 2.29
+};
+
+const marketShelfCoverage = {
+  drogerie: new Set(["koerperpflege", "haushalt", "babypflege", "gesundheit-apotheke", "suessigkeiten-snacks", "getraenke", "buero-sonstiges"]),
+  tankstelle: new Set(["getraenke", "suessigkeiten-snacks", "kaffee-tee-fruehstueck", "backwaren"]),
+  baeckerei: new Set(["backwaren", "kaffee-tee-fruehstueck", "suessigkeiten-snacks"]),
+  baumarkt: new Set(["haushalt", "buero-sonstiges"]),
+  einrichtung: new Set(["haushalt", "buero-sonstiges"])
+};
+
+class MockMarketService {
+  constructor(catalog) {
+    this.catalog = catalog.map((market, index) => normalizeMarket(market, index));
+  }
+
+  searchMarkets(query = "") {
+    const cleanQuery = normalize(query);
+    const matches = this.catalog.filter((market) => marketMatches(market, cleanQuery));
+    return matches.sort(sortMarketsByDistance).slice(0, cleanQuery ? 20 : 12);
+  }
+
+  nearestMarkets(marketList, limit = 3) {
+    return marketList
+      .filter(Boolean)
+      .map((market) => normalizeMarket(market))
+      .sort(sortMarketsByDistance)
+      .slice(0, limit);
+  }
+
+  marketById(id) {
+    return this.catalog.find((market) => market.id === id) ?? null;
+  }
+}
+
+class MockPriceService {
+  async fetchDailyPrices({ products, markets }) {
+    const lastUpdated = isoNow();
+    return products.flatMap((product) =>
+      markets.map((market) => mockPriceForProduct(product, market, lastUpdated)).filter(Boolean)
+    );
+  }
+}
+
 let activeView = "market";
 let selectedShelfId = null;
 let currentUser = loadCurrentUser();
@@ -845,14 +1284,21 @@ let lists = loadLists();
 let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id;
 let favorites = load(storageKeys.favorites, []);
 let shelfOrder = load(storageKeys.shelfOrder, []);
+let markets = loadMarkets();
+let productPrices = loadProductPrices();
+let priceSyncState = loadPriceSyncState();
 let shelfReorderMode = false;
 let draggedShelfId = null;
 let backgroundTheme = localStorage.getItem(storageKeys.background) || "paper";
 let pendingRenameListId = null;
 let pendingItemNoteEdit = null;
 let activeMembersByList = {};
+let marketSearchState = { query: "", selectedMarketId: "" };
+let productPriceState = { productId: "", query: "" };
 
 const collaborationService = createCollaborationService();
+const marketService = new MockMarketService(defaultMarkets);
+const priceService = new MockPriceService();
 
 const elements = {
   body: document.body,
@@ -894,6 +1340,118 @@ function isoNow() {
 function safeDate(value, fallback = isoNow()) {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : fallback;
+}
+
+function cleanText(value, fallback = "", maxLength = 120) {
+  const text = typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+  return text || fallback;
+}
+
+function numericValue(value, fallback = 0) {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? nextValue : fallback;
+}
+
+function marketSlug(name, fallback = "markt") {
+  return normalize(name || fallback)
+    .replaceAll("ä", "ae")
+    .replaceAll("ö", "oe")
+    .replaceAll("ü", "ue")
+    .replaceAll("ß", "ss")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || fallback;
+}
+
+function normalizeMarket(market, index = 0) {
+  const fallback = defaultMarkets[index] ?? defaultMarkets[0] ?? {};
+  const name = cleanText(market?.name, fallback.name ?? "Markt", 48);
+  return {
+    id: cleanText(market?.id, `market:${marketSlug(name)}:${index}`, 80),
+    name,
+    kategorie: cleanText(market?.kategorie, fallback.kategorie ?? "Markt", 40),
+    adresse: cleanText(market?.adresse, fallback.adresse ?? "Adresse folgt", 90),
+    plz: cleanText(market?.plz, fallback.plz ?? "", 12),
+    ort: cleanText(market?.ort, fallback.ort ?? "", 48),
+    latitude: numericValue(market?.latitude, numericValue(fallback.latitude, 0)),
+    longitude: numericValue(market?.longitude, numericValue(fallback.longitude, 0)),
+    entfernung: Math.max(0, numericValue(market?.entfernung, numericValue(fallback.entfernung, 0))),
+    websiteUrl: cleanText(market?.websiteUrl, fallback.websiteUrl ?? "", 240),
+    prospectUrl: cleanText(market?.prospectUrl, fallback.prospectUrl ?? "", 240),
+    logoUrl: cleanText(market?.logoUrl, fallback.logoUrl ?? "", 240),
+    icon: cleanText(market?.icon, fallback.icon ?? "store", 24),
+    source: cleanText(market?.source, fallback.source ?? "Platzhalterdaten", 48),
+    isDefaultMarket: Boolean(market?.isDefaultMarket ?? fallback.isDefaultMarket),
+    isUserAdded: Boolean(market?.isUserAdded)
+  };
+}
+
+function sortMarketsByDistance(first, second) {
+  return numericValue(first.entfernung, 999) - numericValue(second.entfernung, 999)
+    || first.name.localeCompare(second.name, "de");
+}
+
+function mergeMarkets(defaultItems, storedItems) {
+  const byId = new Map(defaultItems.map((market, index) => {
+    const normalized = normalizeMarket(market, index);
+    return [normalized.id, normalized];
+  }));
+  if (Array.isArray(storedItems)) {
+    storedItems.forEach((market, index) => {
+      const normalized = normalizeMarket(market, index);
+      const existing = byId.get(normalized.id);
+      if (existing?.isDefaultMarket) {
+        byId.set(normalized.id, {
+          ...existing,
+          isUserAdded: Boolean(existing.isUserAdded || normalized.isUserAdded)
+        });
+        return;
+      }
+      byId.set(normalized.id, {
+        ...normalized,
+        isDefaultMarket: Boolean(normalized.isDefaultMarket),
+        isUserAdded: Boolean(normalized.isUserAdded)
+      });
+    });
+  }
+  return Array.from(byId.values()).sort(sortMarketsByDistance);
+}
+
+function loadMarkets() {
+  return mergeMarkets(defaultMarkets, load(storageKeys.markets, []));
+}
+
+function normalizeProductPrice(price) {
+  if (!price?.productId || !price?.marketId) return null;
+  const amount = Number(price.price);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return {
+    productId: String(price.productId),
+    marketId: String(price.marketId),
+    price: Number(amount.toFixed(2)),
+    currency: cleanText(price.currency, "EUR", 3).toUpperCase(),
+    lastUpdated: safeDate(price.lastUpdated),
+    sourceUrl: cleanText(price.sourceUrl, "", 240)
+  };
+}
+
+function loadProductPrices() {
+  const prices = load(storageKeys.productPrices, []);
+  return Array.isArray(prices) ? prices.map(normalizeProductPrice).filter(Boolean) : [];
+}
+
+function loadPriceSyncState() {
+  const state = load(storageKeys.priceSync, {});
+  return {
+    lastUpdated: state?.lastUpdated ? safeDate(state.lastUpdated, "") : "",
+    source: cleanText(state?.source, "mock", 40),
+    marketIds: Array.isArray(state?.marketIds) ? state.marketIds.filter((id) => typeof id === "string") : []
+  };
+}
+
+function saveMarketData() {
+  localStorage.setItem(storageKeys.markets, JSON.stringify(markets));
+  localStorage.setItem(storageKeys.productPrices, JSON.stringify(productPrices));
+  localStorage.setItem(storageKeys.priceSync, JSON.stringify(priceSyncState));
 }
 
 function isUuid(value) {
@@ -1255,7 +1813,210 @@ function allProducts() {
 }
 
 function normalize(value) {
-  return value.trim().toLowerCase();
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function marketMatches(market, query) {
+  if (!query) return true;
+  return [
+    market.name,
+    market.kategorie,
+    market.adresse,
+    market.plz,
+    market.ort
+  ].some((value) => normalize(value).includes(query));
+}
+
+function marketById(id) {
+  return markets.find((market) => market.id === id)
+    ?? marketService?.marketById?.(id)
+    ?? null;
+}
+
+function userAddedMarkets() {
+  return markets.filter((market) => market.isUserAdded).sort(sortMarketsByDistance);
+}
+
+function marketsForPriceLookup() {
+  return markets
+    .filter((market) => market.isDefaultMarket || market.isUserAdded)
+    .sort(sortMarketsByDistance);
+}
+
+function topNearbyMarkets(limit = 3) {
+  return marketService.nearestMarkets(marketsForPriceLookup(), limit);
+}
+
+function formatDistance(distance) {
+  const value = numericValue(distance, 0);
+  return value < 1 ? `${Math.round(value * 1000)} m` : `${value.toFixed(1).replace(".", ",")} km`;
+}
+
+function formatPrice(price, currency = "EUR") {
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: currency || "EUR"
+  }).format(Number(price) || 0);
+}
+
+function formatDateTime(value) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Noch nie";
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }).format(new Date(timestamp));
+}
+
+function productPricesFor(productId) {
+  return productPrices
+    .filter((price) => price.productId === productId)
+    .map((price) => ({
+      ...price,
+      market: marketById(price.marketId)
+    }))
+    .filter((price) => price.market)
+    .sort((first, second) => first.price - second.price || sortMarketsByDistance(first.market, second.market));
+}
+
+function bestPriceForProduct(productId) {
+  return productPricesFor(productId)[0] ?? null;
+}
+
+function priceSummaryForProduct(product) {
+  const bestPrice = bestPriceForProduct(product.id);
+  if (!bestPrice) return "Noch kein Preis verfügbar";
+  return `Günstigster Preis: ${formatPrice(bestPrice.price, bestPrice.currency)} bei ${bestPrice.market.name}`;
+}
+
+function marketSupportsProduct(market, product) {
+  const category = marketSlug(market.kategorie);
+  if (category.includes("supermarkt") || category.includes("discounter") || category.includes("warenhaus")) return true;
+  const coverage = Object.entries(marketShelfCoverage).find(([key]) => category.includes(key))?.[1];
+  return coverage ? coverage.has(product.shelfId) : true;
+}
+
+function mockPriceForProduct(product, market, lastUpdated) {
+  if (!marketSupportsProduct(market, product)) return null;
+  const hash = Math.abs(hashString(`${product.id}:${market.id}`));
+  if (hash % 9 === 0) return null;
+  const shelfBase = shelfPriceBase[product.shelfId] ?? 2.49;
+  const marketFactor = ((hash % 45) - 18) / 100;
+  const productFactor = (((hash >> 3) % 140) - 40) / 100;
+  const price = Math.max(0.39, shelfBase + productFactor + marketFactor);
+  return normalizeProductPrice({
+    productId: product.id,
+    marketId: market.id,
+    price,
+    currency: "EUR",
+    lastUpdated,
+    sourceUrl: market.websiteUrl
+  });
+}
+
+function mergeProductPrices(existingPrices, nextPrices) {
+  const byKey = new Map();
+  [...existingPrices, ...nextPrices].forEach((price) => {
+    const normalized = normalizeProductPrice(price);
+    if (!normalized) return;
+    byKey.set(`${normalized.productId}:${normalized.marketId}`, normalized);
+  });
+  return Array.from(byKey.values());
+}
+
+function pricesNeedDailyRefresh() {
+  const lastUpdated = Date.parse(priceSyncState.lastUpdated || 0);
+  return priceSyncState.source !== "mock-v3" || !Number.isFinite(lastUpdated) || Date.now() - lastUpdated > 24 * 60 * 60 * 1000;
+}
+
+async function refreshPrices({ manual = false } = {}) {
+  const lookupMarkets = topNearbyMarkets(3);
+  if (!lookupMarkets.length) {
+    if (manual) window.alert("Es sind noch keine Märkte für Preise vorhanden.");
+    return [];
+  }
+  const nextPrices = await priceService.fetchDailyPrices({
+    products: allProducts(),
+    markets: lookupMarkets
+  });
+  const refreshedMarketIds = new Set(lookupMarkets.map((market) => market.id));
+  const keepExistingPrices = priceSyncState.source === "mock-v3"
+    ? productPrices.filter((price) => !refreshedMarketIds.has(price.marketId))
+    : [];
+  productPrices = mergeProductPrices(keepExistingPrices, nextPrices);
+  priceSyncState = {
+    lastUpdated: isoNow(),
+    source: "mock-v3",
+    marketIds: lookupMarkets.map((market) => market.id)
+  };
+  saveMarketData();
+  render();
+  if (manual) showPriceFetch("Preise wurden aktualisiert.");
+  return nextPrices;
+}
+
+async function refreshPricesIfStale() {
+  if (!pricesNeedDailyRefresh()) return;
+  await refreshPrices({ manual: false });
+}
+
+function addMarketToPersonalList(marketId) {
+  const sourceMarket = marketById(marketId);
+  if (!sourceMarket) return null;
+  const index = markets.findIndex((market) => market.id === marketId);
+  const nextMarket = {
+    ...normalizeMarket(sourceMarket),
+    isUserAdded: true
+  };
+  if (index === -1) {
+    markets.push(nextMarket);
+  } else {
+    markets[index] = {
+      ...markets[index],
+      ...nextMarket,
+      isUserAdded: true
+    };
+  }
+  markets = markets.map(normalizeMarket).sort(sortMarketsByDistance);
+  saveMarketData();
+  return nextMarket;
+}
+
+function openProspect(marketId) {
+  const market = marketById(marketId);
+  const url = market?.prospectUrl || market?.websiteUrl;
+  if (!url) {
+    window.alert("Für diesen Markt ist noch kein Werbekatalog hinterlegt.");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function openProductProspect(productId) {
+  const bestPrice = bestPriceForProduct(productId);
+  const fallbackMarket = topNearbyMarkets(1)[0];
+  const market = bestPrice?.market ?? fallbackMarket;
+  if (!market) {
+    showMarketSearch();
+    return;
+  }
+  openProspect(market.id);
+}
+
+function marketAddressLine(market) {
+  return [market.adresse, [market.plz, market.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+}
+
+function marketMapStyle(market) {
+  const allLatitudes = defaultMarkets.map((item) => numericValue(item.latitude, 0));
+  const allLongitudes = defaultMarkets.map((item) => numericValue(item.longitude, 0));
+  const minLat = Math.min(...allLatitudes);
+  const maxLat = Math.max(...allLatitudes);
+  const minLon = Math.min(...allLongitudes);
+  const maxLon = Math.max(...allLongitudes);
+  const x = ((market.longitude - minLon) / Math.max(0.001, maxLon - minLon)) * 78 + 11;
+  const y = (1 - ((market.latitude - minLat) / Math.max(0.001, maxLat - minLat))) * 70 + 14;
+  return `--x: ${Math.max(8, Math.min(92, x)).toFixed(1)}%; --y: ${Math.max(10, Math.min(88, y)).toFixed(1)}%;`;
 }
 
 function icon(name) {
@@ -1838,12 +2599,269 @@ function showBackgroundOptions() {
   `);
 }
 
+function showDataTools() {
+  openModal(`
+    <h2 id="modalTitle">Daten hinzufügen</h2>
+    <div class="data-tools">
+      <button class="data-tool-button" type="button" data-open-price-fetch>
+        ${icon("refresh")}
+        <span>
+          <strong>Preise abrufen</strong>
+          <small>Täglich aktualisierbare Mock-Preise für die nächsten Märkte.</small>
+        </span>
+      </button>
+      <button class="data-tool-button" type="button" data-open-market-search>
+        ${icon("mapPin")}
+        <span>
+          <strong>Märkte suchen</strong>
+          <small>PLZ, Ort, Marktname oder Adresse suchen und Märkte speichern.</small>
+        </span>
+      </button>
+    </div>
+  `);
+}
+
+function priceFetchMarketRows() {
+  const nearest = topNearbyMarkets(3);
+  if (!nearest.length) return '<p class="empty-state">Noch keine Märkte vorhanden.</p>';
+  return `
+    <div class="market-mini-list">
+      ${nearest.map((market) => `
+        <button class="market-mini-row" type="button" data-market-detail="${escapeText(market.id)}">
+          <span class="market-mini-icon">${icon(market.icon)}</span>
+          <span>
+            <strong>${escapeText(market.name)}</strong>
+            <small>${escapeText(market.kategorie)} · ${escapeText(formatDistance(market.entfernung))}</small>
+          </span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function showPriceFetch(statusText = "") {
+  openModal(`
+    <h2 id="modalTitle">Preise abrufen</h2>
+    <div class="price-fetch-panel">
+      <div class="price-sync-card">
+        <span>${icon("database")}</span>
+        <div>
+          <strong>Letzte Aktualisierung</strong>
+          <small>${escapeText(formatDateTime(priceSyncState.lastUpdated))} · Quelle: ${escapeText(priceSyncState.source || "mock")}</small>
+        </div>
+      </div>
+      ${statusText ? `<p class="status-note">${escapeText(statusText)}</p>` : ""}
+      <div>
+        <h3>Nächste 3 Märkte</h3>
+        ${priceFetchMarketRows()}
+      </div>
+      <div class="modal-actions">
+        <button type="button" data-refresh-prices>${icon("refresh")} Jetzt Preise abrufen</button>
+        <button type="button" data-open-market-search>${icon("mapPin")} Märkte suchen</button>
+      </div>
+    </div>
+  `);
+}
+
+function marketPreviewMarkup(market) {
+  if (!market) return "";
+  const isAdded = Boolean(market.isUserAdded);
+  return `
+    <aside class="market-preview">
+      <button class="market-preview-add ${isAdded ? "is-added" : ""}" type="button" data-add-market="${escapeText(market.id)}" aria-label="${escapeText(market.name)} speichern">
+        ${icon(isAdded ? "check" : "store")}
+        ${isAdded ? "" : icon("plus")}
+      </button>
+      <div class="market-preview-copy">
+        <strong>${escapeText(market.name)}</strong>
+        <span>${escapeText(market.kategorie)} · ${escapeText(formatDistance(market.entfernung))}</span>
+        <small>${escapeText(marketAddressLine(market))}</small>
+        <small>${escapeText(market.websiteUrl || "Website folgt")}</small>
+      </div>
+      <div class="market-preview-actions">
+        <button type="button" data-market-detail="${escapeText(market.id)}">Details</button>
+        <button type="button" data-open-prospect="${escapeText(market.id)}">${icon("external")} Prospekt</button>
+      </div>
+    </aside>
+  `;
+}
+
+function marketResultRowsMarkup(matches, selectedMarketId) {
+  if (!matches.length) return '<p class="empty-state">Kein Markt gefunden.</p>';
+  return `
+    <div class="market-result-list">
+      ${matches.map((market) => `
+        <button class="market-result-row ${market.id === selectedMarketId ? "is-selected" : ""}" type="button" data-select-market="${escapeText(market.id)}">
+          <span class="market-mini-icon">${icon(market.icon)}</span>
+          <span>
+            <strong>${escapeText(market.name)}</strong>
+            <small>${escapeText(marketAddressLine(market))}</small>
+          </span>
+          <em>${escapeText(formatDistance(market.entfernung))}</em>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderMarketSearchResults(query = marketSearchState.query, selectedMarketId = marketSearchState.selectedMarketId) {
+  const container = elements.modalContent.querySelector("#marketSearchResults");
+  if (!container) return;
+  const matches = marketService.searchMarkets(query).map((market) => marketById(market.id) ?? market);
+  const selected = matches.find((market) => market.id === selectedMarketId) ?? matches[0] ?? null;
+  marketSearchState = {
+    query,
+    selectedMarketId: selected?.id ?? ""
+  };
+  container.innerHTML = `
+    <div class="mock-map" aria-label="Kartenansicht">
+      ${matches.slice(0, 12).map((market) => `
+        <button class="map-marker ${market.id === selected?.id ? "is-active" : ""}" type="button" style="${marketMapStyle(market)}" data-select-market="${escapeText(market.id)}" aria-label="${escapeText(market.name)}">
+          ${icon("mapPin")}
+        </button>
+      `).join("")}
+    </div>
+    ${marketPreviewMarkup(selected)}
+    ${marketResultRowsMarkup(matches, selected?.id ?? "")}
+  `;
+}
+
+function showMarketSearch(initialQuery = "") {
+  marketSearchState = { query: initialQuery, selectedMarketId: "" };
+  openModal(`
+    <h2 id="modalTitle">Märkte suchen</h2>
+    <div class="market-search-panel">
+      <div class="search-row modal-search-row">
+        ${icon("mapPin")}
+        <input id="marketSearchInput" type="search" placeholder="PLZ, Ort, Marktname oder Adresse" value="${escapeText(initialQuery)}" data-market-search-input>
+      </div>
+      <div id="marketSearchResults"></div>
+    </div>
+  `);
+  renderMarketSearchResults(initialQuery);
+  window.setTimeout(() => elements.modalContent.querySelector("#marketSearchInput")?.focus(), 0);
+}
+
+function showMarketDetail(marketId) {
+  const market = marketById(marketId);
+  if (!market) return;
+  openModal(`
+    <h2 id="modalTitle">${escapeText(market.name)}</h2>
+    <div class="market-detail-panel">
+      <div class="market-detail-head">
+        <span class="market-detail-icon">${icon(market.icon)}</span>
+        <div>
+          <strong>${escapeText(market.kategorie)}</strong>
+          <small>${escapeText(formatDistance(market.entfernung))} entfernt · ${escapeText(market.source)}</small>
+        </div>
+      </div>
+      <div class="market-detail-grid">
+        <span>Adresse</span>
+        <strong>${escapeText(marketAddressLine(market))}</strong>
+        <span>Website</span>
+        <strong>${escapeText(market.websiteUrl || "Noch nicht hinterlegt")}</strong>
+        <span>Prospekt</span>
+        <strong>${escapeText(market.prospectUrl || "Noch nicht hinterlegt")}</strong>
+      </div>
+      <div class="modal-actions">
+        <button type="button" data-open-prospect="${escapeText(market.id)}">${icon("external")} Werbekatalog öffnen</button>
+        <button type="button" data-add-market="${escapeText(market.id)}">${icon(market.isUserAdded ? "check" : "plus")} ${market.isUserAdded ? "Gespeichert" : "Zu meinen Märkten"}</button>
+      </div>
+    </div>
+  `);
+}
+
+function marketPriceRowsMarkup(product, query = "") {
+  const cleanQuery = normalize(query);
+  const nearest = topNearbyMarkets(3);
+  const searchedMarkets = markets
+    .filter((market) => marketMatches(market, cleanQuery))
+    .sort(sortMarketsByDistance)
+    .slice(0, cleanQuery ? 20 : 12);
+  const seen = new Set();
+  const sections = [
+    ["Die 3 nächsten Märkte", nearest],
+    ["Weitere Märkte", searchedMarkets]
+  ];
+  return sections.map(([title, items]) => {
+    const rows = items.filter((market) => {
+      const key = `${title}:${market.id}`;
+      if (title !== "Die 3 nächsten Märkte" && seen.has(market.id)) return false;
+      seen.add(market.id);
+      return !seen.has(key);
+    });
+    if (!rows.length) return "";
+    return `
+      <section class="market-price-section">
+        <h3>${escapeText(title)}</h3>
+        <div class="market-price-list">
+          ${rows.map((market) => {
+            const price = productPrices.find((entry) => entry.productId === product.id && entry.marketId === market.id);
+            return `
+              <article class="market-price-row">
+                <button class="market-price-main" type="button" data-market-detail="${escapeText(market.id)}">
+                  <span class="market-mini-icon">${icon(market.icon)}</span>
+                  <span>
+                    <strong>${escapeText(market.name)}</strong>
+                    <small>${escapeText(marketAddressLine(market))}</small>
+                  </span>
+                </button>
+                <div class="market-price-value">
+                  <strong>${price ? escapeText(formatPrice(price.price, price.currency)) : "Kein Preis"}</strong>
+                  <small>${price ? escapeText(formatDateTime(price.lastUpdated)) : "Noch keine Daten"}</small>
+                </div>
+                <div class="market-price-actions">
+                  <button type="button" data-open-prospect="${escapeText(market.id)}" title="Werbekatalog öffnen" aria-label="Werbekatalog öffnen">${icon("external")}</button>
+                  <button type="button" data-add-market="${escapeText(market.id)}" title="Markt speichern" aria-label="Markt speichern">${icon(market.isUserAdded ? "check" : "plus")}</button>
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      </section>
+    `;
+  }).join("") || '<p class="empty-state">Keine Märkte gefunden.</p>';
+}
+
+function renderProductPriceRows(query = productPriceState.query) {
+  const rows = elements.modalContent.querySelector("#productPriceRows");
+  if (!rows) return;
+  const product = allProducts().find((item) => item.id === productPriceState.productId);
+  if (!product) return;
+  productPriceState.query = query;
+  rows.innerHTML = marketPriceRowsMarkup(product, query);
+}
+
+function showProductMarketPrices(productId) {
+  const product = allProducts().find((item) => item.id === productId);
+  if (!product) return;
+  productPriceState = { productId, query: "" };
+  openModal(`
+    <h2 id="modalTitle">${escapeText(product.name)}</h2>
+    <div class="product-price-panel">
+      <p class="product-price-summary">${escapeText(priceSummaryForProduct(product))}</p>
+      <div class="modal-actions">
+        <button type="button" data-check-prospect="${escapeText(product.id)}">${icon("tag")} Angebote im Prospekt prüfen</button>
+        <button type="button" data-open-market-search>${icon("mapPin")} Weitere Märkte hinzufügen</button>
+      </div>
+      <div class="search-row modal-search-row">
+        ${icon("mapPin")}
+        <input id="priceMarketSearchInput" type="search" placeholder="Marktname oder Adresse" data-price-market-search>
+      </div>
+      <div id="productPriceRows"></div>
+    </div>
+  `);
+  renderProductPriceRows("");
+  window.setTimeout(() => elements.modalContent.querySelector("#priceMarketSearchInput")?.focus(), 0);
+}
+
 function showMore() {
   openModal(`
     <h2 id="modalTitle">Mehr</h2>
     <div class="modal-actions modal-actions-stack">
       <button type="button" data-open-profile>Profil</button>
       <button type="button" data-open-background>Hintergrund anpassen</button>
+      <button type="button" data-open-data-tools>Daten hinzufügen</button>
     </div>
   `);
 }
@@ -2114,12 +3132,16 @@ function renderProductGrid(container, products) {
   const canAdd = canPerform(activeList(), "add");
   container.innerHTML = products.map((product) => {
     const isFavorite = favorites.includes(product.id);
+    const priceSummary = priceSummaryForProduct(product);
     return `
       <article class="product-card">
-        ${productIconMarkup(product)}
-        <div>
+        <button class="product-icon-button" type="button" title="Preise und Märkte" aria-label="Preise und Märkte für ${escapeText(product.name)}" data-product-prices="${escapeText(product.id)}">
+          ${productIconMarkup(product)}
+        </button>
+        <div class="product-copy">
           <p class="product-name">${escapeText(product.name)}</p>
           <p class="product-shelf">${escapeText(product.shelfTitle)}</p>
+          <p class="product-price ${bestPriceForProduct(product.id) ? "" : "is-empty"}">${escapeText(priceSummary)}</p>
         </div>
         <div class="product-actions">
           <button class="favorite-button ${isFavorite ? "is-active" : ""}" type="button" title="Favorit" aria-label="Favorit" data-favorite="${escapeText(product.id)}">
@@ -2143,6 +3165,9 @@ function renderProductGrid(container, products) {
   });
   container.querySelectorAll("[data-favorite]").forEach((button) => {
     button.addEventListener("click", () => toggleFavorite(allProducts().find((product) => product.id === button.dataset.favorite)));
+  });
+  container.querySelectorAll("[data-product-prices]").forEach((button) => {
+    button.addEventListener("click", () => showProductMarketPrices(button.dataset.productPrices));
   });
 }
 
@@ -2700,6 +3725,59 @@ elements.modalContent.addEventListener("click", (event) => {
     showBackgroundOptions();
     return;
   }
+  if (event.target.closest("[data-open-data-tools]")) {
+    showDataTools();
+    return;
+  }
+  if (event.target.closest("[data-open-price-fetch]")) {
+    showPriceFetch();
+    return;
+  }
+  if (event.target.closest("[data-open-market-search]")) {
+    showMarketSearch();
+    return;
+  }
+  if (event.target.closest("[data-refresh-prices]")) {
+    refreshPrices({ manual: true });
+    return;
+  }
+  const selectedMarketButton = event.target.closest("[data-select-market]");
+  if (selectedMarketButton) {
+    renderMarketSearchResults(marketSearchState.query, selectedMarketButton.dataset.selectMarket);
+    return;
+  }
+  const marketDetailButton = event.target.closest("[data-market-detail]");
+  if (marketDetailButton) {
+    showMarketDetail(marketDetailButton.dataset.marketDetail);
+    return;
+  }
+  const openProspectButton = event.target.closest("[data-open-prospect]");
+  if (openProspectButton) {
+    openProspect(openProspectButton.dataset.openProspect);
+    return;
+  }
+  const checkProspectButton = event.target.closest("[data-check-prospect]");
+  if (checkProspectButton) {
+    openProductProspect(checkProspectButton.dataset.checkProspect);
+    return;
+  }
+  const addMarketButton = event.target.closest("[data-add-market]");
+  if (addMarketButton) {
+    const addedMarket = addMarketToPersonalList(addMarketButton.dataset.addMarket);
+    if (!addedMarket) return;
+    if (elements.modalContent.querySelector("#productPriceRows")) {
+      renderProductPriceRows(productPriceState.query);
+      return;
+    }
+    if (elements.modalContent.querySelector("#marketSearchResults")) {
+      renderMarketSearchResults(marketSearchState.query, marketSearchState.selectedMarketId || addedMarket.id);
+      return;
+    }
+    if (elements.modalContent.querySelector(".market-detail-panel")) {
+      showMarketDetail(addedMarket.id);
+    }
+    return;
+  }
   if (event.target.closest("[data-open-profile]")) {
     showProfile();
     return;
@@ -2742,6 +3820,15 @@ elements.modalContent.addEventListener("click", (event) => {
     clearItemNote();
   }
 });
+elements.modalContent.addEventListener("input", (event) => {
+  if (event.target.matches("[data-market-search-input]")) {
+    renderMarketSearchResults(event.target.value, marketSearchState.selectedMarketId);
+    return;
+  }
+  if (event.target.matches("[data-price-market-search]")) {
+    renderProductPriceRows(event.target.value);
+  }
+});
 elements.modalContent.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.id === "renameListInput") {
     saveRenamedList();
@@ -2768,6 +3855,7 @@ async function bootApp() {
     adoptCurrentUserId(authUser.id);
   }
   await importSharedListFromUrl();
+  await refreshPricesIfStale();
   collaborationService.subscribe((message) => {
     if (message.type === "lists") {
       mergeRemoteLists(message.lists);
