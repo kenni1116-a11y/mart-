@@ -31,6 +31,21 @@ as $$
   );
 $$;
 
+create or replace function public.shared_list_has_removed_member(list_payload jsonb, user_id uuid)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(coalesce(list_payload -> 'removedMembers', '[]'::jsonb)) as member
+    where member ->> 'userId' = user_id::text
+  );
+$$;
+
+grant execute on function public.shared_list_has_removed_member(jsonb, uuid) to authenticated;
+
 create index if not exists shared_lists_owner_user_id_idx
 on public.shared_lists(owner_user_id);
 
@@ -97,6 +112,71 @@ revoke all on function public.join_shared_list(text, text, text, text) from publ
 revoke all on function public.join_shared_list(text, text, text, text) from anon;
 grant execute on function public.join_shared_list(text, text, text, text) to authenticated;
 
+create or replace function public.leave_shared_list(target_list_id text)
+returns jsonb
+language plpgsql
+set search_path = ''
+as $$
+declare
+  request_user_id uuid := auth.uid();
+  left_at text := to_jsonb(now()) #>> '{}';
+  next_payload jsonb;
+begin
+  if request_user_id is null then
+    raise exception 'authentication required';
+  end if;
+
+  perform set_config('request.mart_leave_user_id', request_user_id::text, true);
+
+  update public.shared_lists
+  set
+    payload = jsonb_set(
+      jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            payload,
+            '{members}',
+            coalesce((
+              select jsonb_agg(member)
+              from pg_catalog.jsonb_array_elements(coalesce(payload -> 'members', '[]'::jsonb)) as member
+              where member ->> 'userId' <> request_user_id::text
+            ), '[]'::jsonb),
+            true
+          ),
+          '{removedMembers}',
+          coalesce(payload -> 'removedMembers', '[]'::jsonb) || jsonb_build_object(
+            'userId', request_user_id::text,
+            'removedByUserId', request_user_id::text,
+            'removedAt', left_at
+          ),
+          true
+        ),
+        '{updatedByUserId}',
+        to_jsonb(request_user_id::text),
+        true
+      ),
+      '{updatedAt}',
+      to_jsonb(left_at),
+      true
+    ),
+    updated_at = now()
+  where id = target_list_id
+    and payload ->> 'ownerId' <> request_user_id::text
+    and public.shared_list_has_member(payload, request_user_id)
+  returning payload into next_payload;
+
+  if next_payload is null then
+    raise exception 'not a removable member';
+  end if;
+
+  return next_payload;
+end;
+$$;
+
+revoke all on function public.leave_shared_list(text) from public;
+revoke all on function public.leave_shared_list(text) from anon;
+grant execute on function public.leave_shared_list(text) to authenticated;
+
 drop policy if exists "members can read shared lists" on public.shared_lists;
 drop policy if exists "members and invitees can read shared lists" on public.shared_lists;
 create policy "members and invitees can read shared lists"
@@ -107,6 +187,11 @@ using (
   owner_user_id = (select auth.uid())
   or public.shared_list_has_member(payload, (select auth.uid()))
   or invite_code = (select current_setting('request.mart_invite_code', true))
+  or exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(coalesce(payload -> 'removedMembers', '[]'::jsonb)) as removed_member
+    where removed_member ->> 'userId' = (select current_setting('request.mart_leave_user_id', true))
+  )
 );
 
 drop policy if exists "members can insert shared lists" on public.shared_lists;
@@ -133,6 +218,11 @@ using (
 with check (
   owner_user_id = (select auth.uid())
   or public.shared_list_has_member(payload, (select auth.uid()))
+  or exists (
+    select 1
+    from pg_catalog.jsonb_array_elements(coalesce(payload -> 'removedMembers', '[]'::jsonb)) as removed_member
+    where removed_member ->> 'userId' = (select auth.uid())::text
+  )
   or (
     invite_code = (select current_setting('request.mart_invite_code', true))
     and public.shared_list_has_member(payload, (select auth.uid()))

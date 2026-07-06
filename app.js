@@ -547,6 +547,11 @@ class MockRealtimeService {
     }
   }
 
+  async leaveSharedList(listData) {
+    this.publishLists([listData]);
+    return exportCollaborativeList(listData);
+  }
+
   heartbeat(listData, user) {
     const members = this.presenceFor(listData.id);
     const now = isoNow();
@@ -737,6 +742,29 @@ class SupabaseRealtimeService {
         createdAt: isoNow(),
         listId: listData.id,
         inviteCode: listData.inviteCode,
+        error: error.message
+      });
+      return null;
+    }
+    return data;
+  }
+
+  async leaveSharedList(listData, user) {
+    if (!listData?.id) return null;
+    if (!this.client) {
+      this.fallback.publishLists([listData]);
+      return exportCollaborativeList(listData);
+    }
+    const authUser = await this.ensureAuthenticated(user);
+    if (!authUser) return null;
+    const { data, error } = await this.client.rpc("leave_shared_list", {
+      target_list_id: listData.id
+    });
+    if (error) {
+      this.queueOffline({
+        type: "leave",
+        createdAt: isoNow(),
+        listId: listData.id,
         error: error.message
       });
       return null;
@@ -1506,6 +1534,13 @@ function mergeRemoteLists(remoteLists) {
     const remoteList = importedListFromValue(remoteListData);
     if (!remoteList) return;
     const index = lists.findIndex((listData) => listData.id === remoteList.id);
+    if (remoteList.ownerId !== currentUser.userId && isMemberRemoved(remoteList, currentUser.userId)) {
+      if (index !== -1) {
+        removeLocalList(remoteList.id, index);
+        didChange = true;
+      }
+      return;
+    }
     if (index === -1) {
       lists.push(remoteList);
       didChange = true;
@@ -1678,15 +1713,58 @@ async function copyInviteLink() {
 function removeMember(listId, userId) {
   const listData = listById(listId);
   if (!canPerform(listData, "remove") || userId === listData.ownerId) return;
+  markMemberRemoved(listData, userId);
+  touchList(listData);
+  save();
+  renderNotes();
+}
+
+function markMemberRemoved(listData, userId, removedByUserId = currentUser.userId) {
   listData.removedMembers = mergeRemovedMembers(listData.removedMembers, [{
     userId,
-    removedByUserId: currentUser.userId,
+    removedByUserId,
     removedAt: isoNow()
   }]);
   listData.members = listData.members.filter((member) => member.userId !== userId);
+}
+
+function showMembers(listId = activeListId) {
+  const listData = listById(listId);
+  const members = activeMembersFor(listData);
+  const canRemove = canPerform(listData, "remove");
+  openModal(`
+    <h2 id="modalTitle">Aktive Nutzer</h2>
+    <div class="members-panel">
+      <p>${escapeText(listData.title)}</p>
+      <div class="share-members">
+        ${members.map((member) => `
+          <div class="share-member-row">
+            ${memberAvatarMarkup(member, member.userId === currentUser.userId ? "is-current" : "")}
+            <span>${escapeText(cleanDisplayName(member.displayName, "Gast"))}</span>
+            <small>${escapeText(roleLabels[member.role] ?? "Editor")}</small>
+            ${canRemove && member.userId !== listData.ownerId ? `<button type="button" aria-label="${escapeText(member.displayName)} entfernen" data-remove-member="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}" data-after-remove="members">${icon("minus")}</button>` : ""}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `);
+}
+
+async function leaveSharedList(listData, index) {
+  if (listData.ownerId === currentUser.userId) {
+    window.alert("Als Owner kannst du diesen geteilten Zettel nicht verlassen. Entferne zuerst die anderen Nutzer.");
+    return;
+  }
+  if (!window.confirm(`"${listData.title}" verlassen? Du brauchst danach eine neue Einladung, um wieder beizutreten.`)) return;
+  markMemberRemoved(listData, currentUser.userId, currentUser.userId);
   touchList(listData);
-  save();
-  shareList(listId);
+  const remotePayload = await collaborationService.leaveSharedList?.(listData, currentUser);
+  if (!remotePayload) {
+    window.alert("Der geteilte Zettel konnte gerade nicht verlassen werden.");
+    return;
+  }
+  removeLocalList(listData.id, index);
+  save({ broadcast: false });
   renderNotes();
 }
 
@@ -2204,11 +2282,34 @@ function selectList(id) {
   renderNotes();
 }
 
+function removeLocalList(id, index = lists.findIndex((listData) => listData.id === id)) {
+  if (index === -1) return;
+  lists = lists.filter((listData) => listData.id !== id);
+  if (!lists.length) {
+    const fallbackList = createList("Dein Zettel");
+    lists = [fallbackList];
+    activeListId = fallbackList.id;
+    return;
+  }
+  if (activeListId === id) {
+    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0].id;
+  }
+}
+
 function deleteList(id) {
   const index = lists.findIndex((listData) => listData.id === id);
   if (index === -1) return;
 
   const listToDelete = lists[index];
+  if (listToDelete.ownerId !== currentUser.userId) {
+    leaveSharedList(listToDelete, index);
+    return;
+  }
+  if (activeMembersFor(listToDelete).some((member) => member.userId !== currentUser.userId)) {
+    window.alert("Du bist Owner dieses geteilten Zettels. Entferne zuerst die anderen Nutzer, bevor du ihn löschst.");
+    return;
+  }
+
   if (lists.length === 1) {
     if (!window.confirm("Diesen Zettel wirklich vollständig leeren?")) return;
     listToDelete.items = [];
@@ -2218,10 +2319,7 @@ function deleteList(id) {
   }
 
   if (!window.confirm(`"${listToDelete.title}" wirklich vollständig löschen?`)) return;
-  lists = lists.filter((listData) => listData.id !== id);
-  if (activeListId === id) {
-    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0].id;
-  }
+  removeLocalList(id, index);
   save();
   renderNotes();
 }
@@ -2501,7 +2599,9 @@ function noteMarkup(listData) {
       </div>
       <div class="collab-row">
         ${membersMarkup(listData)}
-        <span class="sync-chip">${canManageMembers(listData) ? "Owner" : roleLabels[memberRole(listData)]}</span>
+        ${canManageMembers(listData)
+          ? `<button class="sync-chip" type="button" data-members-list="${escapeText(listData.id)}">Owner</button>`
+          : `<span class="sync-chip">${escapeText(roleLabels[memberRole(listData)] ?? "Viewer")}</span>`}
       </div>
       <form class="manual-add" data-manual-form="${escapeText(listData.id)}">
         <input type="text" placeholder="Eigener Artikel" autocomplete="off" enterkeyhint="done" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
@@ -2533,6 +2633,9 @@ function renderNotes() {
   });
   elements.notesStack.querySelectorAll("[data-share-list]").forEach((button) => {
     button.addEventListener("click", () => shareList(button.dataset.shareList));
+  });
+  elements.notesStack.querySelectorAll("[data-members-list]").forEach((button) => {
+    button.addEventListener("click", () => showMembers(button.dataset.membersList));
   });
   elements.notesStack.querySelectorAll("[data-edit-item-note]").forEach((button) => {
     button.addEventListener("click", () => editItemNote(button.dataset.listId, button.dataset.editItemNote));
@@ -2616,6 +2719,11 @@ elements.modalContent.addEventListener("click", (event) => {
   const removeMemberButton = event.target.closest("[data-remove-member]");
   if (removeMemberButton) {
     removeMember(removeMemberButton.dataset.listId, removeMemberButton.dataset.removeMember);
+    if (removeMemberButton.dataset.afterRemove === "members") {
+      showMembers(removeMemberButton.dataset.listId);
+    } else {
+      shareList(removeMemberButton.dataset.listId);
+    }
     return;
   }
   if (event.target.closest("[data-save-profile]")) {

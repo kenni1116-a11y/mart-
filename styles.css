@@ -543,6 +543,27 @@ h2 {
   line-height: 1;
 }
 
+button.sync-chip {
+  cursor: pointer;
+}
+
+button.sync-chip:hover {
+  border-color: rgba(86, 72, 25, 0.34);
+  background: rgba(255, 252, 210, 0.5);
+  color: rgba(43, 38, 28, 0.84);
+}
+
+.members-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.members-panel > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .list-tabs {
   display: flex;
   align-items: center;
