@@ -287,23 +287,22 @@ h2 {
 }
 
 .edit-note-button {
-  position: absolute;
-  z-index: 2;
-  top: 9px;
-  right: 9px;
+  flex: 0 0 26px;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   place-items: center;
   border: 1px solid rgba(124, 103, 30, 0.2);
   border-radius: 999px;
   background: rgba(255, 252, 210, 0.46);
   color: rgba(48, 43, 32, 0.72);
+  transform: rotate(-2deg);
 }
 
 .edit-note-button svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   stroke-width: 1.8;
 }
 
@@ -453,7 +452,6 @@ h2 {
 
 .list-head {
   gap: 8px;
-  padding-right: 31px;
   margin-bottom: 7px;
 }
 

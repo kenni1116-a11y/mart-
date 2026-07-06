@@ -2480,13 +2480,13 @@ function noteMarkup(listData) {
   const canAdd = canPerform(listData, "add");
   return `
     <article class="list-panel note-card ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
-      <button class="edit-note-button" type="button" title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
-        ${icon("pencil")}
-      </button>
       <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
         <h2 class="list-title">
           <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
           <span>${escapeText(listData.title)}</span>
+          <button class="edit-note-button" type="button" title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
+            ${icon("pencil")}
+          </button>
         </h2>
         <div class="list-tools">
           <span>${count} Artikel</span>
@@ -2536,7 +2536,8 @@ function renderNotes() {
   });
   elements.notesStack.querySelectorAll("[data-manual-add]").forEach((button) => {
     button.addEventListener("click", () => {
-      const input = elements.notesStack.querySelector(`[data-manual-input="${CSS.escape(button.dataset.manualAdd)}"]`);
+      const note = button.closest("[data-note]");
+      const input = note?.querySelector("[data-manual-input]");
       if (!input) return;
       addManualItem(button.dataset.manualAdd, input);
     });
