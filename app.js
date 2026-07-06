@@ -707,6 +707,7 @@ const iconPaths = {
   bandage: '<path d="m4 15 11-11a4 4 0 0 1 6 6L10 21a4 4 0 0 1-6-6Zm6-6 5 5m-4-2h.01m3-3h.01"/>',
   thermometer: '<path d="M10 14V5a3 3 0 0 1 6 0v9a5 5 0 1 1-6 0Zm3-9v11m-2 0h4"/>',
   diaper: '<path d="M5 7h14v7c0 4-3 7-7 7s-7-3-7-7V7Zm0 0c2 2 4 3 7 3s5-1 7-3M8 14h.01M16 14h.01"/>',
+  warning: '<path d="M12 3 2 21h20L12 3Zm0 6v5m0 4h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
@@ -904,7 +905,7 @@ class MockRealtimeService {
     this.notify(message);
   }
 
-  publishLists(nextLists) {
+  async publishLists(nextLists) {
     const message = {
       type: "lists",
       sourceId: this.clientId,
@@ -916,11 +917,17 @@ class MockRealtimeService {
       this.channel?.postMessage(message);
     } catch {
       this.queueOffline({ type: "lists", createdAt: isoNow(), lists: message.lists });
+      return { ok: false, offline: true };
     }
+    return { ok: true, local: true };
+  }
+
+  async fetchSharedLists() {
+    return [];
   }
 
   async leaveSharedList(listData) {
-    this.publishLists([listData]);
+    await this.publishLists([listData]);
     return exportCollaborativeList(listData);
   }
 
@@ -1049,7 +1056,7 @@ class SupabaseRealtimeService {
 
   openListChannel() {
     if (!this.client || this.listChannel) return;
-    this.listChannel = this.client
+    const channel = this.client
       .channel("mart-shared-lists")
       .on("postgres_changes", { event: "*", schema: "public", table: this.tableName }, (payload) => {
         const row = payload.new ?? payload.old;
@@ -1062,14 +1069,29 @@ class SupabaseRealtimeService {
           lists: [listPayload]
         });
       })
-      .subscribe();
+      .subscribe((status, error) => {
+        this.notify({
+          type: "sync-status",
+          sourceId: "supabase",
+          sentAt: isoNow(),
+          status,
+          error: error?.message ?? error?.name ?? ""
+        });
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          const failedChannel = this.listChannel;
+          this.listChannel = null;
+          if (failedChannel) this.client.removeChannel?.(failedChannel);
+          window.setTimeout(() => this.openListChannel(), 3500);
+        }
+      });
+    this.listChannel = channel;
   }
 
   publishLists(nextLists) {
     this.fallback.publishLists(nextLists);
     if (!this.client) {
       this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
-      return;
+      return Promise.resolve({ ok: false, offline: true });
     }
 
     const rows = nextLists.map((listData) => {
@@ -1083,7 +1105,7 @@ class SupabaseRealtimeService {
       };
     });
 
-    this.client
+    return this.client
       .from(this.tableName)
       .upsert(rows, { onConflict: "id" })
       .then(({ error }) => {
@@ -1094,8 +1116,37 @@ class SupabaseRealtimeService {
             error: error.message,
             lists: rows.map((row) => row.payload)
           });
+          return { ok: false, error: error.message };
         }
+        return { ok: true };
       });
+  }
+
+  async fetchSharedLists(user) {
+    if (!this.client) {
+      this.queueOffline({
+        type: "pull",
+        createdAt: isoNow(),
+        error: "Supabase Client nicht verfügbar"
+      });
+      return null;
+    }
+    const authUser = await this.ensureAuthenticated(user);
+    if (!authUser) return null;
+    const { data, error } = await this.client
+      .from(this.tableName)
+      .select("payload, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    if (error) {
+      this.queueOffline({
+        type: "pull",
+        createdAt: isoNow(),
+        error: error.message
+      });
+      return null;
+    }
+    return Array.isArray(data) ? data.map((row) => row.payload).filter(Boolean) : [];
   }
 
   async joinSharedList(listData, user) {
@@ -1295,6 +1346,16 @@ let pendingItemNoteEdit = null;
 let activeMembersByList = {};
 let marketSearchState = { query: "", selectedMarketId: "" };
 let productPriceState = { productId: "", query: "" };
+let manualDrafts = {};
+let syncState = {
+  status: navigator.onLine ? "idle" : "offline",
+  lastSyncedAt: "",
+  lastAttemptAt: "",
+  lastError: "",
+  realtimeStatus: ""
+};
+let remoteSyncPromise = null;
+let syncRenderTimer = 0;
 
 const collaborationService = createCollaborationService();
 const marketService = new MockMarketService(defaultMarkets);
@@ -1647,7 +1708,18 @@ function normalizeShoppingItem(item, index = 0) {
     checkedByUserId: typeof item.checkedByUserId === "string" ? item.checkedByUserId : "",
     checkedAt,
     updatedByUserId: typeof item.updatedByUserId === "string" && item.updatedByUserId ? item.updatedByUserId : addedByUserId,
-    updatedAt: safeDate(item.updatedAt ?? item.checkedAt ?? now)
+    updatedAt: safeDate(item.updatedAt ?? item.checkedAt ?? now),
+    conflict: normalizeItemConflict(item.conflict)
+  };
+}
+
+function normalizeItemConflict(conflict) {
+  if (!conflict || typeof conflict !== "object") return null;
+  return {
+    detectedAt: conflict.detectedAt ? safeDate(conflict.detectedAt, "") : isoNow(),
+    localByUserId: typeof conflict.localByUserId === "string" ? conflict.localByUserId : "",
+    remoteByUserId: typeof conflict.remoteByUserId === "string" ? conflict.remoteByUserId : "",
+    message: cleanText(conflict.message, "Gleichzeitige Änderung erkannt", 120)
   };
 }
 
@@ -1663,6 +1735,7 @@ function touchItem(item, listData, user = currentUser) {
   const now = touchList(listData, user.userId);
   item.updatedAt = now;
   item.updatedByUserId = user.userId;
+  item.conflict = null;
   return now;
 }
 
@@ -1744,6 +1817,45 @@ function activeItems() {
   return activeList().items;
 }
 
+function renderNotesSoon() {
+  if (!elements?.notesStack || syncRenderTimer) return;
+  syncRenderTimer = window.setTimeout(() => {
+    syncRenderTimer = 0;
+    renderNotes();
+  }, 0);
+}
+
+function setSyncState(status, details = {}) {
+  syncState = {
+    ...syncState,
+    status,
+    ...details
+  };
+  renderNotesSoon();
+}
+
+function markSyncAttempt() {
+  setSyncState(navigator.onLine ? "syncing" : "offline", {
+    lastAttemptAt: isoNow(),
+    lastError: navigator.onLine ? "" : "offline"
+  });
+}
+
+function markSyncSuccess() {
+  setSyncState("online", {
+    lastSyncedAt: isoNow(),
+    lastAttemptAt: syncState.lastAttemptAt || isoNow(),
+    lastError: ""
+  });
+}
+
+function markSyncError(error) {
+  setSyncState(navigator.onLine ? "error" : "offline", {
+    lastAttemptAt: syncState.lastAttemptAt || isoNow(),
+    lastError: typeof error === "string" ? error : (error?.message ?? "Sync nicht erreichbar")
+  });
+}
+
 function save(options = {}) {
   lists = lists.map(normalizeListData);
   localStorage.setItem(storageKeys.lists, JSON.stringify(lists));
@@ -1753,7 +1865,17 @@ function save(options = {}) {
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
   if (options.broadcast !== false) {
-    collaborationService.publishLists(lists);
+    markSyncAttempt();
+    Promise.resolve(collaborationService.publishLists(lists))
+      .then((result) => {
+        if (result?.ok === false) {
+          markSyncError(result.error || "Änderungen warten auf Verbindung");
+          return;
+        }
+        markSyncSuccess();
+        pullRemoteListsSoon("after-write", 900);
+      })
+      .catch((error) => markSyncError(error));
   }
 }
 
@@ -2252,6 +2374,41 @@ function mergeDeletedItems(localDeleted = [], remoteDeleted = []) {
   return Array.from(byId.values()).slice(-200);
 }
 
+function itemsDiffer(first, second) {
+  if (!first || !second) return false;
+  return first.name !== second.name
+    || first.note !== second.note
+    || first.quantity !== second.quantity
+    || first.done !== second.done;
+}
+
+function onlyQuantityDiffers(first, second) {
+  if (!first || !second) return false;
+  return first.name === second.name
+    && first.note === second.note
+    && first.done === second.done
+    && first.quantity !== second.quantity;
+}
+
+function shouldMarkItemConflict(localItem, remoteItem) {
+  if (!localItem || !remoteItem) return false;
+  if (localItem.updatedByUserId === remoteItem.updatedByUserId) return false;
+  if (!itemsDiffer(localItem, remoteItem)) return false;
+  const localUpdatedAt = Date.parse(localItem.updatedAt ?? 0);
+  const remoteUpdatedAt = Date.parse(remoteItem.updatedAt ?? 0);
+  if (!Number.isFinite(localUpdatedAt) || !Number.isFinite(remoteUpdatedAt)) return false;
+  return Math.abs(localUpdatedAt - remoteUpdatedAt) < 20000;
+}
+
+function itemConflict(localItem, remoteItem) {
+  return {
+    detectedAt: isoNow(),
+    localByUserId: localItem?.updatedByUserId ?? "",
+    remoteByUserId: remoteItem?.updatedByUserId ?? "",
+    message: "Zwei Geräte haben diesen Artikel fast gleichzeitig geändert. Die neueste Version wurde übernommen."
+  };
+}
+
 function mergeList(localList, remoteList) {
   const local = normalizeListData(localList);
   const remote = normalizeListData(remoteList);
@@ -2264,6 +2421,15 @@ function mergeList(localList, remoteList) {
     const deletedAt = latestDeletedAt(deletedItems, itemId);
     const newestItem = !localItem ? remoteItem : (!remoteItem ? localItem : (newerDate(remoteItem.updatedAt, localItem.updatedAt) ? remoteItem : localItem));
     if (deletedAt && (!newestItem || newerDate(deletedAt, newestItem.updatedAt))) return null;
+    if (localItem && remoteItem && onlyQuantityDiffers(localItem, remoteItem)) {
+      return { ...newestItem, quantity: Math.max(localItem.quantity, remoteItem.quantity), conflict: null };
+    }
+    if (localItem && remoteItem && shouldMarkItemConflict(localItem, remoteItem)) {
+      return {
+        ...newestItem,
+        conflict: normalizeItemConflict(newestItem.conflict) ?? itemConflict(localItem, remoteItem)
+      };
+    }
     if (localItem && remoteItem && localItem.quantity !== remoteItem.quantity) {
       return { ...newestItem, quantity: Math.max(localItem.quantity, remoteItem.quantity) };
     }
@@ -2289,7 +2455,7 @@ function mergeList(localList, remoteList) {
 }
 
 function mergeRemoteLists(remoteLists) {
-  if (!Array.isArray(remoteLists)) return;
+  if (!Array.isArray(remoteLists)) return false;
   let didChange = false;
   remoteLists.forEach((remoteListData) => {
     const remoteList = importedListFromValue(remoteListData);
@@ -2313,9 +2479,41 @@ function mergeRemoteLists(remoteLists) {
       didChange = true;
     }
   });
-  if (!didChange) return;
+  if (!didChange) return false;
   save({ broadcast: false });
   render();
+  return true;
+}
+
+async function pullRemoteLists(reason = "auto") {
+  if (!collaborationService.fetchSharedLists) return false;
+  if (remoteSyncPromise) return remoteSyncPromise;
+  markSyncAttempt();
+  remoteSyncPromise = (async () => {
+    try {
+      const remoteLists = await collaborationService.fetchSharedLists(currentUser);
+      if (!remoteLists) {
+        markSyncError("Serverstand konnte nicht geladen werden");
+        return false;
+      }
+      const didChange = mergeRemoteLists(remoteLists);
+      markSyncSuccess();
+      if (!didChange && reason === "manual") renderNotes();
+      return true;
+    } catch (error) {
+      markSyncError(error);
+      return false;
+    }
+  })().finally(() => {
+    remoteSyncPromise = null;
+  });
+  return remoteSyncPromise;
+}
+
+function pullRemoteListsSoon(reason = "auto", delay = 450) {
+  window.setTimeout(() => {
+    pullRemoteLists(reason);
+  }, delay);
 }
 
 function sanitizeSharedList(items) {
@@ -2430,11 +2628,19 @@ async function shareList(listId = activeListId) {
   openModal(`
     <h2 id="modalTitle">Zettel teilen</h2>
     <div class="share-panel" data-invite-url="${escapeText(url.href)}" data-invite-title="${escapeText(listData.title)}">
-      <div class="invite-code">${escapeText(inviteCode)}</div>
-      <textarea readonly rows="4">${escapeText(url.href)}</textarea>
+      <div class="invite-card">
+        <span>Einladungscode</span>
+        <strong>${escapeText(inviteCode)}</strong>
+        <small>Wer den Link öffnet, tritt diesem Zettel bei.</small>
+      </div>
+      <label class="invite-link-field">
+        <span>Einladungslink</span>
+        <textarea readonly rows="4">${escapeText(url.href)}</textarea>
+      </label>
       <div class="modal-actions">
         <button type="button" data-native-share>Teilen</button>
         <button type="button" data-copy-invite>Link kopieren</button>
+        <button class="is-muted" type="button" data-regenerate-invite="${escapeText(listData.id)}">Link erneuern</button>
       </div>
       ${shareMemberRowsMarkup(listData)}
     </div>
@@ -2480,6 +2686,42 @@ function removeMember(listId, userId) {
   renderNotes();
 }
 
+function setMemberRole(listId, userId, role) {
+  const listData = listById(listId);
+  if (!canManageMembers(listData) || userId === listData.ownerId) return;
+  const member = memberFor(listData, userId);
+  if (!member) return;
+  member.role = normalizeRole(role);
+  touchList(listData);
+  save();
+  showMembers(listId);
+}
+
+function transferOwnership(listId, userId) {
+  const listData = listById(listId);
+  if (listData.ownerId !== currentUser.userId || userId === listData.ownerId) return;
+  const nextOwner = memberFor(listData, userId);
+  if (!nextOwner) return;
+  if (!window.confirm(`${cleanDisplayName(nextOwner.displayName, "Gast")} wirklich zum Owner machen?`)) return;
+  listData.ownerId = nextOwner.userId;
+  listData.members = listData.members.map((member) => ({
+    ...member,
+    role: member.userId === nextOwner.userId ? collaborationRoles.owner : (member.userId === currentUser.userId ? collaborationRoles.editor : normalizeRole(member.role))
+  }));
+  touchList(listData);
+  save();
+  showMembers(listId);
+}
+
+function regenerateInvite(listId) {
+  const listData = listById(listId);
+  if (!canPerform(listData, "invite")) return;
+  listData.inviteCode = generateInviteCode();
+  touchList(listData);
+  save();
+  shareList(listId);
+}
+
 function markMemberRemoved(listData, userId, removedByUserId = currentUser.userId) {
   listData.removedMembers = mergeRemovedMembers(listData.removedMembers, [{
     userId,
@@ -2493,6 +2735,7 @@ function showMembers(listId = activeListId) {
   const listData = listById(listId);
   const members = activeMembersFor(listData);
   const canRemove = canPerform(listData, "remove");
+  const canTransferOwner = listData.ownerId === currentUser.userId;
   openModal(`
     <h2 id="modalTitle">Aktive Nutzer</h2>
     <div class="members-panel">
@@ -2503,7 +2746,14 @@ function showMembers(listId = activeListId) {
             ${memberAvatarMarkup(member, member.userId === currentUser.userId ? "is-current" : "")}
             <span>${escapeText(cleanDisplayName(member.displayName, "Gast"))}</span>
             <small>${escapeText(roleLabels[member.role] ?? "Editor")}</small>
-            ${canRemove && member.userId !== listData.ownerId ? `<button type="button" aria-label="${escapeText(member.displayName)} entfernen" data-remove-member="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}" data-after-remove="members">${icon("minus")}</button>` : ""}
+            ${canRemove && member.userId !== listData.ownerId ? `
+              <div class="member-actions">
+                <button class="${member.role === collaborationRoles.editor ? "is-active" : ""}" type="button" data-member-role="editor" data-member-id="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}">Bearbeiten</button>
+                <button class="${member.role === collaborationRoles.viewer ? "is-active" : ""}" type="button" data-member-role="viewer" data-member-id="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}">Lesen</button>
+                ${canTransferOwner ? `<button type="button" data-transfer-owner="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}">Owner</button>` : ""}
+                <button class="is-danger" type="button" aria-label="${escapeText(member.displayName)} entfernen" data-remove-member="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}" data-after-remove="members">${icon("minus")}</button>
+              </div>
+            ` : ""}
           </div>
         `).join("")}
       </div>
@@ -3002,7 +3252,7 @@ function addToList(product) {
 
 function addManualItem(listId, input) {
   if (!input) return false;
-  const name = input.value.trim();
+  const name = (input.value || manualDrafts[listId] || "").trim();
   if (!name) return false;
   activeListId = listId;
   const added = addToList({
@@ -3012,6 +3262,7 @@ function addManualItem(listId, input) {
     shelfTitle: "Eigener Artikel"
   });
   if (!added) return false;
+  manualDrafts[listId] = "";
   input.value = "";
   return true;
 }
@@ -3509,6 +3760,14 @@ function activeMembersFor(listData) {
   return mergeMembers(listData.members, presenceMembers, listData.ownerId, listData.removedMembers);
 }
 
+function isSharedList(listData) {
+  const knownMembers = Array.isArray(listData.members) ? listData.members : [];
+  const visibleMembers = activeMembersFor(listData);
+  return listData.ownerId !== currentUser.userId
+    || knownMembers.some((member) => member.userId !== currentUser.userId)
+    || visibleMembers.some((member) => member.userId !== currentUser.userId);
+}
+
 function memberBadgeLabel(member) {
   return escapeText(userInitials(member));
 }
@@ -3533,12 +3792,53 @@ function membersMarkup(listData) {
   `;
 }
 
+function relativeSyncTime(value) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 10) return "gerade";
+  if (seconds < 60) return `vor ${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `vor ${minutes}m`;
+  return `vor ${Math.round(minutes / 60)}h`;
+}
+
+function syncStatusLabel() {
+  if (syncState.status === "syncing") return "sync";
+  if (syncState.status === "offline") return "offline";
+  if (syncState.status === "error") return "prüfen";
+  const time = relativeSyncTime(syncState.lastSyncedAt);
+  return time ? `live · ${time}` : "live";
+}
+
+function syncStatusTitle() {
+  if (syncState.status === "syncing") return "Synchronisierung läuft.";
+  if (syncState.status === "offline") return "Offline. Änderungen werden lokal behalten und später erneut gesendet.";
+  if (syncState.status === "error") return `Sync prüfen: ${syncState.lastError || "unbekannter Fehler"}`;
+  return `Zuletzt synchronisiert: ${syncState.lastSyncedAt ? formatDateTime(syncState.lastSyncedAt) : "noch nicht"}`;
+}
+
+function syncStatusMarkup(listData) {
+  if (!isSharedList(listData)) return "";
+  return `
+    <button class="sync-status is-${escapeText(syncState.status)}" type="button" data-sync-now="${escapeText(listData.id)}" title="${escapeText(syncStatusTitle())}" aria-label="${escapeText(syncStatusTitle())}">
+      <span></span>
+      ${escapeText(syncStatusLabel())}
+    </button>
+  `;
+}
+
 function itemUserBadgeMarkup(item, listData) {
   const addedName = cleanDisplayName(item.addedByDisplayName, "Gast");
   const checkedMember = item.checkedByUserId ? (memberFor(listData, item.checkedByUserId) ?? { displayName: item.checkedByUserId }) : null;
   const checkedName = checkedMember ? cleanDisplayName(checkedMember.displayName, "Gast") : "";
   return `
     <span class="item-badges">
+      ${item.conflict ? `
+        <button class="user-badge is-conflict" type="button" title="Gleichzeitige Änderung erkannt" aria-label="Gleichzeitige Änderung erkannt" data-conflict-badge="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
+          ${icon("warning")}
+        </button>
+      ` : ""}
       <button class="user-badge" type="button" title="Hinzugefügt von ${escapeText(addedName)}" aria-label="Hinzugefügt von ${escapeText(addedName)}" data-user-badge="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
         ${escapeText(userInitials({ displayName: addedName }))}
       </button>
@@ -3549,6 +3849,13 @@ function itemUserBadgeMarkup(item, listData) {
       ` : ""}
     </span>
   `;
+}
+
+function displayNameForUser(listData, userId, fallback = "Gast") {
+  if (!userId) return fallback;
+  if (userId === currentUser.userId) return cleanDisplayName(currentUser.displayName, fallback);
+  const member = memberFor(listData, userId);
+  return cleanDisplayName(member?.displayName, fallback);
 }
 
 function showItemContributor(listId, itemId) {
@@ -3564,6 +3871,24 @@ function showItemContributor(listId, itemId) {
       <p>Hinzugefügt von <strong>${escapeText(addedName)}</strong></p>
       ${updatedMember ? `<p>Bearbeitet von <strong>${escapeText(cleanDisplayName(updatedMember.displayName, "Gast"))}</strong></p>` : ""}
       ${checkedMember && item.checkedAt ? `<p>Abgehakt von <strong>${escapeText(cleanDisplayName(checkedMember.displayName, "Gast"))}</strong></p>` : ""}
+      ${item.conflict ? `<p><strong>Hinweis:</strong> ${escapeText(item.conflict.message)}</p>` : ""}
+    </div>
+  `);
+}
+
+function showItemConflict(listId, itemId) {
+  const listData = listById(listId);
+  const item = itemById(listId, itemId);
+  const conflict = normalizeItemConflict(item?.conflict);
+  if (!item || !conflict) return;
+  openModal(`
+    <h2 id="modalTitle">Gleichzeitig geändert</h2>
+    <div class="modal-copy">
+      <p><strong>${escapeText(item.name)}</strong></p>
+      <p>${escapeText(conflict.message)}</p>
+      <p>Lokal: ${escapeText(displayNameForUser(listData, conflict.localByUserId, "unbekannt"))}</p>
+      <p>Remote: ${escapeText(displayNameForUser(listData, conflict.remoteByUserId, "unbekannt"))}</p>
+      <p>Erkannt: ${escapeText(formatDateTime(conflict.detectedAt))}</p>
     </div>
   `);
 }
@@ -3607,8 +3932,10 @@ function noteMarkup(listData) {
   const member = ensureCurrentMember(listData);
   const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
   const canAdd = Boolean(member) && canPerform(listData, "add");
+  const sharedClass = isSharedList(listData) ? "is-shared" : "";
+  const manualDraft = manualDrafts[listData.id] ?? "";
   return `
-    <article class="list-panel note-card ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
+    <article class="list-panel note-card ${sharedClass} ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
       <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
         <h2 class="list-title">
           <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
@@ -3624,12 +3951,15 @@ function noteMarkup(listData) {
       </div>
       <div class="collab-row">
         ${membersMarkup(listData)}
-        ${canManageMembers(listData)
-          ? `<button class="sync-chip" type="button" data-members-list="${escapeText(listData.id)}">Owner</button>`
-          : `<span class="sync-chip">${escapeText(roleLabels[memberRole(listData)] ?? "Viewer")}</span>`}
+        <div class="collab-tools">
+          ${syncStatusMarkup(listData)}
+          ${canManageMembers(listData)
+            ? `<button class="sync-chip" type="button" data-members-list="${escapeText(listData.id)}">Owner</button>`
+            : `<span class="sync-chip">${escapeText(roleLabels[memberRole(listData)] ?? "Viewer")}</span>`}
+        </div>
       </div>
       <form class="manual-add" data-manual-form="${escapeText(listData.id)}">
-        <input type="text" placeholder="Eigener Artikel" autocomplete="off" enterkeyhint="done" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
+        <input type="text" placeholder="Eigener Artikel" autocomplete="off" enterkeyhint="done" value="${escapeText(manualDraft)}" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
         <button type="submit" ${canAdd ? "" : "disabled"} title="Hinzufügen" aria-label="Hinzufügen">
           ${icon("plus")}
         </button>
@@ -3662,17 +3992,28 @@ function renderNotes() {
   elements.notesStack.querySelectorAll("[data-members-list]").forEach((button) => {
     button.addEventListener("click", () => showMembers(button.dataset.membersList));
   });
+  elements.notesStack.querySelectorAll("[data-sync-now]").forEach((button) => {
+    button.addEventListener("click", () => pullRemoteLists("manual"));
+  });
   elements.notesStack.querySelectorAll("[data-edit-item-note]").forEach((button) => {
     button.addEventListener("click", () => editItemNote(button.dataset.listId, button.dataset.editItemNote));
   });
   elements.notesStack.querySelectorAll("[data-user-badge]").forEach((button) => {
     button.addEventListener("click", () => showItemContributor(button.dataset.listId, button.dataset.userBadge));
   });
+  elements.notesStack.querySelectorAll("[data-conflict-badge]").forEach((button) => {
+    button.addEventListener("click", () => showItemConflict(button.dataset.listId, button.dataset.conflictBadge));
+  });
   elements.notesStack.querySelectorAll("[data-manual-form]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const input = form.querySelector("[data-manual-input]");
       addManualItem(form.dataset.manualForm, input);
+    });
+  });
+  elements.notesStack.querySelectorAll("[data-manual-input]").forEach((input) => {
+    input.addEventListener("input", () => {
+      manualDrafts[input.dataset.manualInput] = input.value;
     });
   });
   elements.notesStack.querySelectorAll("[data-done]").forEach((input) => {
@@ -3794,6 +4135,11 @@ elements.modalContent.addEventListener("click", (event) => {
     copyInviteLink();
     return;
   }
+  const regenerateInviteButton = event.target.closest("[data-regenerate-invite]");
+  if (regenerateInviteButton) {
+    regenerateInvite(regenerateInviteButton.dataset.regenerateInvite);
+    return;
+  }
   const removeMemberButton = event.target.closest("[data-remove-member]");
   if (removeMemberButton) {
     removeMember(removeMemberButton.dataset.listId, removeMemberButton.dataset.removeMember);
@@ -3802,6 +4148,16 @@ elements.modalContent.addEventListener("click", (event) => {
     } else {
       shareList(removeMemberButton.dataset.listId);
     }
+    return;
+  }
+  const memberRoleButton = event.target.closest("[data-member-role]");
+  if (memberRoleButton) {
+    setMemberRole(memberRoleButton.dataset.listId, memberRoleButton.dataset.memberId, memberRoleButton.dataset.memberRole);
+    return;
+  }
+  const transferOwnerButton = event.target.closest("[data-transfer-owner]");
+  if (transferOwnerButton) {
+    transferOwnership(transferOwnerButton.dataset.listId, transferOwnerButton.dataset.transferOwner);
     return;
   }
   if (event.target.closest("[data-save-profile]")) {
@@ -3858,16 +4214,37 @@ async function bootApp() {
   await refreshPricesIfStale();
   collaborationService.subscribe((message) => {
     if (message.type === "lists") {
+      markSyncSuccess();
       mergeRemoteLists(message.lists);
+      return;
+    }
+    if (message.type === "sync-status") {
+      syncState.realtimeStatus = message.status || "";
+      if (message.status === "SUBSCRIBED") markSyncSuccess();
+      if (message.status === "CHANNEL_ERROR" || message.status === "TIMED_OUT" || message.status === "CLOSED") {
+        markSyncError(message.error || message.status);
+        pullRemoteListsSoon("realtime-error", 1200);
+      }
       return;
     }
     if (message.type === "presence" && message.listId) {
       activeMembersByList[message.listId] = message.members;
       renderNotes();
+      if (message.members.some((member) => member.userId !== currentUser.userId)) {
+        pullRemoteListsSoon("presence", 700);
+      }
     }
   });
+  await pullRemoteLists("boot");
   updatePresence();
   window.setInterval(updatePresence, 15000);
+  window.setInterval(() => pullRemoteLists("interval"), 12000);
+  window.addEventListener("online", () => pullRemoteLists("online"));
+  window.addEventListener("offline", () => markSyncError("offline"));
+  window.addEventListener("focus", () => pullRemoteLists("focus"));
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pullRemoteLists("visible");
+  });
   render();
 }
 
