@@ -1298,12 +1298,46 @@ const marketShelfCoverage = {
 class MockMarketService {
   constructor(catalog) {
     this.catalog = catalog.map((market, index) => normalizeMarket(market, index));
+    this.dynamicMarkets = new Map();
   }
 
   searchMarkets(query = "") {
     const cleanQuery = normalize(query);
-    const matches = this.catalog.filter((market) => marketMatches(market, cleanQuery));
-    return matches.sort(sortMarketsByDistance).slice(0, cleanQuery ? 20 : 12);
+    const matches = this.catalog.filter((market) => marketMatches(market, query));
+    if (matches.length || !postalCodeFromQuery(query)) {
+      return matches.sort(sortMarketsByDistance).slice(0, cleanQuery ? 20 : 12);
+    }
+    return this.marketsForPostalCode(query).slice(0, 20);
+  }
+
+  marketsForPostalCode(query) {
+    const postalCode = postalCodeFromQuery(query);
+    const tokens = marketSearchTokens(query).filter((token) => token !== postalCode);
+    const sourceMarkets = this.catalog.filter((market) => {
+      if (!tokens.length) return true;
+      const text = marketSearchText(market);
+      return tokens.every((token) => text.includes(token));
+    });
+    const fallbackMarkets = sourceMarkets.length ? sourceMarkets : this.catalog;
+    const seed = Math.abs(hashString(postalCode));
+    return fallbackMarkets.slice(0, 12).map((market, index) => {
+      const distance = 0.4 + ((seed + index * 7) % 36) / 10;
+      const generatedMarket = normalizeMarket({
+        ...market,
+        id: `market:${marketSlug(market.name)}:${postalCode}`,
+        adresse: `${market.name} Standort ${index + 1}`,
+        plz: postalCode,
+        ort: `Suchgebiet ${postalCode}`,
+        latitude: numericValue(market.latitude, 50.94) + (((seed + index) % 9) - 4) / 1000,
+        longitude: numericValue(market.longitude, 6.95) + (((seed >> 2) + index) % 9 - 4) / 1000,
+        entfernung: Number(distance.toFixed(1)),
+        source: "PLZ-Platzhalterdaten",
+        isDefaultMarket: false,
+        isUserAdded: false
+      }, index);
+      this.dynamicMarkets.set(generatedMarket.id, generatedMarket);
+      return generatedMarket;
+    });
   }
 
   nearestMarkets(marketList, limit = 3) {
@@ -1315,7 +1349,7 @@ class MockMarketService {
   }
 
   marketById(id) {
-    return this.catalog.find((market) => market.id === id) ?? null;
+    return this.catalog.find((market) => market.id === id) ?? this.dynamicMarkets.get(id) ?? null;
   }
 }
 
@@ -1356,6 +1390,7 @@ let syncState = {
 };
 let remoteSyncPromise = null;
 let syncRenderTimer = 0;
+let pendingNotesRender = false;
 
 const collaborationService = createCollaborationService();
 const marketService = new MockMarketService(defaultMarkets);
@@ -1825,6 +1860,23 @@ function renderNotesSoon() {
   }, 0);
 }
 
+function focusedManualInput() {
+  const activeElement = document.activeElement;
+  return activeElement?.matches?.("[data-manual-input]") ? activeElement : null;
+}
+
+function shouldHoldNotesRender(options = {}) {
+  return !options.force && Boolean(focusedManualInput());
+}
+
+function flushPendingNotesRender(delay = 180) {
+  if (!pendingNotesRender) return;
+  window.setTimeout(() => {
+    if (focusedManualInput()) return;
+    renderNotes({ force: true });
+  }, delay);
+}
+
 function setSyncState(status, details = {}) {
   syncState = {
     ...syncState,
@@ -1938,15 +1990,37 @@ function normalize(value) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function marketMatches(market, query) {
-  if (!query) return true;
+function normalizeMarketSearchValue(value) {
+  return normalize(value)
+    .replaceAll("ä", "ae")
+    .replaceAll("ö", "oe")
+    .replaceAll("ü", "ue")
+    .replaceAll("ß", "ss");
+}
+
+function marketSearchTokens(query) {
+  return normalizeMarketSearchValue(query).split(/[\s,;]+/).filter(Boolean);
+}
+
+function marketSearchText(market) {
   return [
     market.name,
     market.kategorie,
     market.adresse,
     market.plz,
     market.ort
-  ].some((value) => normalize(value).includes(query));
+  ].map(normalizeMarketSearchValue).join(" ");
+}
+
+function postalCodeFromQuery(query) {
+  return String(query ?? "").match(/\b\d{5}\b/)?.[0] ?? "";
+}
+
+function marketMatches(market, query) {
+  const tokens = marketSearchTokens(query);
+  if (!tokens.length) return true;
+  const text = marketSearchText(market);
+  return tokens.every((token) => text.includes(token));
 }
 
 function marketById(id) {
@@ -3971,7 +4045,16 @@ function noteMarkup(listData) {
   `;
 }
 
-function renderNotes() {
+function renderNotes(options = {}) {
+  const activeManualInput = focusedManualInput();
+  if (activeManualInput) {
+    manualDrafts[activeManualInput.dataset.manualInput] = activeManualInput.value;
+  }
+  if (shouldHoldNotesRender(options)) {
+    pendingNotesRender = true;
+    return;
+  }
+  pendingNotesRender = false;
   elements.notesStack.innerHTML = lists.map(noteMarkup).join("");
 
   elements.notesStack.querySelectorAll("[data-note]").forEach((note) => {
@@ -4014,6 +4097,10 @@ function renderNotes() {
   elements.notesStack.querySelectorAll("[data-manual-input]").forEach((input) => {
     input.addEventListener("input", () => {
       manualDrafts[input.dataset.manualInput] = input.value;
+    });
+    input.addEventListener("blur", () => {
+      manualDrafts[input.dataset.manualInput] = input.value;
+      flushPendingNotesRender();
     });
   });
   elements.notesStack.querySelectorAll("[data-done]").forEach((input) => {
