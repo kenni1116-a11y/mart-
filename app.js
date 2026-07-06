@@ -257,7 +257,11 @@ const storageKeys = {
   activeList: "shopping-list-app.active-list",
   favorites: "shopping-list-app.favorites",
   shelfOrder: "shopping-list-app.shelf-order",
-  background: "shopping-list-app.background"
+  background: "shopping-list-app.background",
+  currentUser: "shopping-list-app.current-user",
+  realtime: "shopping-list-app.mock-realtime",
+  presence: "shopping-list-app.mock-presence",
+  outbox: "shopping-list-app.sync-outbox"
 };
 
 const iconPaths = {
@@ -470,8 +474,345 @@ const productHatchPaths = [
   "M18 35l6-4m-2 9 8-6m13 6 7-5"
 ];
 
+const collaborationRoles = Object.freeze({
+  owner: "owner",
+  editor: "editor",
+  viewer: "viewer"
+});
+
+const roleLabels = {
+  owner: "Owner",
+  editor: "Editor",
+  viewer: "Viewer"
+};
+
+const defaultListPermissions = {
+  owner: ["invite", "remove", "add", "edit", "check", "delete", "view"],
+  editor: ["add", "edit", "check", "delete", "view"],
+  viewer: ["view"]
+};
+
+class MockRealtimeService {
+  constructor({ channelName, storageKey, presenceKey, outboxKey }) {
+    this.channelName = channelName;
+    this.storageKey = storageKey;
+    this.presenceKey = presenceKey;
+    this.outboxKey = outboxKey;
+    this.clientId = `client:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    this.listeners = new Set();
+    this.channel = null;
+
+    if ("BroadcastChannel" in window) {
+      this.channel = new BroadcastChannel(channelName);
+      this.channel.addEventListener("message", (event) => this.handleMessage(event.data));
+    }
+
+    window.addEventListener("storage", (event) => {
+      if (event.key !== this.storageKey && event.key !== this.presenceKey) return;
+      try {
+        this.handleMessage(JSON.parse(event.newValue));
+      } catch {
+        // Broken external storage writes should not affect the app.
+      }
+    });
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  notify(message) {
+    this.listeners.forEach((listener) => listener(message));
+  }
+
+  handleMessage(message) {
+    if (!message || message.sourceId === this.clientId) return;
+    if (message.type !== "lists" && message.type !== "presence") return;
+    this.notify(message);
+  }
+
+  publishLists(nextLists) {
+    const message = {
+      type: "lists",
+      sourceId: this.clientId,
+      sentAt: isoNow(),
+      lists: nextLists.map(exportCollaborativeList)
+    };
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(message));
+      this.channel?.postMessage(message);
+    } catch {
+      this.queueOffline({ type: "lists", createdAt: isoNow(), lists: message.lists });
+    }
+  }
+
+  heartbeat(listData, user) {
+    const members = this.presenceFor(listData.id);
+    const now = isoNow();
+    const nextMembers = members
+      .filter((member) => member.userId !== user.userId)
+      .filter((member) => Date.parse(member.lastSeenAt ?? member.joinedAt ?? 0) > Date.now() - 120000);
+    nextMembers.push({
+      userId: user.userId,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      role: memberRole(listData, user.userId),
+      joinedAt: memberFor(listData, user.userId)?.joinedAt ?? now,
+      lastSeenAt: now
+    });
+    const message = {
+      type: "presence",
+      sourceId: this.clientId,
+      sentAt: now,
+      listId: listData.id,
+      members: nextMembers
+    };
+    try {
+      const allPresence = load(this.presenceKey, {});
+      allPresence[listData.id] = nextMembers;
+      localStorage.setItem(this.presenceKey, JSON.stringify(allPresence));
+      this.channel?.postMessage(message);
+    } catch {
+      this.queueOffline({ type: "presence", createdAt: now, listId: listData.id, userId: user.userId });
+    }
+    return nextMembers;
+  }
+
+  presenceFor(listId) {
+    const allPresence = load(this.presenceKey, {});
+    const members = Array.isArray(allPresence[listId]) ? allPresence[listId] : [];
+    return members.filter((member) => Date.parse(member.lastSeenAt ?? member.joinedAt ?? 0) > Date.now() - 120000);
+  }
+
+  queueOffline(operation) {
+    const outbox = load(this.outboxKey, []);
+    outbox.push(operation);
+    try {
+      localStorage.setItem(this.outboxKey, JSON.stringify(outbox.slice(-50)));
+    } catch {
+      // Offline sync is best-effort in the mock adapter.
+    }
+  }
+}
+
+class SupabaseRealtimeService {
+  constructor({ config, fallback }) {
+    this.config = config ?? {};
+    this.fallback = fallback;
+    this.listeners = new Set();
+    this.listChannel = null;
+    this.presenceChannels = new Map();
+    this.clientId = fallback.clientId;
+    this.tableName = this.config.sharedListsTable || "shared_lists";
+    this.url = this.config.url || this.config.projectUrl || "";
+    this.publishableKey = this.config.publishableKey || this.config.anonKey || "";
+    this.authUserId = "";
+    this.client = this.createClient();
+  }
+
+  createClient() {
+    if (!this.config.enabled || !this.url || !this.publishableKey || !window.supabase?.createClient) {
+      return null;
+    }
+    try {
+      return window.supabase.createClient(this.url, this.publishableKey, {
+        realtime: { params: { eventsPerSecond: 10 } }
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async initializeUser(user) {
+    if (!this.client || !this.config.useAnonymousAuth) return null;
+    return this.ensureAuthenticated(user);
+  }
+
+  async ensureAuthenticated(user) {
+    if (!this.client) return null;
+    try {
+      const { data: sessionData } = await this.client.auth.getSession();
+      let authUser = sessionData?.session?.user ?? null;
+      if (!authUser) {
+        const { data, error } = await this.client.auth.signInAnonymously({
+          options: {
+            data: {
+              displayName: cleanDisplayName(user.displayName, "Gast")
+            }
+          }
+        });
+        if (error) {
+          this.queueOffline({ type: "auth", createdAt: isoNow(), error: error.message });
+          return null;
+        }
+        authUser = data?.user ?? null;
+      }
+      this.authUserId = authUser?.id ?? "";
+      return authUser;
+    } catch (error) {
+      this.queueOffline({ type: "auth", createdAt: isoNow(), error: error?.message ?? "Supabase Auth nicht erreichbar" });
+      return null;
+    }
+  }
+
+  subscribe(listener) {
+    const unsubscribeFallback = this.fallback.subscribe(listener);
+    this.listeners.add(listener);
+    this.openListChannel();
+    return () => {
+      unsubscribeFallback?.();
+      this.listeners.delete(listener);
+    };
+  }
+
+  notify(message) {
+    this.listeners.forEach((listener) => listener(message));
+  }
+
+  openListChannel() {
+    if (!this.client || this.listChannel) return;
+    this.listChannel = this.client
+      .channel("mart-shared-lists")
+      .on("postgres_changes", { event: "*", schema: "public", table: this.tableName }, (payload) => {
+        const row = payload.new ?? payload.old;
+        const listPayload = row?.payload;
+        if (!listPayload) return;
+        this.notify({
+          type: "lists",
+          sourceId: "supabase",
+          sentAt: isoNow(),
+          lists: [listPayload]
+        });
+      })
+      .subscribe();
+  }
+
+  publishLists(nextLists) {
+    this.fallback.publishLists(nextLists);
+    if (!this.client) {
+      this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
+      return;
+    }
+
+    const rows = nextLists.map((listData) => {
+      const payload = exportCollaborativeList(listData);
+      return {
+        id: payload.listId,
+        owner_user_id: isUuid(payload.ownerId) ? payload.ownerId : null,
+        invite_code: payload.inviteCode,
+        payload,
+        updated_at: payload.updatedAt
+      };
+    });
+
+    this.client
+      .from(this.tableName)
+      .upsert(rows, { onConflict: "id" })
+      .then(({ error }) => {
+        if (error) {
+          this.queueOffline({
+            type: "lists",
+            createdAt: isoNow(),
+            error: error.message,
+            lists: rows.map((row) => row.payload)
+          });
+        }
+      });
+  }
+
+  async joinSharedList(listData, user) {
+    if (!this.client || !listData?.inviteCode) return null;
+    const authUser = await this.ensureAuthenticated(user);
+    if (!authUser) return null;
+    const { data, error } = await this.client.rpc("join_shared_list", {
+      target_list_id: listData.id,
+      target_invite_code: listData.inviteCode,
+      display_name: user.displayName,
+      avatar_url: user.avatarUrl
+    });
+    if (error) {
+      this.queueOffline({
+        type: "join",
+        createdAt: isoNow(),
+        listId: listData.id,
+        inviteCode: listData.inviteCode,
+        error: error.message
+      });
+      return null;
+    }
+    return data;
+  }
+
+  heartbeat(listData, user) {
+    const localMembers = this.fallback.heartbeat(listData, user);
+    this.trackPresence(listData, user);
+    return localMembers;
+  }
+
+  trackPresence(listData, user) {
+    if (!this.client) return;
+    const now = isoNow();
+    const presencePayload = {
+      userId: user.userId,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      role: memberRole(listData, user.userId),
+      joinedAt: memberFor(listData, user.userId)?.joinedAt ?? now,
+      lastSeenAt: now
+    };
+
+    let channel = this.presenceChannels.get(listData.id);
+    if (!channel) {
+      channel = this.client.channel(`mart-presence:${listData.id}`, {
+        config: { presence: { key: user.userId } }
+      });
+      channel.on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState();
+        const members = Object.values(state).flat().map((entry) => ({
+          userId: entry.userId,
+          displayName: cleanDisplayName(entry.displayName, "Gast"),
+          avatarUrl: typeof entry.avatarUrl === "string" ? entry.avatarUrl : "",
+          role: normalizeRole(entry.role),
+          joinedAt: safeDate(entry.joinedAt),
+          lastSeenAt: safeDate(entry.lastSeenAt)
+        }));
+        this.notify({
+          type: "presence",
+          sourceId: "supabase",
+          sentAt: isoNow(),
+          listId: listData.id,
+          members
+        });
+      });
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          channel.track(presencePayload).catch(() => {
+            this.queueOffline({ type: "presence", createdAt: now, listId: listData.id, userId: user.userId });
+          });
+        }
+      });
+      this.presenceChannels.set(listData.id, channel);
+      return;
+    }
+
+    channel.track(presencePayload).catch(() => {
+      this.queueOffline({ type: "presence", createdAt: now, listId: listData.id, userId: user.userId });
+    });
+  }
+
+  presenceFor(listId) {
+    return this.fallback.presenceFor(listId);
+  }
+
+  queueOffline(operation) {
+    this.fallback.queueOffline(operation);
+  }
+}
+
 let activeView = "market";
 let selectedShelfId = null;
+let currentUser = loadCurrentUser();
 let lists = loadLists();
 let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id;
 let favorites = load(storageKeys.favorites, []);
@@ -481,6 +822,9 @@ let draggedShelfId = null;
 let backgroundTheme = localStorage.getItem(storageKeys.background) || "paper";
 let pendingRenameListId = null;
 let pendingItemNoteEdit = null;
+let activeMembersByList = {};
+
+const collaborationService = createCollaborationService();
 
 const elements = {
   body: document.body,
@@ -515,22 +859,285 @@ function load(key, fallback) {
   }
 }
 
-function createList(title = "Dein Zettel", items = [], id = null) {
-  return {
-    id: id ?? `zettel:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-    title,
-    items: Array.isArray(items) ? items : []
+function isoNow() {
+  return new Date().toISOString();
+}
+
+function safeDate(value, fallback = isoNow()) {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : fallback;
+}
+
+function isUuid(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function generateInviteCode() {
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(9);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(36).padStart(2, "0")).join("").slice(0, 18);
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 11)}`.slice(0, 18);
+}
+
+function createCollaborationService() {
+  const mockService = new MockRealtimeService({
+    channelName: "mart-collaboration",
+    storageKey: storageKeys.realtime,
+    presenceKey: storageKeys.presence,
+    outboxKey: storageKeys.outbox
+  });
+  const config = window.MART_SUPABASE_CONFIG ?? {};
+  if (!config.enabled) return mockService;
+  return new SupabaseRealtimeService({ config, fallback: mockService });
+}
+
+function normalizeRole(role) {
+  return Object.values(collaborationRoles).includes(role) ? role : collaborationRoles.editor;
+}
+
+function cleanDisplayName(value, fallback = "Ken") {
+  const name = typeof value === "string" ? value.trim().slice(0, 24) : "";
+  return name || fallback;
+}
+
+function userInitials(user) {
+  const name = cleanDisplayName(user?.displayName, "K");
+  const words = name.split(/\s+/).filter(Boolean);
+  const initials = words.length > 1 ? `${words[0][0]}${words[1][0]}` : name.slice(0, 1);
+  return initials.toUpperCase();
+}
+
+function loadCurrentUser() {
+  const storedUser = load(storageKeys.currentUser, null);
+  const user = {
+    userId: typeof storedUser?.userId === "string" && storedUser.userId ? storedUser.userId : `user:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    displayName: cleanDisplayName(storedUser?.displayName),
+    avatarUrl: typeof storedUser?.avatarUrl === "string" ? storedUser.avatarUrl : "",
+    role: normalizeRole(storedUser?.role ?? collaborationRoles.owner),
+    joinedAt: safeDate(storedUser?.joinedAt)
   };
+  try {
+    localStorage.setItem(storageKeys.currentUser, JSON.stringify(user));
+  } catch {
+    // User identity falls back to memory if storage is unavailable.
+  }
+  return user;
+}
+
+function saveCurrentUser() {
+  localStorage.setItem(storageKeys.currentUser, JSON.stringify(currentUser));
+}
+
+function replaceUserId(value, previousUserId, nextUserId) {
+  return value === previousUserId ? nextUserId : value;
+}
+
+function adoptCurrentUserId(nextUserId) {
+  if (!nextUserId || nextUserId === currentUser.userId) return;
+  const previousUserId = currentUser.userId;
+  currentUser = {
+    ...currentUser,
+    userId: nextUserId
+  };
+  saveCurrentUser();
+  lists = lists.map((listData) => normalizeListData({
+    ...listData,
+    ownerId: replaceUserId(listData.ownerId, previousUserId, nextUserId),
+    updatedByUserId: replaceUserId(listData.updatedByUserId, previousUserId, nextUserId),
+    members: listData.members.map((member) => ({
+      ...member,
+      userId: replaceUserId(member.userId, previousUserId, nextUserId)
+    })),
+    removedMembers: listData.removedMembers.map((member) => ({
+      ...member,
+      userId: replaceUserId(member.userId, previousUserId, nextUserId)
+    })),
+    deletedItems: listData.deletedItems.map((entry) => ({
+      ...entry,
+      deletedByUserId: replaceUserId(entry.deletedByUserId, previousUserId, nextUserId)
+    })),
+    items: listData.items.map((item) => ({
+      ...item,
+      addedByUserId: replaceUserId(item.addedByUserId, previousUserId, nextUserId),
+      checkedByUserId: replaceUserId(item.checkedByUserId, previousUserId, nextUserId),
+      updatedByUserId: replaceUserId(item.updatedByUserId, previousUserId, nextUserId)
+    }))
+  }));
+  activeMembersByList = {};
+  save({ broadcast: false });
+}
+
+function createMember(user = currentUser, role = collaborationRoles.editor, joinedAt = isoNow()) {
+  return {
+    userId: typeof user?.userId === "string" && user.userId ? user.userId : `user:${Date.now()}`,
+    displayName: cleanDisplayName(user?.displayName, "Gast"),
+    avatarUrl: typeof user?.avatarUrl === "string" ? user.avatarUrl : "",
+    role: normalizeRole(role),
+    joinedAt: safeDate(joinedAt)
+  };
+}
+
+function normalizePermissions(permissions = {}) {
+  return Object.fromEntries(Object.entries(defaultListPermissions).map(([role, actions]) => {
+    const customActions = Array.isArray(permissions?.[role]) ? permissions[role] : actions;
+    return [role, [...new Set(customActions.filter((action) => typeof action === "string"))]];
+  }));
+}
+
+function memberFor(listData, userId = currentUser.userId) {
+  return listData.members?.find((member) => member.userId === userId) ?? null;
+}
+
+function memberRole(listData, userId = currentUser.userId) {
+  if (listData.ownerId === userId) return collaborationRoles.owner;
+  const member = memberFor(listData, userId);
+  return member ? normalizeRole(member.role) : collaborationRoles.viewer;
+}
+
+function canPerform(listData, action, userId = currentUser.userId) {
+  const role = memberRole(listData, userId);
+  const permissions = normalizePermissions(listData.permissions);
+  return permissions[role]?.includes(action) ?? false;
+}
+
+function canEditList(listData) {
+  return ["add", "edit", "check", "delete"].some((action) => canPerform(listData, action));
+}
+
+function canManageMembers(listData) {
+  return canPerform(listData, "invite") || canPerform(listData, "remove");
+}
+
+function isMemberRemoved(listData, userId = currentUser.userId) {
+  const removedAt = removedMemberAt(listData.removedMembers, userId);
+  if (!removedAt || listData.ownerId === userId) return false;
+  const member = memberFor(listData, userId);
+  return !member || newerDate(removedAt, member.joinedAt);
+}
+
+function ensureCurrentMember(listData, role = listData.ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor) {
+  if (isMemberRemoved(listData, currentUser.userId)) return null;
+  const existing = memberFor(listData, currentUser.userId);
+  if (existing) {
+    existing.displayName = currentUser.displayName;
+    existing.avatarUrl = currentUser.avatarUrl;
+    existing.role = listData.ownerId === currentUser.userId ? collaborationRoles.owner : normalizeRole(existing.role);
+    return existing;
+  }
+  const member = createMember(currentUser, role);
+  listData.members.push(member);
+  return member;
+}
+
+function normalizeMember(member, ownerId) {
+  const normalized = createMember(member, member?.userId === ownerId ? collaborationRoles.owner : member?.role, member?.joinedAt);
+  if (normalized.userId === ownerId) normalized.role = collaborationRoles.owner;
+  return normalized;
+}
+
+function normalizeShoppingItem(item, index = 0) {
+  if (!item || typeof item.name !== "string" || !item.name.trim()) return null;
+  const now = isoNow();
+  const name = item.name.trim().slice(0, 80);
+  const knownProduct = allProducts().find((product) => normalize(product.name) === normalize(name));
+  const addedByUserId = typeof item.addedByUserId === "string" && item.addedByUserId ? item.addedByUserId : currentUser.userId;
+  const addedByDisplayName = cleanDisplayName(item.addedByDisplayName, addedByUserId === currentUser.userId ? currentUser.displayName : "Gast");
+  const checkedAt = item.checkedAt ? safeDate(item.checkedAt, "") : "";
+
+  return {
+    id: typeof item.id === "string" && item.id ? item.id : knownProduct?.id ?? `geteilt:${Date.now()}:${index}`,
+    name,
+    shelfId: typeof item.shelfId === "string" ? item.shelfId : knownProduct?.shelfId ?? "geteilt",
+    shelfTitle: typeof item.shelfTitle === "string" ? item.shelfTitle : knownProduct?.shelfTitle ?? "Geteilter Zettel",
+    shelfIcon: typeof item.shelfIcon === "string" ? item.shelfIcon : knownProduct?.shelfIcon,
+    quantity: Math.max(1, Math.min(99, Math.round(Number(item.quantity) || 1))),
+    done: Boolean(item.done),
+    note: typeof item.note === "string" ? item.note.trim().slice(0, 48) : "",
+    addedByUserId,
+    addedByDisplayName,
+    addedByAvatarUrl: typeof item.addedByAvatarUrl === "string" ? item.addedByAvatarUrl : "",
+    checkedByUserId: typeof item.checkedByUserId === "string" ? item.checkedByUserId : "",
+    checkedAt,
+    updatedByUserId: typeof item.updatedByUserId === "string" && item.updatedByUserId ? item.updatedByUserId : addedByUserId,
+    updatedAt: safeDate(item.updatedAt ?? item.checkedAt ?? now)
+  };
+}
+
+function touchList(listData, userId = currentUser.userId) {
+  const now = isoNow();
+  listData.updatedAt = now;
+  listData.updatedByUserId = userId;
+  listData.listName = listData.title;
+  return now;
+}
+
+function touchItem(item, listData, user = currentUser) {
+  const now = touchList(listData, user.userId);
+  item.updatedAt = now;
+  item.updatedByUserId = user.userId;
+  return now;
+}
+
+function normalizeListData(listData, index = 0) {
+  const now = isoNow();
+  const id = typeof listData?.id === "string" && listData.id ? listData.id : (typeof listData?.listId === "string" && listData.listId ? listData.listId : `zettel:${index + 1}`);
+  const title = typeof listData?.title === "string" && listData.title.trim()
+    ? listData.title.trim().slice(0, 24)
+    : (typeof listData?.listName === "string" && listData.listName.trim() ? listData.listName.trim().slice(0, 24) : (index === 0 ? "Dein Zettel" : `Zettel ${index + 1}`));
+  const ownerId = typeof listData?.ownerId === "string" && listData.ownerId ? listData.ownerId : currentUser.userId;
+  const inviteCode = typeof listData?.inviteCode === "string" && listData.inviteCode ? listData.inviteCode : generateInviteCode();
+  const members = Array.isArray(listData?.members) ? listData.members.map((member) => normalizeMember(member, ownerId)) : [];
+  const normalizedList = {
+    id,
+    listId: id,
+    title,
+    listName: title,
+    ownerId,
+    inviteCode,
+    members,
+    permissions: normalizePermissions(listData?.permissions),
+    createdAt: safeDate(listData?.createdAt ?? now),
+    updatedAt: safeDate(listData?.updatedAt ?? now),
+    updatedByUserId: typeof listData?.updatedByUserId === "string" ? listData.updatedByUserId : ownerId,
+    deletedItems: Array.isArray(listData?.deletedItems) ? listData.deletedItems : [],
+    removedMembers: Array.isArray(listData?.removedMembers) ? listData.removedMembers : [],
+    items: Array.isArray(listData?.items) ? listData.items.map(normalizeShoppingItem).filter(Boolean) : []
+  };
+  normalizedList.members = mergeMembers(normalizedList.members, [], ownerId, normalizedList.removedMembers);
+  if (!normalizedList.members.some((member) => member.userId === ownerId)) {
+    normalizedList.members.unshift(createMember({ userId: ownerId, displayName: ownerId === currentUser.userId ? currentUser.displayName : "Owner", avatarUrl: "" }, collaborationRoles.owner, normalizedList.createdAt));
+  }
+  ensureCurrentMember(normalizedList, ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor);
+  return normalizedList;
+}
+
+function createList(title = "Dein Zettel", items = [], id = null) {
+  const now = isoNow();
+  const listId = id ?? `zettel:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  return normalizeListData({
+    id: listId,
+    listId,
+    title,
+    listName: title,
+    ownerId: currentUser.userId,
+    inviteCode: generateInviteCode(),
+    members: [createMember(currentUser, collaborationRoles.owner, now)],
+    permissions: defaultListPermissions,
+    createdAt: now,
+    updatedAt: now,
+    updatedByUserId: currentUser.userId,
+    deletedItems: [],
+    removedMembers: [],
+    items: Array.isArray(items) ? items : []
+  });
 }
 
 function loadLists() {
   const storedLists = load(storageKeys.lists, null);
   if (Array.isArray(storedLists) && storedLists.length) {
-    return storedLists.map((listData, index) => createList(
-      typeof listData.title === "string" && listData.title.trim() ? listData.title.trim() : (index === 0 ? "Dein Zettel" : `Zettel ${index + 1}`),
-      Array.isArray(listData.items) ? listData.items : [],
-      typeof listData.id === "string" && listData.id ? listData.id : `zettel:${index + 1}`
-    ));
+    return storedLists.map(normalizeListData);
   }
 
   const legacyList = load(storageKeys.list, []);
@@ -551,13 +1158,17 @@ function activeItems() {
   return activeList().items;
 }
 
-function save() {
+function save(options = {}) {
+  lists = lists.map(normalizeListData);
   localStorage.setItem(storageKeys.lists, JSON.stringify(lists));
   localStorage.setItem(storageKeys.activeList, activeListId);
   localStorage.setItem(storageKeys.list, JSON.stringify(activeItems()));
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
+  if (options.broadcast !== false) {
+    collaborationService.publishLists(lists);
+  }
 }
 
 function applyBackgroundTheme() {
@@ -741,6 +1352,176 @@ function decodeShareValue(value) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+function exportCollaborativeList(listData) {
+  const normalizedList = normalizeListData(listData);
+  return {
+    listId: normalizedList.id,
+    listName: normalizedList.title,
+    ownerId: normalizedList.ownerId,
+    inviteCode: normalizedList.inviteCode,
+    members: normalizedList.members,
+    permissions: normalizedList.permissions,
+    createdAt: normalizedList.createdAt,
+    updatedAt: normalizedList.updatedAt,
+    updatedByUserId: normalizedList.updatedByUserId,
+    deletedItems: normalizedList.deletedItems,
+    removedMembers: normalizedList.removedMembers,
+    items: normalizedList.items
+  };
+}
+
+function importedListFromValue(value) {
+  if (Array.isArray(value)) {
+    return createList("Geteilter Zettel", sanitizeSharedList(value), `geteilt:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`);
+  }
+  if (!value || typeof value !== "object") return null;
+  return normalizeListData({
+    id: value.id ?? value.listId,
+    listId: value.listId ?? value.id,
+    title: value.title ?? value.listName,
+    listName: value.listName ?? value.title,
+    ownerId: value.ownerId,
+    inviteCode: value.inviteCode,
+    members: value.members,
+    permissions: value.permissions,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    updatedByUserId: value.updatedByUserId,
+    deletedItems: value.deletedItems,
+    removedMembers: value.removedMembers,
+    items: value.items
+  });
+}
+
+function newerDate(first, second) {
+  return Date.parse(first ?? 0) >= Date.parse(second ?? 0);
+}
+
+function mergeRemovedMembers(localRemoved = [], remoteRemoved = []) {
+  const byId = new Map();
+  [...localRemoved, ...remoteRemoved].forEach((entry) => {
+    if (!entry?.userId || !entry?.removedAt) return;
+    const existing = byId.get(entry.userId);
+    if (!existing || newerDate(entry.removedAt, existing.removedAt)) {
+      byId.set(entry.userId, {
+        userId: entry.userId,
+        removedByUserId: typeof entry.removedByUserId === "string" ? entry.removedByUserId : "",
+        removedAt: safeDate(entry.removedAt)
+      });
+    }
+  });
+  return Array.from(byId.values()).slice(-100);
+}
+
+function removedMemberAt(removedMembers = [], userId) {
+  return removedMembers
+    .filter((entry) => entry?.userId === userId)
+    .map((entry) => entry.removedAt)
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? "";
+}
+
+function mergeMembers(localMembers = [], remoteMembers = [], ownerId = currentUser.userId, removedMembers = []) {
+  const byId = new Map();
+  [...localMembers, ...remoteMembers].forEach((member) => {
+    const normalized = normalizeMember(member, ownerId);
+    const removedAt = removedMemberAt(removedMembers, normalized.userId);
+    if (normalized.userId !== ownerId && removedAt && newerDate(removedAt, normalized.joinedAt)) return;
+    const existing = byId.get(normalized.userId);
+    if (!existing || newerDate(normalized.joinedAt, existing.joinedAt)) {
+      byId.set(normalized.userId, normalized);
+    }
+  });
+  return Array.from(byId.values()).sort((a, b) => {
+    if (a.userId === ownerId) return -1;
+    if (b.userId === ownerId) return 1;
+    return a.displayName.localeCompare(b.displayName, "de");
+  });
+}
+
+function latestDeletedAt(deletedItems = [], itemId) {
+  return deletedItems
+    .filter((entry) => entry?.id === itemId)
+    .map((entry) => entry.deletedAt)
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? "";
+}
+
+function mergeDeletedItems(localDeleted = [], remoteDeleted = []) {
+  const byId = new Map();
+  [...localDeleted, ...remoteDeleted].forEach((entry) => {
+    if (!entry?.id || !entry?.deletedAt) return;
+    const existing = byId.get(entry.id);
+    if (!existing || newerDate(entry.deletedAt, existing.deletedAt)) {
+      byId.set(entry.id, {
+        id: entry.id,
+        deletedByUserId: typeof entry.deletedByUserId === "string" ? entry.deletedByUserId : "",
+        deletedAt: safeDate(entry.deletedAt)
+      });
+    }
+  });
+  return Array.from(byId.values()).slice(-200);
+}
+
+function mergeList(localList, remoteList) {
+  const local = normalizeListData(localList);
+  const remote = normalizeListData(remoteList);
+  const deletedItems = mergeDeletedItems(local.deletedItems, remote.deletedItems);
+  const removedMembers = mergeRemovedMembers(local.removedMembers, remote.removedMembers);
+  const itemIds = new Set([...local.items.map((item) => item.id), ...remote.items.map((item) => item.id)]);
+  const items = Array.from(itemIds).map((itemId) => {
+    const localItem = local.items.find((item) => item.id === itemId);
+    const remoteItem = remote.items.find((item) => item.id === itemId);
+    const deletedAt = latestDeletedAt(deletedItems, itemId);
+    const newestItem = !localItem ? remoteItem : (!remoteItem ? localItem : (newerDate(remoteItem.updatedAt, localItem.updatedAt) ? remoteItem : localItem));
+    if (deletedAt && (!newestItem || newerDate(deletedAt, newestItem.updatedAt))) return null;
+    if (localItem && remoteItem && localItem.quantity !== remoteItem.quantity) {
+      return { ...newestItem, quantity: Math.max(localItem.quantity, remoteItem.quantity) };
+    }
+    return newestItem;
+  }).filter(Boolean);
+
+  const metadataSource = newerDate(remote.updatedAt, local.updatedAt) ? remote : local;
+  const merged = {
+    ...local,
+    ...metadataSource,
+    id: local.id,
+    listId: local.id,
+    ownerId: local.ownerId || remote.ownerId,
+    inviteCode: local.inviteCode || remote.inviteCode,
+    members: mergeMembers(local.members, remote.members, local.ownerId || remote.ownerId, removedMembers),
+    permissions: normalizePermissions({ ...remote.permissions, ...local.permissions }),
+    deletedItems,
+    removedMembers,
+    items
+  };
+  ensureCurrentMember(merged, merged.ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor);
+  return normalizeListData(merged);
+}
+
+function mergeRemoteLists(remoteLists) {
+  if (!Array.isArray(remoteLists)) return;
+  let didChange = false;
+  remoteLists.forEach((remoteListData) => {
+    const remoteList = importedListFromValue(remoteListData);
+    if (!remoteList) return;
+    const index = lists.findIndex((listData) => listData.id === remoteList.id);
+    if (index === -1) {
+      lists.push(remoteList);
+      didChange = true;
+      return;
+    }
+    const mergedList = mergeList(lists[index], remoteList);
+    if (JSON.stringify(mergedList) !== JSON.stringify(lists[index])) {
+      lists[index] = mergedList;
+      didChange = true;
+    }
+  });
+  if (!didChange) return;
+  save({ broadcast: false });
+  render();
+}
+
 function sanitizeSharedList(items) {
   if (!Array.isArray(items)) return [];
 
@@ -751,7 +1532,7 @@ function sanitizeSharedList(items) {
       const knownProduct = allProducts().find((product) => normalize(product.name) === normalize(name));
       const quantity = Math.max(1, Math.min(99, Math.round(Number(item.quantity) || 1)));
 
-      return {
+      return normalizeShoppingItem({
         id: typeof item.id === "string" ? item.id : knownProduct?.id ?? `geteilt:${Date.now()}:${index}`,
         name,
         shelfId: typeof item.shelfId === "string" ? item.shelfId : knownProduct?.shelfId ?? "geteilt",
@@ -759,72 +1540,135 @@ function sanitizeSharedList(items) {
         shelfIcon: typeof item.shelfIcon === "string" ? item.shelfIcon : knownProduct?.shelfIcon,
         quantity,
         done: Boolean(item.done),
-        note: typeof item.note === "string" ? item.note.trim().slice(0, 48) : ""
-      };
+        note: typeof item.note === "string" ? item.note.trim().slice(0, 48) : "",
+        addedByUserId: item.addedByUserId,
+        addedByDisplayName: item.addedByDisplayName,
+        addedByAvatarUrl: item.addedByAvatarUrl,
+        checkedByUserId: item.checkedByUserId,
+        checkedAt: item.checkedAt,
+        updatedByUserId: item.updatedByUserId,
+        updatedAt: item.updatedAt
+      }, index);
     })
     .filter(Boolean);
 }
 
-function importSharedListFromUrl() {
+async function importSharedListFromUrl() {
   const url = new URL(window.location.href);
-  const payload = url.searchParams.get("zettel");
+  const payload = url.searchParams.get("invite") ?? url.searchParams.get("zettel");
   if (!payload) return;
 
   try {
-    const sharedList = sanitizeSharedList(decodeShareValue(payload));
-    if (!sharedList.length) throw new Error("empty shared list");
-
-    const currentList = activeList();
-    const shouldImport = !currentList.items.length || window.confirm("Geteilten Zettel übernehmen und deinen aktuellen Zettel ersetzen?");
-    if (shouldImport) {
-      currentList.items = sharedList;
-      save();
+    const decoded = decodeShareValue(payload);
+    let importedList = importedListFromValue(decoded);
+    if (!importedList) throw new Error("empty shared list");
+    const remotePayload = await collaborationService.joinSharedList?.(importedList, currentUser);
+    if (remotePayload) {
+      importedList = importedListFromValue(remotePayload) ?? importedList;
     }
+    ensureCurrentMember(importedList, importedList.ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor);
+    const existingIndex = lists.findIndex((listData) => listData.id === importedList.id);
+    if (existingIndex === -1) {
+      lists.push(importedList);
+      activeListId = importedList.id;
+    } else {
+      lists[existingIndex] = mergeList(lists[existingIndex], importedList);
+      activeListId = lists[existingIndex].id;
+    }
+    save();
   } catch {
     window.alert("Der geteilte Zettel konnte nicht gelesen werden.");
   } finally {
+    url.searchParams.delete("invite");
     url.searchParams.delete("zettel");
     window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
 }
 
+function shareMemberRowsMarkup(listData) {
+  const canRemove = canPerform(listData, "remove");
+  return `
+    <div class="share-members">
+      ${listData.members.map((member) => `
+        <div class="share-member-row">
+          ${memberAvatarMarkup(member, member.userId === currentUser.userId ? "is-current" : "")}
+          <span>${escapeText(cleanDisplayName(member.displayName, "Gast"))}</span>
+          <small>${escapeText(roleLabels[member.role] ?? "Editor")}</small>
+          ${canRemove && member.userId !== listData.ownerId ? `<button type="button" aria-label="${escapeText(member.displayName)} entfernen" data-remove-member="${escapeText(member.userId)}" data-list-id="${escapeText(listData.id)}">${icon("minus")}</button>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 async function shareList(listId = activeListId) {
   const listData = lists.find((item) => item.id === listId) ?? activeList();
-  const items = listData.items;
-  if (!items.length) {
-    window.alert("Dein Zettel ist noch leer.");
-    return;
-  }
+  listData.inviteCode = listData.inviteCode || generateInviteCode();
+  ensureCurrentMember(listData);
+  touchList(listData);
+  save();
 
   const url = new URL(window.location.href);
-  url.searchParams.set("zettel", encodeShareValue(items));
+  url.searchParams.set("invite", encodeShareValue(exportCollaborativeList(listData)));
   url.hash = "";
-  const shareData = {
-    title: "Zettel",
-    text: listData.title,
-    url: url.href
-  };
-
-  try {
-    if (navigator.share) {
-      await navigator.share(shareData);
-      return;
-    }
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url.href);
-      window.alert("Link zum Zettel kopiert.");
-      return;
-    }
-  } catch (error) {
-    if (error.name === "AbortError") return;
-  }
-
+  const inviteCode = listData.inviteCode.slice(0, 8).toUpperCase();
   openModal(`
     <h2 id="modalTitle">Zettel teilen</h2>
-    <div class="bug-form">
+    <div class="share-panel" data-invite-url="${escapeText(url.href)}" data-invite-title="${escapeText(listData.title)}">
+      <div class="invite-code">${escapeText(inviteCode)}</div>
       <textarea readonly rows="4">${escapeText(url.href)}</textarea>
+      <div class="modal-actions">
+        <button type="button" data-native-share>Teilen</button>
+        <button type="button" data-copy-invite>Link kopieren</button>
+      </div>
+      ${shareMemberRowsMarkup(listData)}
     </div>
   `);
+}
+
+async function nativeShareInvite() {
+  const panel = elements.modalContent.querySelector(".share-panel");
+  const url = panel?.dataset.inviteUrl;
+  if (!url) return;
+  if (!navigator.share) {
+    await copyInviteLink();
+    return;
+  }
+  try {
+    await navigator.share({ title: "Zettel", text: panel.dataset.inviteTitle ?? "Zettel", url });
+  } catch (error) {
+    if (error.name !== "AbortError") await copyInviteLink();
+  }
+}
+
+async function copyInviteLink() {
+  const panel = elements.modalContent.querySelector(".share-panel");
+  const textarea = panel?.querySelector("textarea");
+  const url = panel?.dataset.inviteUrl ?? textarea?.value;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    window.alert("Link kopiert.");
+  } catch {
+    textarea?.select();
+    document.execCommand("copy");
+    window.alert("Link kopiert.");
+  }
+}
+
+function removeMember(listId, userId) {
+  const listData = listById(listId);
+  if (!canPerform(listData, "remove") || userId === listData.ownerId) return;
+  listData.removedMembers = mergeRemovedMembers(listData.removedMembers, [{
+    userId,
+    removedByUserId: currentUser.userId,
+    removedAt: isoNow()
+  }]);
+  listData.members = listData.members.filter((member) => member.userId !== userId);
+  touchList(listData);
+  save();
+  shareList(listId);
+  renderNotes();
 }
 
 function openModal(content) {
@@ -901,9 +1745,61 @@ function showMore() {
   openModal(`
     <h2 id="modalTitle">Mehr</h2>
     <div class="modal-actions modal-actions-stack">
+      <button type="button" data-open-profile>Profil</button>
       <button type="button" data-open-background>Hintergrund anpassen</button>
     </div>
   `);
+}
+
+function showProfile() {
+  openModal(`
+    <h2 id="modalTitle">Profil</h2>
+    <div class="profile-form">
+      <div class="profile-preview">
+        ${memberAvatarMarkup(currentUser, "is-current")}
+      </div>
+      <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
+      <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Avatar-Link">
+      <div class="modal-actions">
+        <button type="button" data-save-profile>Speichern</button>
+      </div>
+    </div>
+  `);
+  window.setTimeout(() => {
+    const input = elements.modalContent.querySelector("#profileNameInput");
+    input?.focus();
+    input?.select();
+  }, 0);
+}
+
+function saveProfile() {
+  const nameInput = elements.modalContent.querySelector("#profileNameInput");
+  const avatarInput = elements.modalContent.querySelector("#profileAvatarInput");
+  if (!nameInput) return;
+  currentUser = {
+    ...currentUser,
+    displayName: cleanDisplayName(nameInput.value),
+    avatarUrl: typeof avatarInput?.value === "string" ? avatarInput.value.trim().slice(0, 240) : ""
+  };
+  saveCurrentUser();
+  lists.forEach((listData) => {
+    const member = ensureCurrentMember(listData);
+    if (member) {
+      member.displayName = currentUser.displayName;
+      member.avatarUrl = currentUser.avatarUrl;
+    }
+    listData.items.forEach((item) => {
+      if (item.addedByUserId === currentUser.userId) {
+        item.addedByDisplayName = currentUser.displayName;
+        item.addedByAvatarUrl = currentUser.avatarUrl;
+      }
+    });
+    touchList(listData);
+  });
+  save();
+  updatePresence();
+  closeModal();
+  render();
 }
 
 async function copyBugReport() {
@@ -961,13 +1857,28 @@ function showAddFeedback(button) {
 }
 
 function addToList(product) {
+  const currentList = activeList();
+  if (!canPerform(currentList, "add")) return;
   triggerHapticFeedback();
-  const items = activeItems();
+  const items = currentList.items;
+  ensureCurrentMember(currentList);
   const existing = items.find((item) => item.id === product.id);
   if (existing) {
     existing.quantity += 1;
+    touchItem(existing, currentList);
   } else {
-    items.push({ ...product, quantity: 1, done: false });
+    const item = normalizeShoppingItem({
+      ...product,
+      quantity: 1,
+      done: false,
+      addedByUserId: currentUser.userId,
+      addedByDisplayName: currentUser.displayName,
+      addedByAvatarUrl: currentUser.avatarUrl,
+      updatedByUserId: currentUser.userId,
+      updatedAt: isoNow()
+    });
+    items.push(item);
+    touchList(currentList);
   }
   save();
   renderNotes();
@@ -1002,30 +1913,69 @@ function listById(id) {
 
 function updateQuantity(id, delta, listId = activeListId) {
   const currentList = listById(listId);
+  if (!canPerform(currentList, "edit")) return;
+  const removedItems = [];
   currentList.items = currentList.items
-    .map((item) => item.id === id ? { ...item, quantity: item.quantity + delta } : item)
+    .map((item) => {
+      if (item.id !== id) return item;
+      const nextItem = { ...item, quantity: item.quantity + delta };
+      touchItem(nextItem, currentList);
+      if (nextItem.quantity <= 0) {
+        removedItems.push({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: isoNow() });
+      }
+      return nextItem;
+    })
     .filter((item) => item.quantity > 0);
+  if (removedItems.length) {
+    currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, removedItems);
+  }
   save();
   renderNotes();
 }
 
 function toggleDone(id, listId = activeListId) {
   const currentList = listById(listId);
-  currentList.items = currentList.items.map((item) => item.id === id ? { ...item, done: !item.done } : item);
+  if (!canPerform(currentList, "check")) return;
+  currentList.items = currentList.items.map((item) => {
+    if (item.id !== id) return item;
+    const done = !item.done;
+    const nextItem = {
+      ...item,
+      done,
+      checkedByUserId: done ? currentUser.userId : "",
+      checkedAt: done ? isoNow() : ""
+    };
+    touchItem(nextItem, currentList);
+    return nextItem;
+  });
   save();
   renderNotes();
 }
 
 function removeItem(id, listId = activeListId) {
   const currentList = listById(listId);
+  if (!canPerform(currentList, "delete")) return;
+  currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, [{
+    id,
+    deletedByUserId: currentUser.userId,
+    deletedAt: isoNow()
+  }]);
   currentList.items = currentList.items.filter((item) => item.id !== id);
+  touchList(currentList);
   save();
   renderNotes();
 }
 
 function clearDone(listId = activeListId) {
   const currentList = listById(listId);
+  if (!canPerform(currentList, "delete")) return;
+  const now = isoNow();
+  const deletedItems = currentList.items
+    .filter((item) => item.done)
+    .map((item) => ({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: now }));
+  currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, deletedItems);
   currentList.items = currentList.items.filter((item) => !item.done);
+  touchList(currentList);
   save();
   renderNotes();
 }
@@ -1060,6 +2010,7 @@ function renderProductGrid(container, products) {
     return;
   }
 
+  const canAdd = canPerform(activeList(), "add");
   container.innerHTML = products.map((product) => {
     const isFavorite = favorites.includes(product.id);
     return `
@@ -1073,7 +2024,7 @@ function renderProductGrid(container, products) {
           <button class="favorite-button ${isFavorite ? "is-active" : ""}" type="button" title="Favorit" aria-label="Favorit" data-favorite="${escapeText(product.id)}">
             ${icon("sparkle")}
           </button>
-          <button class="add-button" type="button" title="Auf den Zettel" aria-label="Auf den Zettel" data-add="${escapeText(product.id)}">
+          <button class="add-button" type="button" ${canAdd ? "" : "disabled"} title="Auf den Zettel" aria-label="Auf den Zettel" data-add="${escapeText(product.id)}">
             ${icon("cart")}
           </button>
         </div>
@@ -1275,10 +2226,13 @@ function saveRenamedList() {
   const input = elements.modalContent.querySelector("#renameListInput");
   if (!input) return;
   const listData = listById(pendingRenameListId);
+  if (!canPerform(listData, "edit")) return;
   const nextTitle = input.value;
   const cleanTitle = nextTitle.trim().slice(0, 24);
   if (!cleanTitle) return;
   listData.title = cleanTitle;
+  listData.listName = cleanTitle;
+  touchList(listData);
   activeListId = listData.id;
   pendingRenameListId = null;
   save();
@@ -1315,6 +2269,8 @@ function saveItemNote() {
   if (!pendingItemNoteEdit) return;
   const input = elements.modalContent.querySelector("#itemNoteInput");
   if (!input) return;
+  const listData = listById(pendingItemNoteEdit.listId);
+  if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
   const cleanNote = input.value.trim().slice(0, 48);
@@ -1323,6 +2279,7 @@ function saveItemNote() {
   } else {
     delete item.note;
   }
+  touchItem(item, listData);
   activeListId = pendingItemNoteEdit.listId;
   pendingItemNoteEdit = null;
   save();
@@ -1332,9 +2289,12 @@ function saveItemNote() {
 
 function clearItemNote() {
   if (!pendingItemNoteEdit) return;
+  const listData = listById(pendingItemNoteEdit.listId);
+  if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
   delete item.note;
+  touchItem(item, listData);
   activeListId = pendingItemNoteEdit.listId;
   pendingItemNoteEdit = null;
   save();
@@ -1397,27 +2357,97 @@ function attachNoteLongPress(element, listId) {
   });
 }
 
+function activeMembersFor(listData) {
+  const presenceMembers = activeMembersByList[listData.id] ?? collaborationService.presenceFor(listData.id);
+  return mergeMembers(listData.members, presenceMembers, listData.ownerId, listData.removedMembers);
+}
+
+function memberBadgeLabel(member) {
+  return escapeText(userInitials(member));
+}
+
+function memberAvatarMarkup(member, extraClass = "") {
+  const label = memberBadgeLabel(member);
+  const title = escapeText(`${cleanDisplayName(member?.displayName, "Gast")} · ${roleLabels[member?.role] ?? "Editor"}`);
+  if (member?.avatarUrl) {
+    return `<span class="member-avatar ${extraClass}" title="${title}"><img src="${escapeText(member.avatarUrl)}" alt="${title}"></span>`;
+  }
+  return `<span class="member-avatar ${extraClass}" title="${title}">${label}</span>`;
+}
+
+function membersMarkup(listData) {
+  const members = activeMembersFor(listData).slice(0, 5);
+  const overflow = Math.max(0, activeMembersFor(listData).length - members.length);
+  return `
+    <div class="member-strip" aria-label="Beteiligte Nutzer">
+      ${members.map((member) => memberAvatarMarkup(member, member.userId === currentUser.userId ? "is-current" : "")).join("")}
+      ${overflow ? `<span class="member-avatar is-overflow">+${overflow}</span>` : ""}
+    </div>
+  `;
+}
+
+function itemUserBadgeMarkup(item, listData) {
+  const addedName = cleanDisplayName(item.addedByDisplayName, "Gast");
+  const checkedMember = item.checkedByUserId ? (memberFor(listData, item.checkedByUserId) ?? { displayName: item.checkedByUserId }) : null;
+  const checkedName = checkedMember ? cleanDisplayName(checkedMember.displayName, "Gast") : "";
+  return `
+    <span class="item-badges">
+      <button class="user-badge" type="button" title="Hinzugefügt von ${escapeText(addedName)}" aria-label="Hinzugefügt von ${escapeText(addedName)}" data-user-badge="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
+        ${escapeText(userInitials({ displayName: addedName }))}
+      </button>
+      ${item.done && checkedName ? `
+        <button class="user-badge is-checker" type="button" title="Abgehakt von ${escapeText(checkedName)}" aria-label="Abgehakt von ${escapeText(checkedName)}" data-user-badge="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
+          ${icon("check")} ${escapeText(userInitials({ displayName: checkedName }))}
+        </button>
+      ` : ""}
+    </span>
+  `;
+}
+
+function showItemContributor(listId, itemId) {
+  const listData = listById(listId);
+  const item = itemById(listId, itemId);
+  if (!item) return;
+  const addedName = cleanDisplayName(item.addedByDisplayName, "Gast");
+  const updatedMember = item.updatedByUserId ? (memberFor(listData, item.updatedByUserId) ?? { displayName: item.updatedByUserId }) : null;
+  const checkedMember = item.checkedByUserId ? (memberFor(listData, item.checkedByUserId) ?? { displayName: item.checkedByUserId }) : null;
+  openModal(`
+    <h2 id="modalTitle">${escapeText(item.name)}</h2>
+    <div class="modal-copy">
+      <p>Hinzugefügt von <strong>${escapeText(addedName)}</strong></p>
+      ${updatedMember ? `<p>Bearbeitet von <strong>${escapeText(cleanDisplayName(updatedMember.displayName, "Gast"))}</strong></p>` : ""}
+      ${checkedMember && item.checkedAt ? `<p>Abgehakt von <strong>${escapeText(cleanDisplayName(checkedMember.displayName, "Gast"))}</strong></p>` : ""}
+    </div>
+  `);
+}
+
 function noteItemsMarkup(listData) {
   const items = listData.items;
   if (!items.length) {
     return '<li class="empty-state">Noch nichts auf dem Zettel.</li>';
   }
 
+  const canEdit = canPerform(listData, "edit");
+  const canCheck = canPerform(listData, "check");
+  const canDelete = canPerform(listData, "delete");
   return items.map((item) => {
     const itemNote = typeof item.note === "string" ? item.note.trim() : "";
     const itemDetail = itemNote || item.shelfTitle;
     return `
     <li class="list-item ${item.done ? "is-done" : ""}">
-      <input type="checkbox" ${item.done ? "checked" : ""} aria-label="${escapeText(item.name)} erledigt" data-done="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
-      <button class="list-copy-button" type="button" aria-label="Notiz zu ${escapeText(item.name)} bearbeiten" data-edit-item-note="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
-        <p class="list-name">${escapeText(item.name)}</p>
-        <p class="list-shelf ${itemNote ? "is-note" : ""}">${escapeText(itemDetail)}</p>
-      </button>
+      <input type="checkbox" ${item.done ? "checked" : ""} ${canCheck ? "" : "disabled"} aria-label="${escapeText(item.name)} erledigt" data-done="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
+      <div class="list-copy-block">
+        <button class="list-copy-button" type="button" ${canEdit ? "" : "disabled"} aria-label="Notiz zu ${escapeText(item.name)} bearbeiten" data-edit-item-note="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
+          <p class="list-name">${escapeText(item.name)}</p>
+          <p class="list-shelf ${itemNote ? "is-note" : ""}">${escapeText(itemDetail)}</p>
+        </button>
+        ${itemUserBadgeMarkup(item, listData)}
+      </div>
       <div class="quantity">
-        <button class="quantity-button" type="button" title="Weniger" aria-label="Weniger" data-minus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("minus")}</button>
+        <button class="quantity-button" type="button" ${canEdit ? "" : "disabled"} title="Weniger" aria-label="Weniger" data-minus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("minus")}</button>
         <span>${item.quantity}</span>
-        <button class="quantity-button" type="button" title="Mehr" aria-label="Mehr" data-plus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("plus")}</button>
-        <button class="remove-button" type="button" title="Entfernen" aria-label="Entfernen" data-remove="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
+        <button class="quantity-button" type="button" ${canEdit ? "" : "disabled"} title="Mehr" aria-label="Mehr" data-plus="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">${icon("plus")}</button>
+        <button class="remove-button" type="button" ${canDelete ? "" : "disabled"} title="Entfernen" aria-label="Entfernen" data-remove="${escapeText(item.id)}" data-list-id="${escapeText(listData.id)}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -1428,6 +2458,7 @@ function noteItemsMarkup(listData) {
 
 function noteMarkup(listData) {
   const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
+  const canAdd = canPerform(listData, "add");
   return `
     <article class="list-panel note-card ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
       <button class="edit-note-button" type="button" title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
@@ -1443,9 +2474,13 @@ function noteMarkup(listData) {
           <button class="share-button" type="button" data-share-list="${escapeText(listData.id)}">Teilen</button>
         </div>
       </div>
+      <div class="collab-row">
+        ${membersMarkup(listData)}
+        <span class="sync-chip">${canManageMembers(listData) ? "Owner" : roleLabels[memberRole(listData)]}</span>
+      </div>
       <div class="manual-add">
-        <input type="text" placeholder="Eigener Artikel" data-manual-input="${escapeText(listData.id)}">
-        <button type="button" title="Hinzufügen" aria-label="Hinzufügen" data-manual-add="${escapeText(listData.id)}">
+        <input type="text" placeholder="Eigener Artikel" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
+        <button type="button" ${canAdd ? "" : "disabled"} title="Hinzufügen" aria-label="Hinzufügen" data-manual-add="${escapeText(listData.id)}">
           ${icon("plus")}
         </button>
       </div>
@@ -1476,6 +2511,9 @@ function renderNotes() {
   });
   elements.notesStack.querySelectorAll("[data-edit-item-note]").forEach((button) => {
     button.addEventListener("click", () => editItemNote(button.dataset.listId, button.dataset.editItemNote));
+  });
+  elements.notesStack.querySelectorAll("[data-user-badge]").forEach((button) => {
+    button.addEventListener("click", () => showItemContributor(button.dataset.listId, button.dataset.userBadge));
   });
   elements.notesStack.querySelectorAll("[data-manual-add]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1540,8 +2578,29 @@ elements.modalContent.addEventListener("click", (event) => {
     showBackgroundOptions();
     return;
   }
+  if (event.target.closest("[data-open-profile]")) {
+    showProfile();
+    return;
+  }
   if (event.target.closest("[data-copy-bug]")) {
     copyBugReport();
+    return;
+  }
+  if (event.target.closest("[data-native-share]")) {
+    nativeShareInvite();
+    return;
+  }
+  if (event.target.closest("[data-copy-invite]")) {
+    copyInviteLink();
+    return;
+  }
+  const removeMemberButton = event.target.closest("[data-remove-member]");
+  if (removeMemberButton) {
+    removeMember(removeMemberButton.dataset.listId, removeMemberButton.dataset.removeMember);
+    return;
+  }
+  if (event.target.closest("[data-save-profile]")) {
+    saveProfile();
     return;
   }
   if (event.target.closest("[data-save-rename]")) {
@@ -1563,8 +2622,38 @@ elements.modalContent.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.id === "itemNoteInput") {
     saveItemNote();
   }
+  if (event.key === "Enter" && event.target.id === "profileNameInput") {
+    saveProfile();
+  }
 });
 
-applyBackgroundTheme();
-importSharedListFromUrl();
-render();
+function updatePresence() {
+  const listData = activeList();
+  const member = ensureCurrentMember(listData);
+  if (!member && isMemberRemoved(listData)) return;
+  activeMembersByList[listData.id] = collaborationService.heartbeat(listData, currentUser);
+}
+
+async function bootApp() {
+  applyBackgroundTheme();
+  const authUser = await collaborationService.initializeUser?.(currentUser);
+  if (authUser?.id) {
+    adoptCurrentUserId(authUser.id);
+  }
+  await importSharedListFromUrl();
+  collaborationService.subscribe((message) => {
+    if (message.type === "lists") {
+      mergeRemoteLists(message.lists);
+      return;
+    }
+    if (message.type === "presence" && message.listId) {
+      activeMembersByList[message.listId] = message.members;
+      renderNotes();
+    }
+  });
+  updatePresence();
+  window.setInterval(updatePresence, 15000);
+  render();
+}
+
+bootApp();
