@@ -1601,6 +1601,26 @@ function shareMemberRowsMarkup(listData) {
   `;
 }
 
+function shareBaseUrl() {
+  const configuredUrl = window.MART_SUPABASE_CONFIG?.publicUrl;
+  const isLocalPage = window.location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const sourceUrl = isLocalPage && typeof configuredUrl === "string" && configuredUrl.trim()
+    ? configuredUrl
+    : window.location.href;
+
+  try {
+    const url = new URL(sourceUrl, window.location.href);
+    url.search = "";
+    url.hash = "";
+    return url;
+  } catch {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = "";
+    return url;
+  }
+}
+
 async function shareList(listId = activeListId) {
   const listData = lists.find((item) => item.id === listId) ?? activeList();
   listData.inviteCode = listData.inviteCode || generateInviteCode();
@@ -1608,9 +1628,8 @@ async function shareList(listId = activeListId) {
   touchList(listData);
   save();
 
-  const url = new URL(window.location.href);
+  const url = shareBaseUrl();
   url.searchParams.set("invite", encodeShareValue(exportCollaborativeList(listData)));
-  url.hash = "";
   const inviteCode = listData.inviteCode.slice(0, 8).toUpperCase();
   openModal(`
     <h2 id="modalTitle">Zettel teilen</h2>

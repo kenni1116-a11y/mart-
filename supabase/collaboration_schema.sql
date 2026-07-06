@@ -98,13 +98,15 @@ revoke all on function public.join_shared_list(text, text, text, text) from anon
 grant execute on function public.join_shared_list(text, text, text, text) to authenticated;
 
 drop policy if exists "members can read shared lists" on public.shared_lists;
-create policy "members can read shared lists"
+drop policy if exists "members and invitees can read shared lists" on public.shared_lists;
+create policy "members and invitees can read shared lists"
 on public.shared_lists
 for select
 to authenticated
 using (
   owner_user_id = (select auth.uid())
   or public.shared_list_has_member(payload, (select auth.uid()))
+  or invite_code = (select current_setting('request.mart_invite_code', true))
 );
 
 drop policy if exists "members can insert shared lists" on public.shared_lists;
