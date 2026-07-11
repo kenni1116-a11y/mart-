@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=52">
+    <link rel="stylesheet" href="./styles.css?v=53">
   </head>
   <body>
     <section class="auth-gate" id="authGate" aria-labelledby="authTitle">
@@ -35,16 +35,12 @@
           <button class="auth-primary" type="submit">Anmeldung senden</button>
         </form>
 
-        <form class="auth-form is-hidden" id="authCodeForm">
-          <p class="auth-code-copy">E-Mail gesendet an <strong id="authEmailTarget"></strong></p>
-          <p class="auth-link-hint">Du kannst den sechsstelligen Code eingeben oder den Anmeldelink in der E-Mail öffnen.</p>
-          <label for="authCodeInput">
-            <span>Sechsstelliger Code</span>
-            <input id="authCodeInput" type="text" maxlength="6" minlength="6" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" placeholder="000000" required>
-          </label>
-          <button class="auth-primary" type="submit">Einloggen</button>
+        <div class="auth-form auth-link-panel is-hidden" id="authLinkPanel">
+          <p class="auth-link-copy">Anmeldelink gesendet an <strong id="authEmailTarget"></strong></p>
+          <p class="auth-link-hint">Öffne den Link in der neuesten E-Mail. Danach kehrst du automatisch zu Zettel zurück.</p>
+          <p class="auth-link-warning">Jede neue Anmeldemail macht den vorherigen Link ungültig.</p>
           <button class="auth-secondary" id="authBackButton" type="button">Andere E-Mail verwenden</button>
-        </form>
+        </div>
 
         <p class="auth-status" id="authStatus" role="status" aria-live="polite"></p>
       </div>
@@ -134,9 +130,9 @@
       </div>
     </div>
 
-    <script src="./supabase-config.js?v=52"></script>
+    <script src="./supabase-config.js?v=53"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0"></script>
-    <script src="./app.js?v=52"></script>
+    <script src="./app.js?v=53"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

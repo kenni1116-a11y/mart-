@@ -14,4 +14,4 @@ Die App verwendet dauerhafte Supabase-E-Mail-Accounts. Einkaufszettel werden unt
 
 Für ein neues Supabase-Projekt enthält `supabase/relational_collaboration_schema.sql` das vollständige relationale Listen-Schema. Bei einem bestehenden Projekt dokumentieren `supabase/account_scoped_auth.sql` und `supabase/harden_account_helpers.sql` die nachträgliche Kontoabsicherung.
 
-In Supabase Auth muss `https://kenni1116-a11y.github.io/mart-/` als Site URL und erlaubte Redirect URL eingetragen sein. Anonymous Sign-Ins sollten deaktiviert werden. Die Standard-E-Mail enthält einen Anmeldelink; ein sechsstelliger Code ist zusätzlich möglich, wenn die Magic-Link-Vorlage `{{ .Token }}` verwendet.
+In Supabase Auth muss `https://kenni1116-a11y.github.io/mart-/` als Site URL und erlaubte Redirect URL eingetragen sein. Anonymous Sign-Ins sollten deaktiviert werden. Mit dem Supabase-Standardversand erfolgt die Anmeldung über den Link in der neuesten E-Mail.

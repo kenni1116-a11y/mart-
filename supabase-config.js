@@ -8,5 +8,5 @@ window.MART_SUPABASE_CONFIG = {
   itemsTable: "list_items",
   profilesTable: "profiles",
   useAnonymousAuth: false,
-  authMode: "emailOtp"
+  authMode: "emailLink"
 };

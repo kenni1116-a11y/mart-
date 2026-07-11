@@ -1246,7 +1246,7 @@ class SupabaseRealtimeService {
     }
   }
 
-  async sendEmailCode(email, displayName) {
+  async sendLoginEmail(email, displayName) {
     if (!this.client) return { ok: false, error: "Anmeldung ist nicht erreichbar." };
     const { error } = await this.client.auth.signInWithOtp({
       email,
@@ -1259,21 +1259,6 @@ class SupabaseRealtimeService {
       }
     });
     return error ? { ok: false, error: error.message } : { ok: true };
-  }
-
-  async verifyEmailCode(email, token) {
-    if (!this.client) return { ok: false, error: "Anmeldung ist nicht erreichbar." };
-    const { data, error } = await this.client.auth.verifyOtp({
-      email,
-      token,
-      type: "email"
-    });
-    const authUser = data?.user ?? data?.session?.user ?? null;
-    if (error || !isPermanentAuthUser(authUser)) {
-      return { ok: false, error: error?.message ?? "Der Code ist ungültig oder abgelaufen." };
-    }
-    this.authUserId = authUser.id;
-    return { ok: true, user: authUser };
   }
 
   async fetchProfile(userId) {
@@ -1924,6 +1909,7 @@ let authState = {
   status: "loading",
   email: "",
   displayName: "",
+  emailRequestedAt: 0,
   activatingUserId: "",
   accountReady: false
 };
@@ -1936,10 +1922,9 @@ const elements = {
   body: document.body,
   authGate: document.querySelector("#authGate"),
   authEmailForm: document.querySelector("#authEmailForm"),
-  authCodeForm: document.querySelector("#authCodeForm"),
+  authLinkPanel: document.querySelector("#authLinkPanel"),
   authNameInput: document.querySelector("#authNameInput"),
   authEmailInput: document.querySelector("#authEmailInput"),
-  authCodeInput: document.querySelector("#authCodeInput"),
   authEmailTarget: document.querySelector("#authEmailTarget"),
   authBackButton: document.querySelector("#authBackButton"),
   authStatus: document.querySelector("#authStatus"),
@@ -2235,7 +2220,7 @@ function authErrorMessage(error) {
   const message = typeof error === "string" ? error : (error?.message ?? "");
   const normalizedMessage = message.toLowerCase();
   if (normalizedMessage.includes("rate limit")) return "Zu viele Versuche. Bitte warte kurz und versuche es erneut.";
-  if (normalizedMessage.includes("expired") || normalizedMessage.includes("invalid")) return "Der Code ist ungültig oder abgelaufen.";
+  if (normalizedMessage.includes("expired") || normalizedMessage.includes("invalid")) return "Der Anmeldelink ist ungültig oder abgelaufen. Fordere eine neue E-Mail an.";
   if (normalizedMessage.includes("email")) return "Die E-Mail-Adresse konnte nicht verwendet werden.";
   return message || "Die Anmeldung ist gerade nicht erreichbar.";
 }
@@ -2251,7 +2236,7 @@ function setAuthBusy(isBusy) {
   elements.authEmailForm?.querySelectorAll("button, input").forEach((control) => {
     control.disabled = isBusy;
   });
-  elements.authCodeForm?.querySelectorAll("button, input").forEach((control) => {
+  elements.authLinkPanel?.querySelectorAll("button, input").forEach((control) => {
     control.disabled = isBusy;
   });
 }
@@ -2262,26 +2247,24 @@ function showAuthEmailStep(message = "") {
   elements.appShell?.classList.add("is-hidden");
   elements.authGate?.classList.remove("is-hidden");
   elements.authEmailForm?.classList.remove("is-hidden");
-  elements.authCodeForm?.classList.add("is-hidden");
+  elements.authLinkPanel?.classList.add("is-hidden");
   if (elements.authNameInput && !elements.authNameInput.value) {
     elements.authNameInput.value = cleanDisplayName(legacySnapshot?.user?.displayName, "");
   }
-  if (elements.authCodeInput) elements.authCodeInput.value = "";
   setAuthBusy(false);
   setAuthStatus(message);
 }
 
-function showAuthCodeStep() {
-  authState.status = "code-sent";
+function showAuthLinkStep() {
+  authState.status = "link-sent";
   elements.authEmailForm?.classList.add("is-hidden");
-  elements.authCodeForm?.classList.remove("is-hidden");
+  elements.authLinkPanel?.classList.remove("is-hidden");
   if (elements.authEmailTarget) elements.authEmailTarget.textContent = authState.email;
   setAuthBusy(false);
-  setAuthStatus("Gib den Code ein oder öffne den Anmeldelink in deiner E-Mail.", "success");
-  window.setTimeout(() => elements.authCodeInput?.focus(), 0);
+  setAuthStatus("Anmeldelink wurde gesendet.", "success");
 }
 
-async function requestAuthCode() {
+async function requestLoginEmail() {
   const email = elements.authEmailInput?.value.trim().toLowerCase() ?? "";
   const displayName = cleanDisplayName(elements.authNameInput?.value, "Nutzer");
   if (!email || !elements.authEmailInput?.checkValidity()) {
@@ -2289,35 +2272,24 @@ async function requestAuthCode() {
     elements.authEmailInput?.focus();
     return;
   }
-  authState = { ...authState, status: "sending-code", email, displayName };
+  const requestedAt = Number(authState.emailRequestedAt || 0);
+  if (authState.email === email && Date.now() - requestedAt < 60000) {
+    authState = { ...authState, displayName };
+    showAuthLinkStep();
+    setAuthStatus("Die E-Mail wurde bereits gesendet. Nutze bitte die neueste Nachricht.", "success");
+    return;
+  }
+  authState = { ...authState, status: "sending-link", email, displayName };
   setAuthBusy(true);
   setAuthStatus("Anmeldung wird gesendet …");
-  const result = await collaborationService.sendEmailCode?.(email, displayName);
+  const result = await collaborationService.sendLoginEmail?.(email, displayName);
   if (!result?.ok) {
     setAuthBusy(false);
     setAuthStatus(authErrorMessage(result?.error), "error");
     return;
   }
-  showAuthCodeStep();
-}
-
-async function confirmAuthCode() {
-  const token = (elements.authCodeInput?.value ?? "").replace(/\D/g, "").slice(0, 6);
-  if (token.length !== 6) {
-    setAuthStatus("Bitte gib den sechsstelligen Code ein.", "error");
-    elements.authCodeInput?.focus();
-    return;
-  }
-  authState.status = "verifying";
-  setAuthBusy(true);
-  setAuthStatus("Account wird geöffnet …");
-  const result = await collaborationService.verifyEmailCode?.(authState.email, token);
-  if (!result?.ok || !result.user) {
-    setAuthBusy(false);
-    setAuthStatus(authErrorMessage(result?.error), "error");
-    return;
-  }
-  await activateAccount(result.user);
+  authState.emailRequestedAt = Date.now();
+  showAuthLinkStep();
 }
 
 function handleRealtimeMessage(message) {
@@ -2412,7 +2384,7 @@ async function activateAccount(authUser) {
 
 async function deactivateAccount(message = "") {
   stopAccountActivity();
-  authState = { status: "signed-out", email: "", displayName: "", activatingUserId: "", accountReady: false };
+  authState = { status: "signed-out", email: "", displayName: "", emailRequestedAt: 0, activatingUserId: "", accountReady: false };
   currentUser = signedOutUser();
   lists = [];
   activeListId = "";
@@ -2427,7 +2399,6 @@ async function deactivateAccount(message = "") {
   };
   if (elements.authNameInput) elements.authNameInput.value = "";
   if (elements.authEmailInput) elements.authEmailInput.value = "";
-  if (elements.authCodeInput) elements.authCodeInput.value = "";
   closeModal();
   showAuthEmailStep(message);
 }
@@ -5281,20 +5252,13 @@ function schedulePriceSearchRender(query) {
 
 elements.authEmailForm?.addEventListener("submit", (event) => {
   event.preventDefault();
-  requestAuthCode();
-});
-elements.authCodeForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  confirmAuthCode();
+  requestLoginEmail();
 });
 elements.authBackButton?.addEventListener("click", () => {
   elements.authEmailForm?.classList.remove("is-hidden");
-  elements.authCodeForm?.classList.add("is-hidden");
+  elements.authLinkPanel?.classList.add("is-hidden");
   setAuthStatus("");
   window.setTimeout(() => elements.authEmailInput?.focus(), 0);
-});
-elements.authCodeInput?.addEventListener("input", () => {
-  elements.authCodeInput.value = elements.authCodeInput.value.replace(/\D/g, "").slice(0, 6);
 });
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 elements.searchInput.addEventListener("input", scheduleMainSearchRender);
