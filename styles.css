@@ -44,6 +44,152 @@ body[data-background="clean"] {
     #fbfaf5;
 }
 
+.auth-gate {
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 24px)
+    max(18px, env(safe-area-inset-right, 0px))
+    calc(env(safe-area-inset-bottom, 0px) + 24px)
+    max(18px, env(safe-area-inset-left, 0px));
+}
+
+.auth-sheet {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 20px;
+  padding: 26px 22px;
+  border: 1px solid rgba(204, 195, 179, 0.78);
+  border-radius: 8px;
+  background: rgba(255, 254, 249, 0.9);
+  box-shadow: 0 24px 60px rgba(43, 38, 29, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.auth-brand {
+  justify-self: center;
+  min-width: 154px;
+  padding: 6px 22px 7px;
+  border: 1px solid rgba(204, 195, 179, 0.58);
+  border-radius: 999px;
+  background: rgba(255, 253, 246, 0.62);
+  font-family: "Bodoni 72", Didot, Cochin, Baskerville, "Iowan Old Style", Georgia, serif;
+  font-size: 2.35rem;
+  font-style: italic;
+  font-weight: 430;
+  line-height: 1;
+  text-align: center;
+}
+
+.auth-copy {
+  display: grid;
+  gap: 7px;
+  text-align: center;
+}
+
+.auth-copy h1 {
+  position: static;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 1.2rem;
+  font-style: normal;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.auth-copy p,
+.auth-code-copy,
+.auth-link-hint,
+.auth-status {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.auth-link-hint {
+  margin: -0.2rem 0 0.2rem;
+  font-size: 0.78rem;
+}
+
+.auth-form {
+  display: grid;
+  gap: 13px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-form label > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 680;
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.auth-form input:focus {
+  border-color: rgba(43, 41, 38, 0.72);
+  box-shadow: 0 0 0 3px rgba(43, 41, 38, 0.08);
+}
+
+#authCodeInput {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.auth-primary,
+.auth-secondary {
+  min-height: 44px;
+  padding: 0 15px;
+  border-radius: 8px;
+  font-weight: 680;
+}
+
+.auth-primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.auth-secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.auth-primary:disabled,
+.auth-secondary:disabled {
+  cursor: wait;
+  opacity: 0.56;
+}
+
+.auth-status {
+  min-height: 20px;
+  text-align: center;
+}
+
+.auth-status[data-state="error"] {
+  color: #a33c35;
+}
+
+.auth-status[data-state="success"] {
+  color: #3f7654;
+}
+
 button,
 input {
   font: inherit;
@@ -472,6 +618,38 @@ h2 {
 .list-panel .manual-add input {
   font-family: inherit;
   font-size: 1rem;
+}
+
+.note-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(108, 83, 42, 0.1);
+}
+
+.note-delete-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(154, 59, 51, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 253, 246, 0.42);
+  color: rgba(143, 49, 43, 0.76);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.note-delete-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.note-card.is-shared .note-footer {
+  border-top-color: rgba(126, 70, 62, 0.12);
 }
 
 .manual-add button {
@@ -1494,7 +1672,32 @@ button.sync-chip:hover {
 .profile-preview {
   display: flex;
   align-items: center;
+  gap: 9px;
   min-height: 30px;
+}
+
+.profile-preview > span:not(.member-avatar) {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.migration-panel {
+  display: grid;
+  gap: 11px;
+}
+
+.migration-panel > p {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
+.migration-status {
+  min-height: 18px;
 }
 
 .share-members {

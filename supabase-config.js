@@ -3,10 +3,10 @@ window.MART_SUPABASE_CONFIG = {
   url: "https://muqvelqlyzrsalgqjadj.supabase.co",
   publicUrl: "https://kenni1116-a11y.github.io/mart-/",
   publishableKey: "sb_publishable_-h5JSvzPw5FVE2s9nbAUiw_XkrQUZsG",
-  sharedListsTable: "shared_lists",
   listsTable: "shopping_lists",
   membersTable: "list_members",
   itemsTable: "list_items",
   profilesTable: "profiles",
-  useAnonymousAuth: true
+  useAnonymousAuth: false,
+  authMode: "emailOtp"
 };

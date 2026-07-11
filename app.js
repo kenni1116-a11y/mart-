@@ -825,6 +825,7 @@ const storageKeys = {
   shelfOrder: "shopping-list-app.shelf-order",
   background: "shopping-list-app.background",
   currentUser: "shopping-list-app.current-user",
+  legacyMigration: "shopping-list-app.legacy-migration-complete",
   realtime: "shopping-list-app.mock-realtime",
   presence: "shopping-list-app.mock-presence",
   outbox: "shopping-list-app.sync-outbox",
@@ -922,6 +923,8 @@ const iconPaths = {
   external: '<path d="M14 4h6v6m0-6-9 9M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/>',
   tag: '<path d="M20 12 12 20 4 12V4h8l8 8Zm-12-4h.01"/>',
   refresh: '<path d="M20 12a8 8 0 0 1-14 5M4 12a8 8 0 0 1 14-5M18 3v4h-4M6 21v-4h4"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"/>',
+  logout: '<path d="M10 5H5v14h5m4-4 4-3-4-3m4 3H9"/>',
   database: '<path d="M4 6c0-2 4-3 8-3s8 1 8 3-4 3-8 3-8-1-8-3Zm0 0v6c0 2 4 3 8 3s8-1 8-3V6M4 12v6c0 2 4 3 8 3s8-1 8-3v-6"/>'
 };
 
@@ -1192,7 +1195,6 @@ class SupabaseRealtimeService {
     this.listChannel = null;
     this.presenceChannels = new Map();
     this.clientId = fallback.clientId;
-    this.tableName = this.config.sharedListsTable || "shared_lists";
     this.listTable = this.config.listsTable || "shopping_lists";
     this.memberTable = this.config.membersTable || "list_members";
     this.itemTable = this.config.itemsTable || "list_items";
@@ -1216,30 +1218,12 @@ class SupabaseRealtimeService {
     }
   }
 
-  async initializeUser(user) {
-    if (!this.client || !this.config.useAnonymousAuth) return null;
-    return this.ensureAuthenticated(user);
-  }
-
-  async ensureAuthenticated(user) {
+  async initializeUser() {
     if (!this.client) return null;
     try {
-      const { data: sessionData } = await this.client.auth.getSession();
-      let authUser = sessionData?.session?.user ?? null;
-      if (!authUser) {
-        const { data, error } = await this.client.auth.signInAnonymously({
-          options: {
-            data: {
-              displayName: cleanDisplayName(user.displayName, "Gast")
-            }
-          }
-        });
-        if (error) {
-          this.queueOffline({ type: "auth", createdAt: isoNow(), error: error.message });
-          return null;
-        }
-        authUser = data?.user ?? null;
-      }
+      const { data, error } = await this.client.auth.getSession();
+      if (error) throw error;
+      const authUser = data?.session?.user ?? null;
       this.authUserId = authUser?.id ?? "";
       return authUser;
     } catch (error) {
@@ -1248,8 +1232,83 @@ class SupabaseRealtimeService {
     }
   }
 
+  async ensureAuthenticated() {
+    if (!this.client) return null;
+    try {
+      const { data: sessionData } = await this.client.auth.getSession();
+      const authUser = sessionData?.session?.user ?? null;
+      if (!isPermanentAuthUser(authUser)) return null;
+      this.authUserId = authUser?.id ?? "";
+      return authUser;
+    } catch (error) {
+      this.queueOffline({ type: "auth", createdAt: isoNow(), error: error?.message ?? "Supabase Auth nicht erreichbar" });
+      return null;
+    }
+  }
+
+  async sendEmailCode(email, displayName) {
+    if (!this.client) return { ok: false, error: "Anmeldung ist nicht erreichbar." };
+    const { error } = await this.client.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: this.config.publicUrl || window.location.origin,
+        data: {
+          displayName: cleanDisplayName(displayName, "Nutzer")
+        }
+      }
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }
+
+  async verifyEmailCode(email, token) {
+    if (!this.client) return { ok: false, error: "Anmeldung ist nicht erreichbar." };
+    const { data, error } = await this.client.auth.verifyOtp({
+      email,
+      token,
+      type: "email"
+    });
+    const authUser = data?.user ?? data?.session?.user ?? null;
+    if (error || !isPermanentAuthUser(authUser)) {
+      return { ok: false, error: error?.message ?? "Der Code ist ungültig oder abgelaufen." };
+    }
+    this.authUserId = authUser.id;
+    return { ok: true, user: authUser };
+  }
+
+  async fetchProfile(userId) {
+    if (!this.client || !isUuid(userId)) return null;
+    const { data, error } = await this.client
+      .from(this.profileTable)
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+    return error ? null : data;
+  }
+
+  onAuthStateChange(listener) {
+    if (!this.client) return () => {};
+    const { data } = this.client.auth.onAuthStateChange((event, session) => {
+      window.setTimeout(() => listener(event, session?.user ?? null), 0);
+    });
+    return () => data?.subscription?.unsubscribe?.();
+  }
+
+  async signOut() {
+    if (!this.client) return { ok: true };
+    const { error } = await this.client.auth.signOut({ scope: "local" });
+    this.authUserId = "";
+    if (this.listChannel) {
+      this.client.removeChannel?.(this.listChannel);
+      this.listChannel = null;
+    }
+    this.presenceChannels.forEach((channel) => this.client.removeChannel?.(channel));
+    this.presenceChannels.clear();
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }
+
   subscribe(listener) {
-    const unsubscribeFallback = this.fallback.subscribe(listener);
+    const unsubscribeFallback = this.client ? null : this.fallback.subscribe(listener);
     this.listeners.add(listener);
     this.openListChannel();
     return () => {
@@ -1278,25 +1337,6 @@ class SupabaseRealtimeService {
       .on("postgres_changes", { event: "*", schema: "public", table: this.listTable }, notifyRemoteChange)
       .on("postgres_changes", { event: "*", schema: "public", table: this.memberTable }, notifyRemoteChange)
       .on("postgres_changes", { event: "*", schema: "public", table: this.itemTable }, notifyRemoteChange)
-      .on("postgres_changes", { event: "*", schema: "public", table: this.tableName }, (payload) => {
-        const row = payload.new ?? payload.old;
-        const listPayload = row?.payload;
-        if (listPayload) {
-          this.notify({
-            type: "lists",
-            sourceId: "supabase",
-            sentAt: isoNow(),
-            lists: [listPayload]
-          });
-          return;
-        }
-        this.notify({
-          type: "remote-changed",
-          sourceId: "supabase",
-          sentAt: isoNow(),
-          listId: row?.id ?? ""
-        });
-      })
       .subscribe((status, error) => {
         this.notify({
           type: "sync-status",
@@ -1315,22 +1355,13 @@ class SupabaseRealtimeService {
     this.listChannel = channel;
   }
 
-  isMissingRelationalSchema(error) {
-    const message = `${error?.code ?? ""} ${error?.message ?? ""}`;
-    return message.includes("42P01")
-      || message.includes("PGRST205")
-      || message.includes(this.listTable)
-      || message.includes(this.memberTable)
-      || message.includes(this.itemTable);
-  }
-
   userIdValue(value) {
     return isUuid(value) ? value : null;
   }
 
   async upsertProfile(user) {
     if (!this.client) return { ok: false, offline: true };
-    const authUser = await this.ensureAuthenticated(user);
+    const authUser = await this.ensureAuthenticated();
     if (!authUser?.id) return { ok: false, error: "Keine Nutzerkennung" };
     const profileRow = {
       id: authUser.id,
@@ -1526,11 +1557,28 @@ class SupabaseRealtimeService {
     if (profileResult.ok === false) return profileResult;
     const normalizedLists = nextLists.map(normalizeListData);
     const listRows = normalizedLists.map((listData) => this.listRowFromList(listData));
-    const memberRows = normalizedLists.flatMap((listData) => this.memberRowsFromList(listData));
+    const ownedListRows = listRows.filter((row) => row.owner_user_id === user.userId);
+    const joinedListRows = listRows.filter((row) => row.owner_user_id !== user.userId);
+    const memberRows = normalizedLists.flatMap((listData) => {
+      const rows = this.memberRowsFromList(listData);
+      return listData.ownerId === user.userId ? rows : [];
+    });
     const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
 
-    if (listRows.length) {
-      const { error } = await this.client.from(this.listTable).upsert(listRows, { onConflict: "id" });
+    if (ownedListRows.length) {
+      const { error } = await this.client.from(this.listTable).upsert(ownedListRows, { onConflict: "id" });
+      if (error) return { ok: false, error: error.message, rawError: error };
+    }
+    for (const row of joinedListRows) {
+      const { error } = await this.client
+        .from(this.listTable)
+        .update({
+          name: row.name,
+          updated_at: row.updated_at,
+          updated_by_user_id: this.userIdValue(user.userId),
+          revision: row.revision
+        })
+        .eq("id", row.id);
       if (error) return { ok: false, error: error.message, rawError: error };
     }
     if (memberRows.length) {
@@ -1550,6 +1598,7 @@ class SupabaseRealtimeService {
     const { data: listRows, error: listError } = await this.client
       .from(this.listTable)
       .select("*")
+      .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .limit(200);
     if (listError) return { ok: false, error: listError.message, rawError: listError };
@@ -1568,47 +1617,7 @@ class SupabaseRealtimeService {
     };
   }
 
-  publishLegacyLists(nextLists, options = {}) {
-    this.fallback.publishLists(nextLists);
-    if (!this.client) {
-      if (options.queueOnFail !== false) {
-        this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
-      }
-      return Promise.resolve({ ok: false, offline: true });
-    }
-
-    const rows = nextLists.map((listData) => {
-      const payload = exportCollaborativeList(listData);
-      return {
-        id: payload.listId,
-        owner_user_id: isUuid(payload.ownerId) ? payload.ownerId : null,
-        invite_code: payload.inviteCode,
-        payload,
-        updated_at: payload.updatedAt
-      };
-    });
-
-    return this.client
-      .from(this.tableName)
-      .upsert(rows, { onConflict: "id" })
-      .then(({ error }) => {
-        if (error) {
-          if (options.queueOnFail !== false) {
-            this.queueOffline({
-              type: "lists",
-              createdAt: isoNow(),
-              error: error.message,
-              lists: rows.map((row) => row.payload)
-            });
-          }
-          return { ok: false, error: error.message };
-        }
-        return { ok: true };
-      });
-  }
-
   async publishLists(nextLists, options = {}) {
-    this.fallback.publishLists(nextLists);
     if (!this.client) {
       if (options.queueOnFail !== false) {
         this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
@@ -1616,19 +1625,7 @@ class SupabaseRealtimeService {
       return Promise.resolve({ ok: false, offline: true });
     }
 
-    const result = await this.publishRelationalLists(nextLists, currentUser);
-    if (result.ok || !this.isMissingRelationalSchema(result.rawError)) return result;
-    return this.publishLegacyLists(nextLists, options);
-  }
-
-  async fetchLegacyLists() {
-    const { data, error } = await this.client
-      .from(this.tableName)
-      .select("payload, updated_at")
-      .order("updated_at", { ascending: false })
-      .limit(100);
-    if (error) return { ok: false, error: error.message, rawError: error };
-    return { ok: true, lists: Array.isArray(data) ? data.map((row) => row.payload).filter(Boolean) : [] };
+    return this.publishRelationalLists(nextLists, currentUser);
   }
 
   async fetchSharedLists(user) {
@@ -1640,35 +1637,17 @@ class SupabaseRealtimeService {
       });
       return null;
     }
-    const authUser = await this.ensureAuthenticated(user);
+    const authUser = await this.ensureAuthenticated();
     if (!authUser) return null;
     const relationalResult = await this.fetchRelationalLists(user);
-    if (relationalResult.ok) {
-      const legacyResult = await this.fetchLegacyLists();
-      const legacyLists = legacyResult.ok ? legacyResult.lists : [];
-      const relationalIds = new Set(relationalResult.lists.map((listData) => listData?.id).filter(Boolean));
-      const fallbackLists = legacyLists.filter((listData) => !relationalIds.has(listData?.id));
-      return [...relationalResult.lists, ...fallbackLists];
-    }
-    if (!this.isMissingRelationalSchema(relationalResult.rawError)) {
-      this.queueOffline({
-        type: "pull",
-        createdAt: isoNow(),
-        error: relationalResult.error
-      });
-      return null;
-    }
-    const legacyResult = await this.fetchLegacyLists();
-    if (!legacyResult.ok) {
-      this.queueOffline({ type: "pull", createdAt: isoNow(), error: legacyResult.error });
-      return null;
-    }
-    return legacyResult.lists;
+    if (relationalResult.ok) return relationalResult.lists;
+    this.queueOffline({ type: "pull", createdAt: isoNow(), error: relationalResult.error });
+    return null;
   }
 
   async joinSharedList(listData, user) {
     if (!this.client || !listData?.inviteCode) return null;
-    const authUser = await this.ensureAuthenticated(user);
+    const authUser = await this.ensureAuthenticated();
     if (!authUser) return null;
     const relationalJoin = await this.client.rpc("join_shopping_list", {
       target_list_id: listData.id,
@@ -1680,104 +1659,55 @@ class SupabaseRealtimeService {
       const remoteLists = await this.fetchSharedLists(user);
       return remoteLists?.find((remoteList) => (remoteList.listId ?? remoteList.id) === listData.id) ?? null;
     }
-    if (!this.isMissingRelationalSchema(relationalJoin.error)) {
-      this.queueOffline({
-        type: "join",
-        createdAt: isoNow(),
-        listId: listData.id,
-        inviteCode: listData.inviteCode,
-        error: relationalJoin.error.message
-      });
-      return null;
-    }
-
-    const { data, error } = await this.client.rpc("join_shared_list", {
-      target_list_id: listData.id,
-      target_invite_code: listData.inviteCode,
-      display_name: user.displayName,
-      avatar_url: user.avatarUrl
+    this.queueOffline({
+      type: "join",
+      createdAt: isoNow(),
+      listId: listData.id,
+      inviteCode: listData.inviteCode,
+      error: relationalJoin.error.message
     });
-    if (error) {
-      this.queueOffline({
-        type: "join",
-        createdAt: isoNow(),
-        listId: listData.id,
-        inviteCode: listData.inviteCode,
-        error: error.message
-      });
-      return null;
-    }
-    return data;
+    return null;
   }
 
   async leaveSharedList(listData, user) {
     if (!listData?.id) return null;
-    if (!this.client) {
-      this.fallback.publishLists([listData]);
-      return exportCollaborativeList(listData);
-    }
-    const authUser = await this.ensureAuthenticated(user);
+    if (!this.client) return null;
+    const authUser = await this.ensureAuthenticated();
     if (!authUser) return null;
     const relationalLeave = await this.client.rpc("leave_shopping_list", {
       target_list_id: listData.id
     });
     if (!relationalLeave.error) return relationalLeave.data ?? { listId: listData.id };
-    if (!this.isMissingRelationalSchema(relationalLeave.error)) {
-      this.queueOffline({
-        type: "leave",
-        createdAt: isoNow(),
-        listId: listData.id,
-        error: relationalLeave.error.message
-      });
-      return null;
-    }
-
-    const { data, error } = await this.client.rpc("leave_shared_list", {
-      target_list_id: listData.id
+    this.queueOffline({
+      type: "leave",
+      createdAt: isoNow(),
+      listId: listData.id,
+      error: relationalLeave.error.message
     });
-    if (error) {
-      this.queueOffline({
-        type: "leave",
-        createdAt: isoNow(),
-        listId: listData.id,
-        error: error.message
-      });
-      return null;
-    }
-    return data;
+    return null;
   }
 
   async deleteSharedList(listData, user) {
     if (!listData?.id) return null;
-    if (!this.client) return exportCollaborativeList(listData);
-    const authUser = await this.ensureAuthenticated(user);
+    if (!this.client) return null;
+    const authUser = await this.ensureAuthenticated();
     if (!authUser) return null;
     const relationalDelete = await this.client.rpc("delete_shopping_list", {
       target_list_id: listData.id
     });
     if (!relationalDelete.error) return relationalDelete.data ?? { listId: listData.id };
-    if (!this.isMissingRelationalSchema(relationalDelete.error)) {
-      this.queueOffline({
-        type: "delete",
-        createdAt: isoNow(),
-        listId: listData.id,
-        error: relationalDelete.error.message
-      });
-      return null;
-    }
-    const deletedList = normalizeListData({
-      ...listData,
-      deletedAt: isoNow(),
-      deletedByUserId: user.userId
+    this.queueOffline({
+      type: "delete",
+      createdAt: isoNow(),
+      listId: listData.id,
+      error: relationalDelete.error.message
     });
-    await this.publishLegacyLists([deletedList], { queueOnFail: false });
-    return exportCollaborativeList(deletedList);
+    return null;
   }
 
   heartbeat(listData, user) {
-    const localMembers = this.fallback.heartbeat(listData, user);
     this.trackPresence(listData, user);
-    return localMembers;
+    return Array.isArray(listData.members) ? listData.members : [];
   }
 
   trackPresence(listData, user) {
@@ -1832,11 +1762,19 @@ class SupabaseRealtimeService {
   }
 
   presenceFor(listId) {
-    return this.fallback.presenceFor(listId);
+    return activeMembersByList[listId] ?? [];
   }
 
   queueOffline(operation) {
-    this.fallback.queueOffline(operation);
+    if (!isAuthenticatedAccount()) return;
+    try {
+      const key = accountStorageKey(storageKeys.outbox);
+      const outbox = load(key, []);
+      outbox.push(operation);
+      localStorage.setItem(key, JSON.stringify(outbox.slice(-50)));
+    } catch {
+      // Account data stays in memory if local storage is unavailable.
+    }
   }
 }
 
@@ -1943,9 +1881,9 @@ class MockPriceService {
 
 let activeView = "market";
 let selectedShelfId = null;
-let currentUser = loadCurrentUser();
-let lists = loadLists();
-let activeListId = localStorage.getItem(storageKeys.activeList) || lists[0]?.id || "";
+let currentUser = signedOutUser();
+let lists = [];
+let activeListId = "";
 let favorites = load(storageKeys.favorites, []);
 let shelfOrder = load(storageKeys.shelfOrder, []);
 let markets = loadMarkets();
@@ -1974,8 +1912,21 @@ let pendingNotesRender = false;
 let pendingFullRender = false;
 let syncFlushTimer = 0;
 let isFlushingSyncQueue = false;
+let activeWriteCount = 0;
 let mainSearchRenderTimer = 0;
 let modalSearchRenderTimer = 0;
+let authSubscription = null;
+let realtimeSubscription = null;
+let presenceTimer = 0;
+let refreshTimer = 0;
+let legacySnapshot = null;
+let authState = {
+  status: "loading",
+  email: "",
+  displayName: "",
+  activatingUserId: "",
+  accountReady: false
+};
 
 const collaborationService = createCollaborationService();
 const marketService = new MockMarketService(marketBaseCatalog);
@@ -1983,6 +1934,16 @@ const priceService = new MockPriceService();
 
 const elements = {
   body: document.body,
+  authGate: document.querySelector("#authGate"),
+  authEmailForm: document.querySelector("#authEmailForm"),
+  authCodeForm: document.querySelector("#authCodeForm"),
+  authNameInput: document.querySelector("#authNameInput"),
+  authEmailInput: document.querySelector("#authEmailInput"),
+  authCodeInput: document.querySelector("#authCodeInput"),
+  authEmailTarget: document.querySelector("#authEmailTarget"),
+  authBackButton: document.querySelector("#authBackButton"),
+  authStatus: document.querySelector("#authStatus"),
+  appShell: document.querySelector("#appShell"),
   tabs: document.querySelectorAll(".tab"),
   imprintButton: document.querySelector("#imprintButton"),
   bugreportButton: document.querySelector("#bugreportButton"),
@@ -2177,64 +2138,303 @@ function userInitials(user) {
   return initials.toUpperCase();
 }
 
-function loadCurrentUser() {
-  const storedUser = load(storageKeys.currentUser, null);
-  const user = {
-    userId: typeof storedUser?.userId === "string" && storedUser.userId ? storedUser.userId : `user:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-    displayName: cleanDisplayName(storedUser?.displayName),
-    avatarUrl: typeof storedUser?.avatarUrl === "string" ? storedUser.avatarUrl : "",
-    role: normalizeRole(storedUser?.role ?? collaborationRoles.owner),
-    joinedAt: safeDate(storedUser?.joinedAt)
+function signedOutUser() {
+  return {
+    userId: "",
+    email: "",
+    displayName: "",
+    avatarUrl: "",
+    role: collaborationRoles.viewer,
+    joinedAt: ""
   };
-  try {
-    localStorage.setItem(storageKeys.currentUser, JSON.stringify(user));
-  } catch {
-    // User identity falls back to memory if storage is unavailable.
-  }
-  return user;
+}
+
+function accountStorageKey(baseKey, userId = currentUser.userId) {
+  return userId ? `${baseKey}:${userId}` : "";
+}
+
+function isPermanentAuthUser(user) {
+  return Boolean(user?.id && user?.email && !user?.is_anonymous);
+}
+
+function isAuthenticatedAccount() {
+  return authState.accountReady && isUuid(currentUser.userId) && Boolean(currentUser.email);
+}
+
+function accountUserFromAuth(authUser, profile = null) {
+  const cachedUser = load(accountStorageKey(storageKeys.currentUser, authUser.id), null);
+  const metadataName = authUser.user_metadata?.displayName ?? authUser.user_metadata?.display_name;
+  const emailName = typeof authUser.email === "string" ? authUser.email.split("@")[0] : "";
+  return {
+    userId: authUser.id,
+    email: typeof authUser.email === "string" ? authUser.email : "",
+    displayName: cleanDisplayName(profile?.display_name ?? cachedUser?.displayName ?? metadataName, emailName || "Nutzer"),
+    avatarUrl: typeof profile?.avatar_url === "string"
+      ? profile.avatar_url
+      : (typeof cachedUser?.avatarUrl === "string" ? cachedUser.avatarUrl : ""),
+    role: collaborationRoles.owner,
+    joinedAt: safeDate(profile?.created_at ?? cachedUser?.joinedAt)
+  };
 }
 
 function saveCurrentUser() {
-  localStorage.setItem(storageKeys.currentUser, JSON.stringify(currentUser));
+  if (!isUuid(currentUser.userId)) return;
+  localStorage.setItem(accountStorageKey(storageKeys.currentUser), JSON.stringify(currentUser));
 }
 
-function replaceUserId(value, previousUserId, nextUserId) {
-  return value === previousUserId ? nextUserId : value;
+function loadAccountLists(userId) {
+  const storedLists = load(accountStorageKey(storageKeys.lists, userId), []);
+  if (!Array.isArray(storedLists)) return [];
+  return storedLists
+    .map(normalizeListData)
+    .filter((listData) => !listData.deletedAt)
+    .filter((listData) => listData.ownerId === userId || (memberFor(listData, userId) && !isMemberRemoved(listData, userId)));
 }
 
-function adoptCurrentUserId(nextUserId) {
-  if (!nextUserId || nextUserId === currentUser.userId) return;
-  const previousUserId = currentUser.userId;
-  currentUser = {
-    ...currentUser,
-    userId: nextUserId
+function loadAccountActiveListId(userId, accountLists = lists) {
+  const storedId = localStorage.getItem(accountStorageKey(storageKeys.activeList, userId)) || "";
+  return accountLists.some((listData) => listData.id === storedId) ? storedId : (accountLists[0]?.id ?? "");
+}
+
+function captureLegacySnapshot() {
+  const storedUser = load(storageKeys.currentUser, null);
+  const storedLists = load(storageKeys.lists, null);
+  const legacyItems = load(storageKeys.list, []);
+  const candidates = Array.isArray(storedLists)
+    ? storedLists
+    : (Array.isArray(legacyItems) && legacyItems.length
+      ? [{
+          id: "legacy:zettel:1",
+          title: "Dein Zettel",
+          ownerId: storedUser?.userId ?? "",
+          members: storedUser ? [storedUser] : [],
+          items: legacyItems
+        }]
+      : []);
+  return {
+    user: storedUser,
+    anonymousUserId: "",
+    lists: candidates.filter((listData) => listData && typeof listData === "object")
   };
-  saveCurrentUser();
-  lists = lists.map((listData) => normalizeListData({
-    ...listData,
-    ownerId: replaceUserId(listData.ownerId, previousUserId, nextUserId),
-    updatedByUserId: replaceUserId(listData.updatedByUserId, previousUserId, nextUserId),
-    members: listData.members.map((member) => ({
-      ...member,
-      userId: replaceUserId(member.userId, previousUserId, nextUserId)
-    })),
-    removedMembers: listData.removedMembers.map((member) => ({
-      ...member,
-      userId: replaceUserId(member.userId, previousUserId, nextUserId)
-    })),
-    deletedItems: listData.deletedItems.map((entry) => ({
-      ...entry,
-      deletedByUserId: replaceUserId(entry.deletedByUserId, previousUserId, nextUserId)
-    })),
-    items: listData.items.map((item) => ({
-      ...item,
-      addedByUserId: replaceUserId(item.addedByUserId, previousUserId, nextUserId),
-      checkedByUserId: replaceUserId(item.checkedByUserId, previousUserId, nextUserId),
-      updatedByUserId: replaceUserId(item.updatedByUserId, previousUserId, nextUserId)
-    }))
-  }));
+}
+
+function clearLegacyListStorage() {
+  [
+    storageKeys.list,
+    storageKeys.lists,
+    storageKeys.activeList,
+    storageKeys.currentUser,
+    storageKeys.realtime,
+    storageKeys.presence,
+    storageKeys.outbox,
+    storageKeys.syncQueue
+  ].forEach((key) => localStorage.removeItem(key));
+}
+
+function authErrorMessage(error) {
+  const message = typeof error === "string" ? error : (error?.message ?? "");
+  const normalizedMessage = message.toLowerCase();
+  if (normalizedMessage.includes("rate limit")) return "Zu viele Versuche. Bitte warte kurz und versuche es erneut.";
+  if (normalizedMessage.includes("expired") || normalizedMessage.includes("invalid")) return "Der Code ist ungültig oder abgelaufen.";
+  if (normalizedMessage.includes("email")) return "Die E-Mail-Adresse konnte nicht verwendet werden.";
+  return message || "Die Anmeldung ist gerade nicht erreichbar.";
+}
+
+function setAuthStatus(message = "", state = "") {
+  if (!elements.authStatus) return;
+  elements.authStatus.textContent = message;
+  if (state) elements.authStatus.dataset.state = state;
+  else delete elements.authStatus.dataset.state;
+}
+
+function setAuthBusy(isBusy) {
+  elements.authEmailForm?.querySelectorAll("button, input").forEach((control) => {
+    control.disabled = isBusy;
+  });
+  elements.authCodeForm?.querySelectorAll("button, input").forEach((control) => {
+    control.disabled = isBusy;
+  });
+}
+
+function showAuthEmailStep(message = "") {
+  authState.status = "signed-out";
+  authState.accountReady = false;
+  elements.appShell?.classList.add("is-hidden");
+  elements.authGate?.classList.remove("is-hidden");
+  elements.authEmailForm?.classList.remove("is-hidden");
+  elements.authCodeForm?.classList.add("is-hidden");
+  if (elements.authNameInput && !elements.authNameInput.value) {
+    elements.authNameInput.value = cleanDisplayName(legacySnapshot?.user?.displayName, "");
+  }
+  if (elements.authCodeInput) elements.authCodeInput.value = "";
+  setAuthBusy(false);
+  setAuthStatus(message);
+}
+
+function showAuthCodeStep() {
+  authState.status = "code-sent";
+  elements.authEmailForm?.classList.add("is-hidden");
+  elements.authCodeForm?.classList.remove("is-hidden");
+  if (elements.authEmailTarget) elements.authEmailTarget.textContent = authState.email;
+  setAuthBusy(false);
+  setAuthStatus("Gib den Code ein oder öffne den Anmeldelink in deiner E-Mail.", "success");
+  window.setTimeout(() => elements.authCodeInput?.focus(), 0);
+}
+
+async function requestAuthCode() {
+  const email = elements.authEmailInput?.value.trim().toLowerCase() ?? "";
+  const displayName = cleanDisplayName(elements.authNameInput?.value, "Nutzer");
+  if (!email || !elements.authEmailInput?.checkValidity()) {
+    setAuthStatus("Bitte gib eine gültige E-Mail-Adresse ein.", "error");
+    elements.authEmailInput?.focus();
+    return;
+  }
+  authState = { ...authState, status: "sending-code", email, displayName };
+  setAuthBusy(true);
+  setAuthStatus("Anmeldung wird gesendet …");
+  const result = await collaborationService.sendEmailCode?.(email, displayName);
+  if (!result?.ok) {
+    setAuthBusy(false);
+    setAuthStatus(authErrorMessage(result?.error), "error");
+    return;
+  }
+  showAuthCodeStep();
+}
+
+async function confirmAuthCode() {
+  const token = (elements.authCodeInput?.value ?? "").replace(/\D/g, "").slice(0, 6);
+  if (token.length !== 6) {
+    setAuthStatus("Bitte gib den sechsstelligen Code ein.", "error");
+    elements.authCodeInput?.focus();
+    return;
+  }
+  authState.status = "verifying";
+  setAuthBusy(true);
+  setAuthStatus("Account wird geöffnet …");
+  const result = await collaborationService.verifyEmailCode?.(authState.email, token);
+  if (!result?.ok || !result.user) {
+    setAuthBusy(false);
+    setAuthStatus(authErrorMessage(result?.error), "error");
+    return;
+  }
+  await activateAccount(result.user);
+}
+
+function handleRealtimeMessage(message) {
+  if (!isAuthenticatedAccount()) return;
+  if (message.type === "lists") {
+    markSyncSuccess();
+    mergeRemoteLists(message.lists);
+    return;
+  }
+  if (message.type === "sync-status") {
+    syncState.realtimeStatus = message.status || "";
+    if (message.status === "SUBSCRIBED") markSyncSuccess();
+    if (message.status === "CHANNEL_ERROR" || message.status === "TIMED_OUT" || message.status === "CLOSED") {
+      markSyncError(message.error || message.status);
+      pullRemoteListsSoon("realtime-error", 1200);
+    }
+    return;
+  }
+  if (message.type === "remote-changed") {
+    pullRemoteListsSoon("remote-change", 250);
+    return;
+  }
+  if (message.type === "presence" && message.listId) {
+    activeMembersByList[message.listId] = message.members;
+    renderNotes({ background: true });
+    if (message.members.some((member) => member.userId !== currentUser.userId)) {
+      pullRemoteListsSoon("presence", 700);
+    }
+  }
+}
+
+function stopAccountActivity() {
+  realtimeSubscription?.();
+  realtimeSubscription = null;
+  if (presenceTimer) window.clearInterval(presenceTimer);
+  if (refreshTimer) window.clearInterval(refreshTimer);
+  presenceTimer = 0;
+  refreshTimer = 0;
   activeMembersByList = {};
-  save({ broadcast: false });
+}
+
+function startAccountActivity() {
+  stopAccountActivity();
+  realtimeSubscription = collaborationService.subscribe(handleRealtimeMessage);
+  presenceTimer = window.setInterval(updatePresence, 15000);
+  refreshTimer = window.setInterval(() => refreshRealtimeNow("interval"), 12000);
+}
+
+async function activateAccount(authUser) {
+  if (!isPermanentAuthUser(authUser)) {
+    showAuthEmailStep("Bitte melde dich mit deinem Account an.");
+    return false;
+  }
+  if (authState.accountReady && currentUser.userId === authUser.id) return true;
+  if (authState.status === "loading-account" && authState.activatingUserId === authUser.id) return false;
+
+  authState = { ...authState, status: "loading-account", activatingUserId: authUser.id };
+  const profile = await collaborationService.fetchProfile?.(authUser.id);
+  currentUser = accountUserFromAuth(authUser, profile);
+  if (!profile?.display_name && authState.displayName) {
+    currentUser.displayName = cleanDisplayName(authState.displayName, currentUser.displayName);
+  }
+  authState = {
+    ...authState,
+    status: "signed-in",
+    email: currentUser.email,
+    displayName: currentUser.displayName,
+    activatingUserId: "",
+    accountReady: true
+  };
+  lists = loadAccountLists(currentUser.userId);
+  activeListId = loadAccountActiveListId(currentUser.userId, lists);
+  syncState.pendingWrites = syncQueueLength();
+  saveCurrentUser();
+  await collaborationService.upsertProfile?.(currentUser);
+
+  elements.authGate?.classList.add("is-hidden");
+  elements.appShell?.classList.remove("is-hidden");
+  setAuthBusy(false);
+  closeModal();
+  startAccountActivity();
+  render();
+  await pullRemoteLists("account-boot");
+  await importSharedListFromUrl();
+  await refreshPricesIfStale();
+  scheduleSyncFlush(900);
+  updatePresence();
+  render();
+  maybeShowLegacyMigration();
+  return true;
+}
+
+async function deactivateAccount(message = "") {
+  stopAccountActivity();
+  authState = { status: "signed-out", email: "", displayName: "", activatingUserId: "", accountReady: false };
+  currentUser = signedOutUser();
+  lists = [];
+  activeListId = "";
+  manualDrafts = {};
+  syncState = {
+    status: navigator.onLine ? "idle" : "offline",
+    lastSyncedAt: "",
+    lastAttemptAt: "",
+    lastError: "",
+    realtimeStatus: "",
+    pendingWrites: 0
+  };
+  if (elements.authNameInput) elements.authNameInput.value = "";
+  if (elements.authEmailInput) elements.authEmailInput.value = "";
+  if (elements.authCodeInput) elements.authCodeInput.value = "";
+  closeModal();
+  showAuthEmailStep(message);
+}
+
+async function signOutAccount() {
+  const result = await collaborationService.signOut?.();
+  await deactivateAccount(result?.ok === false ? authErrorMessage(result.error) : "Du bist abgemeldet.");
 }
 
 function createMember(user = currentUser, role = collaborationRoles.editor, joinedAt = isoNow()) {
@@ -2283,20 +2483,6 @@ function isMemberRemoved(listData, userId = currentUser.userId) {
   if (!removedAt || listData.ownerId === userId) return false;
   const member = memberFor(listData, userId);
   return !member || newerDate(removedAt, member.joinedAt);
-}
-
-function ensureCurrentMember(listData, role = listData.ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor) {
-  if (isMemberRemoved(listData, currentUser.userId)) return null;
-  const existing = memberFor(listData, currentUser.userId);
-  if (existing) {
-    existing.displayName = currentUser.displayName;
-    existing.avatarUrl = currentUser.avatarUrl;
-    existing.role = listData.ownerId === currentUser.userId ? collaborationRoles.owner : normalizeRole(existing.role);
-    return existing;
-  }
-  const member = createMember(currentUser, role);
-  listData.members.push(member);
-  return member;
 }
 
 function normalizeMember(member, ownerId) {
@@ -2395,7 +2581,6 @@ function normalizeListData(listData, index = 0) {
   if (!normalizedList.members.some((member) => member.userId === ownerId)) {
     normalizedList.members.unshift(createMember({ userId: ownerId, displayName: ownerId === currentUser.userId ? currentUser.displayName : "Owner", avatarUrl: "" }, collaborationRoles.owner, normalizedList.createdAt));
   }
-  ensureCurrentMember(normalizedList, ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor);
   return normalizedList;
 }
 
@@ -2423,14 +2608,140 @@ function createList(title = "Dein Zettel", items = [], id = null) {
   });
 }
 
-function loadLists() {
-  const storedLists = load(storageKeys.lists, null);
-  if (Array.isArray(storedLists)) {
-    return storedLists.map(normalizeListData).filter((listData) => !listData.deletedAt);
+function legacyMigrationHandled() {
+  return Boolean(localStorage.getItem(storageKeys.legacyMigration));
+}
+
+function legacyListCandidates() {
+  if (!legacySnapshot || !Array.isArray(legacySnapshot.lists)) return [];
+  const byId = new Map();
+  legacySnapshot.lists.forEach((listData, index) => {
+    if (!listData || typeof listData !== "object") return;
+    const fallbackId = `legacy:${index + 1}`;
+    const id = typeof listData.id === "string" && listData.id
+      ? listData.id
+      : (typeof listData.listId === "string" && listData.listId ? listData.listId : fallbackId);
+    if (!byId.has(id)) byId.set(id, { ...listData, id, listId: id });
+  });
+  return Array.from(byId.values());
+}
+
+function legacyOwnerIds() {
+  return new Set([
+    legacySnapshot?.user?.userId,
+    legacySnapshot?.anonymousUserId
+  ].filter(Boolean));
+}
+
+function legacyListWasOwned(listData, ownerIds) {
+  const ownerId = typeof listData?.ownerId === "string" ? listData.ownerId : "";
+  return !ownerId || ownerIds.has(ownerId);
+}
+
+function cloneLegacyOwnedList(listData, index) {
+  const now = isoNow();
+  const title = cleanText(listData?.title ?? listData?.listName, index === 0 ? "Dein Zettel" : `Zettel ${index + 1}`, 24);
+  const sourceItems = Array.isArray(listData?.items) ? listData.items : [];
+  const clonedItems = sourceItems.map((item, itemIndex) => normalizeShoppingItem({
+    ...item,
+    id: typeof item?.id === "string" && item.id ? item.id : `legacy-item:${Date.now()}:${itemIndex}`,
+    addedByUserId: currentUser.userId,
+    addedByDisplayName: currentUser.displayName,
+    addedByAvatarUrl: currentUser.avatarUrl,
+    checkedByUserId: item?.done ? currentUser.userId : "",
+    updatedByUserId: currentUser.userId,
+    updatedAt: now,
+    revision: Math.max(1, Number(item?.revision || 0))
+  }, itemIndex)).filter(Boolean);
+  return createList(title, clonedItems);
+}
+
+function finishLegacyMigration() {
+  localStorage.setItem(storageKeys.legacyMigration, currentUser.userId);
+  clearLegacyListStorage();
+  legacySnapshot = null;
+}
+
+function maybeShowLegacyMigration() {
+  if (!isAuthenticatedAccount() || legacyMigrationHandled()) return;
+  const candidates = legacyListCandidates();
+  if (!candidates.length) {
+    finishLegacyMigration();
+    return;
+  }
+  openModal(`
+    <h2 id="modalTitle">Vorhandene Zettel</h2>
+    <div class="migration-panel">
+      <p>Auf diesem Gerät wurden ${candidates.length} frühere${candidates.length === 1 ? "r" : ""} Zettel gefunden.</p>
+      <p>Du kannst sie einmalig in diesen Account übernehmen oder mit einem leeren Account beginnen.</p>
+      <div class="modal-actions modal-actions-stack">
+        <button type="button" data-import-legacy-lists>Vorhandene Zettel übernehmen</button>
+        <button type="button" class="is-danger" data-skip-legacy-lists>Mit leerem Account starten</button>
+      </div>
+      <p class="migration-status" data-migration-status role="status"></p>
+    </div>
+  `);
+}
+
+async function importLegacyListsIntoAccount() {
+  if (!isAuthenticatedAccount()) return;
+  const candidates = legacyListCandidates();
+  const ownerIds = legacyOwnerIds();
+  const ownedLists = [];
+  const joinedLists = [];
+  let failedJoins = 0;
+  const status = elements.modalContent.querySelector("[data-migration-status]");
+  elements.modalContent.querySelectorAll("button").forEach((button) => {
+    button.disabled = true;
+  });
+  if (status) status.textContent = "Zettel werden übernommen …";
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    if (legacyListWasOwned(candidate, ownerIds)) {
+      ownedLists.push(cloneLegacyOwnedList(candidate, ownedLists.length));
+      continue;
+    }
+    if (!candidate.inviteCode) {
+      failedJoins += 1;
+      continue;
+    }
+    const joined = await collaborationService.joinSharedList?.({
+      id: candidate.id ?? candidate.listId,
+      listId: candidate.id ?? candidate.listId,
+      inviteCode: candidate.inviteCode
+    }, currentUser);
+    const normalizedJoined = joined ? importedListFromValue(joined) : null;
+    if (!normalizedJoined) {
+      failedJoins += 1;
+      continue;
+    }
+    if (!joinedLists.some((listData) => listData.id === normalizedJoined.id)) joinedLists.push(normalizedJoined);
   }
 
-  const legacyList = load(storageKeys.list, []);
-  return [createList("Dein Zettel", Array.isArray(legacyList) ? legacyList : [], "zettel:1")];
+  const existingIds = new Set(lists.map((listData) => listData.id));
+  [...ownedLists, ...joinedLists].forEach((listData) => {
+    if (existingIds.has(listData.id)) return;
+    lists.push(listData);
+    existingIds.add(listData.id);
+  });
+  activeListId = lists[0]?.id ?? "";
+  save({ broadcast: false });
+  if (ownedLists.length) await publishListSnapshot(ownedLists, "legacy-import");
+  finishLegacyMigration();
+  await pullRemoteLists("legacy-import");
+  closeModal();
+  render();
+  if (failedJoins) {
+    window.alert(`${failedJoins} alter geteilte${failedJoins === 1 ? "r" : ""} Zettel konnte nicht erneut verbunden werden.`);
+  }
+}
+
+function skipLegacyLists() {
+  if (!window.confirm("Alte Zettel auf diesem Gerät nicht übernehmen? Sie werden aus dem lokalen App-Speicher entfernt und nicht in diesen Account übernommen.")) return;
+  finishLegacyMigration();
+  closeModal();
+  render();
 }
 
 function activeList() {
@@ -2553,7 +2864,8 @@ function markSyncError(error) {
 }
 
 function syncQueue() {
-  const queue = load(storageKeys.syncQueue, []);
+  if (!isAuthenticatedAccount()) return [];
+  const queue = load(accountStorageKey(storageKeys.syncQueue), []);
   return Array.isArray(queue) ? queue.filter((operation) => operation?.type === "lists" && Array.isArray(operation.lists)) : [];
 }
 
@@ -2562,8 +2874,9 @@ function syncQueueLength() {
 }
 
 function storeSyncQueue(queue) {
+  if (!isAuthenticatedAccount()) return;
   const nextQueue = queue.slice(-30);
-  localStorage.setItem(storageKeys.syncQueue, JSON.stringify(nextQueue));
+  localStorage.setItem(accountStorageKey(storageKeys.syncQueue), JSON.stringify(nextQueue));
   syncState.pendingWrites = nextQueue.length;
 }
 
@@ -2595,6 +2908,8 @@ function listsFromSyncOperation(operation) {
 }
 
 async function publishListSnapshot(sourceLists = lists, reason = "save", options = {}) {
+  if (!isAuthenticatedAccount()) return false;
+  activeWriteCount += 1;
   markSyncAttempt();
   try {
     const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
@@ -2611,6 +2926,8 @@ async function publishListSnapshot(sourceLists = lists, reason = "save", options
     if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, error);
     markSyncError(error);
     return false;
+  } finally {
+    activeWriteCount = Math.max(0, activeWriteCount - 1);
   }
 }
 
@@ -2665,13 +2982,14 @@ async function flushSyncQueue() {
 
 function save(options = {}) {
   lists = lists.map(normalizeListData);
-  localStorage.setItem(storageKeys.lists, JSON.stringify(lists));
-  localStorage.setItem(storageKeys.activeList, activeListId);
-  localStorage.setItem(storageKeys.list, JSON.stringify(activeItems()));
+  if (isAuthenticatedAccount()) {
+    localStorage.setItem(accountStorageKey(storageKeys.lists), JSON.stringify(lists));
+    localStorage.setItem(accountStorageKey(storageKeys.activeList), activeListId);
+  }
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
-  if (options.broadcast !== false) {
+  if (isAuthenticatedAccount() && options.broadcast !== false) {
     publishListSnapshot(lists, options.reason || "save");
   }
 }
@@ -3267,13 +3585,13 @@ function mergeList(localList, remoteList) {
     removedMembers,
     items
   };
-  ensureCurrentMember(merged, merged.ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor);
   return normalizeListData(merged);
 }
 
-function mergeRemoteLists(remoteLists) {
+function mergeRemoteLists(remoteLists, options = {}) {
   if (!Array.isArray(remoteLists)) return false;
   let didChange = false;
+  const accessibleRemoteIds = new Set();
   remoteLists.forEach((remoteListData) => {
     const remoteList = importedListFromValue(remoteListData);
     if (!remoteList) return;
@@ -3285,13 +3603,16 @@ function mergeRemoteLists(remoteLists) {
       }
       return;
     }
-    if (remoteList.ownerId !== currentUser.userId && isMemberRemoved(remoteList, currentUser.userId)) {
+    const hasAccess = remoteList.ownerId === currentUser.userId
+      || (Boolean(memberFor(remoteList, currentUser.userId)) && !isMemberRemoved(remoteList, currentUser.userId));
+    if (!hasAccess) {
       if (index !== -1) {
         removeLocalList(remoteList.id, index);
         didChange = true;
       }
       return;
     }
+    accessibleRemoteIds.add(remoteList.id);
     if (index === -1) {
       lists.push(remoteList);
       didChange = true;
@@ -3303,6 +3624,15 @@ function mergeRemoteLists(remoteLists) {
       didChange = true;
     }
   });
+  const canPrune = options.pruneMissing && activeWriteCount === 0 && syncQueueLength() === 0;
+  if (canPrune) {
+    const retainedLists = lists.filter((listData) => accessibleRemoteIds.has(listData.id));
+    if (retainedLists.length !== lists.length) {
+      lists = retainedLists;
+      activeListId = lists.some((listData) => listData.id === activeListId) ? activeListId : (lists[0]?.id ?? "");
+      didChange = true;
+    }
+  }
   if (!didChange) return false;
   save({ broadcast: false });
   render({ background: true });
@@ -3320,7 +3650,7 @@ async function pullRemoteLists(reason = "auto") {
         markSyncError("Serverstand konnte nicht geladen werden");
         return false;
       }
-      const didChange = mergeRemoteLists(remoteLists);
+      const didChange = mergeRemoteLists(remoteLists, { pruneMissing: true });
       markSyncSuccess();
       if (!didChange && reason === "manual") renderNotes({ force: true });
       return true;
@@ -3375,16 +3705,19 @@ async function importSharedListFromUrl() {
   const url = new URL(window.location.href);
   const payload = url.searchParams.get("invite") ?? url.searchParams.get("zettel");
   if (!payload) return;
+  if (!isAuthenticatedAccount()) return;
 
   try {
     const decoded = decodeShareValue(payload);
-    let importedList = importedListFromValue(decoded);
-    if (!importedList) throw new Error("empty shared list");
-    const remotePayload = await collaborationService.joinSharedList?.(importedList, currentUser);
-    if (remotePayload) {
-      importedList = importedListFromValue(remotePayload) ?? importedList;
-    }
-    ensureCurrentMember(importedList, importedList.ownerId === currentUser.userId ? collaborationRoles.owner : collaborationRoles.editor);
+    const inviteList = importedListFromValue(decoded);
+    if (!inviteList?.id || !inviteList.inviteCode) throw new Error("empty shared list");
+    const remotePayload = await collaborationService.joinSharedList?.(inviteList, currentUser);
+    const importedList = remotePayload ? importedListFromValue(remotePayload) : null;
+    const hasAccess = importedList && (
+      importedList.ownerId === currentUser.userId
+      || (memberFor(importedList, currentUser.userId) && !isMemberRemoved(importedList, currentUser.userId))
+    );
+    if (!hasAccess) throw new Error("join failed");
     const existingIndex = lists.findIndex((listData) => listData.id === importedList.id);
     if (existingIndex === -1) {
       lists.push(importedList);
@@ -3393,9 +3726,9 @@ async function importSharedListFromUrl() {
       lists[existingIndex] = mergeList(lists[existingIndex], importedList);
       activeListId = lists[existingIndex].id;
     }
-    save();
+    save({ broadcast: false });
   } catch {
-    window.alert("Der geteilte Zettel konnte nicht gelesen werden.");
+    window.alert("Der geteilte Zettel konnte nicht verbunden werden. Bitte lass dir eine neue Einladung senden.");
   } finally {
     url.searchParams.delete("invite");
     url.searchParams.delete("zettel");
@@ -3441,9 +3774,8 @@ function shareBaseUrl() {
 
 async function shareList(listId = activeListId) {
   const listData = lists.find((item) => item.id === listId) ?? activeList();
-  if (!listData) return;
+  if (!listData || !canPerform(listData, "invite")) return;
   listData.inviteCode = listData.inviteCode || generateInviteCode();
-  ensureCurrentMember(listData);
   touchList(listData);
   save({ broadcast: false });
   await publishListSnapshot([listData], "share");
@@ -3602,8 +3934,6 @@ async function leaveSharedList(listData, index) {
     window.alert("Als Owner kannst du diesen geteilten Zettel nicht verlassen. Entferne zuerst die anderen Nutzer.");
     return;
   }
-  markMemberRemoved(listData, currentUser.userId, currentUser.userId);
-  touchList(listData);
   const remotePayload = await collaborationService.leaveSharedList?.(listData, currentUser);
   if (!remotePayload) {
     window.alert("Der geteilte Zettel konnte gerade nicht verlassen werden.");
@@ -3949,7 +4279,7 @@ function showMore() {
   openModal(`
     <h2 id="modalTitle">Mehr</h2>
     <div class="modal-actions modal-actions-stack">
-      <button type="button" data-open-profile>Profil</button>
+      <button type="button" data-open-profile>Account</button>
       <button type="button" data-open-background>Hintergrund anpassen</button>
       <button type="button" data-open-data-tools>Daten hinzufügen</button>
     </div>
@@ -3958,15 +4288,17 @@ function showMore() {
 
 function showProfile() {
   openModal(`
-    <h2 id="modalTitle">Profil</h2>
+    <h2 id="modalTitle">Account</h2>
     <div class="profile-form">
       <div class="profile-preview">
         ${memberAvatarMarkup(currentUser, "is-current")}
+        <span>${escapeText(currentUser.email)}</span>
       </div>
       <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
       <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Avatar-Link">
       <div class="modal-actions">
         <button type="button" data-save-profile>Speichern</button>
+        <button type="button" class="is-danger" data-sign-out>Abmelden</button>
       </div>
     </div>
   `);
@@ -3988,7 +4320,7 @@ function saveProfile() {
   };
   saveCurrentUser();
   lists.forEach((listData) => {
-    const member = ensureCurrentMember(listData);
+    const member = memberFor(listData, currentUser.userId);
     if (member) {
       member.displayName = currentUser.displayName;
       member.avatarUrl = currentUser.avatarUrl;
@@ -3999,7 +4331,6 @@ function saveProfile() {
         item.addedByAvatarUrl = currentUser.avatarUrl;
       }
     });
-    touchList(listData);
   });
   save();
   updatePresence();
@@ -4064,7 +4395,6 @@ function showAddFeedback(button) {
 function addToList(product) {
   const currentList = activeList();
   if (!currentList) return false;
-  ensureCurrentMember(currentList);
   if (!canPerform(currentList, "add")) return false;
   triggerHapticFeedback();
   const items = currentList.items;
@@ -4390,6 +4720,7 @@ function nextListTitle() {
 }
 
 function addList() {
+  if (!isAuthenticatedAccount()) return;
   const newList = createList(nextListTitle());
   lists.push(newList);
   activeListId = newList.id;
@@ -4419,17 +4750,14 @@ async function deleteList(id) {
 
   const listToDelete = lists[index];
   if (listToDelete.ownerId !== currentUser.userId) {
-    leaveSharedList(listToDelete, index);
+    await leaveSharedList(listToDelete, index);
     return;
   }
 
   if (!window.confirm(`"${listToDelete.title}" wirklich vollständig löschen?`)) return;
-  listToDelete.deletedAt = isoNow();
-  listToDelete.deletedByUserId = currentUser.userId;
-  touchList(listToDelete);
   const remoteResult = await collaborationService.deleteSharedList?.(listToDelete, currentUser);
-  if (isSharedList(listToDelete) && !remoteResult) {
-    window.alert("Der geteilte Zettel konnte gerade nicht gelöscht werden.");
+  if (!remoteResult) {
+    window.alert("Der Zettel konnte gerade nicht gelöscht werden. Bitte prüfe deine Verbindung.");
     return;
   }
   removeLocalList(id, index);
@@ -4767,7 +5095,8 @@ function noteItemsMarkup(listData) {
 }
 
 function noteMarkup(listData) {
-  const member = ensureCurrentMember(listData);
+  const member = memberFor(listData, currentUser.userId)
+    ?? (listData.ownerId === currentUser.userId ? createMember(currentUser, collaborationRoles.owner, listData.createdAt) : null);
   const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
   const canAdd = Boolean(member) && canPerform(listData, "add");
   const sharedClass = isSharedList(listData) ? "is-shared" : "";
@@ -4805,6 +5134,12 @@ function noteMarkup(listData) {
       <ul class="shopping-list">
         ${noteItemsMarkup(listData)}
       </ul>
+      <footer class="note-footer">
+        <button class="note-delete-button" type="button" data-delete-list="${escapeText(listData.id)}">
+          ${icon(listData.ownerId === currentUser.userId ? "trash" : "logout")}
+          <span>${listData.ownerId === currentUser.userId ? "Zettel löschen" : "Zettel verlassen"}</span>
+        </button>
+      </footer>
     </article>
   `;
 }
@@ -4896,6 +5231,9 @@ function renderNotes(options = {}) {
   elements.notesStack.querySelectorAll("[data-remove]").forEach((button) => {
     button.addEventListener("click", () => removeItem(button.dataset.remove, button.dataset.listId));
   });
+  elements.notesStack.querySelectorAll("[data-delete-list]").forEach((button) => {
+    button.addEventListener("click", () => deleteList(button.dataset.deleteList));
+  });
   });
 }
 
@@ -4941,6 +5279,23 @@ function schedulePriceSearchRender(query) {
   }, 140);
 }
 
+elements.authEmailForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  requestAuthCode();
+});
+elements.authCodeForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  confirmAuthCode();
+});
+elements.authBackButton?.addEventListener("click", () => {
+  elements.authEmailForm?.classList.remove("is-hidden");
+  elements.authCodeForm?.classList.add("is-hidden");
+  setAuthStatus("");
+  window.setTimeout(() => elements.authEmailInput?.focus(), 0);
+});
+elements.authCodeInput?.addEventListener("input", () => {
+  elements.authCodeInput.value = elements.authCodeInput.value.replace(/\D/g, "").slice(0, 6);
+});
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 elements.searchInput.addEventListener("input", scheduleMainSearchRender);
 elements.backButton.addEventListener("click", backToShelves);
@@ -5023,6 +5378,18 @@ elements.modalContent.addEventListener("click", (event) => {
     showProfile();
     return;
   }
+  if (event.target.closest("[data-sign-out]")) {
+    signOutAccount();
+    return;
+  }
+  if (event.target.closest("[data-import-legacy-lists]")) {
+    importLegacyListsIntoAccount();
+    return;
+  }
+  if (event.target.closest("[data-skip-legacy-lists]")) {
+    skipLegacyLists();
+    return;
+  }
   if (event.target.closest("[data-copy-bug]")) {
     copyBugReport();
     return;
@@ -5100,8 +5467,8 @@ elements.modalContent.addEventListener("keydown", (event) => {
 function updatePresence() {
   const listData = activeList();
   if (!listData) return;
-  const member = ensureCurrentMember(listData);
-  if (!member && isMemberRemoved(listData)) return;
+  const member = memberFor(listData, currentUser.userId);
+  if (listData.ownerId !== currentUser.userId && (!member || isMemberRemoved(listData))) return;
   activeMembersByList[listData.id] = collaborationService.heartbeat(listData, currentUser);
 }
 
@@ -5112,53 +5479,37 @@ async function refreshRealtimeNow(reason) {
 
 async function bootApp() {
   applyBackgroundTheme();
-  syncState.pendingWrites = syncQueueLength();
-  const authUser = await collaborationService.initializeUser?.(currentUser);
-  if (authUser?.id) {
-    adoptCurrentUserId(authUser.id);
+  legacySnapshot = captureLegacySnapshot();
+  const authUser = await collaborationService.initializeUser?.();
+  if (authUser?.is_anonymous) {
+    legacySnapshot.anonymousUserId = authUser.id;
+    await collaborationService.signOut?.();
+    showAuthEmailStep("Erstelle oder öffne deinen Account.");
+  } else if (isPermanentAuthUser(authUser)) {
+    await activateAccount(authUser);
+  } else {
+    showAuthEmailStep("Erstelle oder öffne deinen Account.");
   }
-  await importSharedListFromUrl();
-  await refreshPricesIfStale();
-  collaborationService.subscribe((message) => {
-    if (message.type === "lists") {
-      markSyncSuccess();
-      mergeRemoteLists(message.lists);
+
+  authSubscription = collaborationService.onAuthStateChange?.((event, nextUser) => {
+    if (event === "SIGNED_OUT" || !nextUser) {
+      if (authState.accountReady) deactivateAccount("Du bist abgemeldet.");
       return;
     }
-    if (message.type === "sync-status") {
-      syncState.realtimeStatus = message.status || "";
-      if (message.status === "SUBSCRIBED") markSyncSuccess();
-      if (message.status === "CHANNEL_ERROR" || message.status === "TIMED_OUT" || message.status === "CLOSED") {
-        markSyncError(message.error || message.status);
-        pullRemoteListsSoon("realtime-error", 1200);
-      }
-      return;
-    }
-    if (message.type === "remote-changed") {
-      pullRemoteListsSoon("remote-change", 250);
-      return;
-    }
-    if (message.type === "presence" && message.listId) {
-      activeMembersByList[message.listId] = message.members;
-      renderNotes({ background: true });
-      if (message.members.some((member) => member.userId !== currentUser.userId)) {
-        pullRemoteListsSoon("presence", 700);
-      }
-    }
+    if (isPermanentAuthUser(nextUser)) activateAccount(nextUser);
+  }) ?? null;
+
+  window.addEventListener("online", () => {
+    if (isAuthenticatedAccount()) refreshRealtimeNow("online");
   });
-  await pullRemoteLists("boot");
-  scheduleSyncFlush(900);
-  updatePresence();
-  window.setInterval(updatePresence, 15000);
-  window.setInterval(() => refreshRealtimeNow("interval"), 12000);
-  window.addEventListener("online", () => refreshRealtimeNow("online"));
   window.addEventListener("offline", () => markSyncError("offline"));
-  window.addEventListener("focus", () => refreshRealtimeNow("focus"));
+  window.addEventListener("focus", () => {
+    if (isAuthenticatedAccount()) refreshRealtimeNow("focus");
+  });
   document.addEventListener("focusout", () => flushPendingNotesRender(220));
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) refreshRealtimeNow("visible");
+    if (!document.hidden && isAuthenticatedAccount()) refreshRealtimeNow("visible");
   });
-  render();
 }
 
 bootApp();

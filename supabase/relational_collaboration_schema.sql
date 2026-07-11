@@ -81,19 +81,36 @@ grant select, insert, update, delete on public.shopping_lists to authenticated;
 grant select, insert, update, delete on public.list_members to authenticated;
 grant select, insert, update, delete on public.list_items to authenticated;
 
-create or replace function public.list_owner_id(target_list_id text)
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
+create or replace function private.list_owner_id(target_list_id text)
 returns uuid
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select owner_user_id
-  from public.shopping_lists
-  where id = target_list_id
+  select lists.owner_user_id
+  from public.shopping_lists lists
+  where lists.id = target_list_id
+    and lists.deleted_at is null
+    and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) is false
+    and (
+      lists.owner_user_id = auth.uid()
+      or exists (
+        select 1
+        from public.list_members members
+        where members.list_id = lists.id
+          and members.user_id = auth.uid()
+          and members.removed_at is null
+      )
+      or lists.invite_code = nullif(current_setting('request.mart_invite_code', true), '')
+    )
 $$;
 
-create or replace function public.list_invite_matches(target_list_id text, target_invite_code text)
+create or replace function private.list_invite_matches(target_list_id text, target_invite_code text)
 returns boolean
 language sql
 stable
@@ -106,10 +123,12 @@ as $$
     where id = target_list_id
       and invite_code = target_invite_code
       and deleted_at is null
+      and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) is false
+      and target_invite_code = nullif(current_setting('request.mart_invite_code', true), '')
   )
 $$;
 
-create or replace function public.is_active_list_member(target_list_id text, target_user_id uuid)
+create or replace function private.is_active_list_member(target_list_id text, target_user_id uuid)
 returns boolean
 language sql
 stable
@@ -125,6 +144,8 @@ as $$
       and members.removed_at is null
     where lists.id = target_list_id
       and lists.deleted_at is null
+      and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) is false
+      and target_user_id = auth.uid()
       and (
         lists.owner_user_id = target_user_id
         or members.user_id = target_user_id
@@ -132,7 +153,7 @@ as $$
   )
 $$;
 
-create or replace function public.can_edit_list(target_list_id text, target_user_id uuid)
+create or replace function private.can_edit_list(target_list_id text, target_user_id uuid)
 returns boolean
 language sql
 stable
@@ -148,6 +169,8 @@ as $$
       and members.removed_at is null
     where lists.id = target_list_id
       and lists.deleted_at is null
+      and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) is false
+      and target_user_id = auth.uid()
       and (
         lists.owner_user_id = target_user_id
         or members.role in ('owner', 'editor')
@@ -155,14 +178,14 @@ as $$
   )
 $$;
 
-revoke all on function public.list_owner_id(text) from public, anon;
-revoke all on function public.list_invite_matches(text, text) from public, anon;
-revoke all on function public.is_active_list_member(text, uuid) from public, anon;
-revoke all on function public.can_edit_list(text, uuid) from public, anon;
-grant execute on function public.list_owner_id(text) to authenticated;
-grant execute on function public.list_invite_matches(text, text) to authenticated;
-grant execute on function public.is_active_list_member(text, uuid) to authenticated;
-grant execute on function public.can_edit_list(text, uuid) to authenticated;
+revoke all on function private.list_owner_id(text) from public, anon;
+revoke all on function private.list_invite_matches(text, text) from public, anon;
+revoke all on function private.is_active_list_member(text, uuid) from public, anon;
+revoke all on function private.can_edit_list(text, uuid) from public, anon;
+grant execute on function private.list_owner_id(text) to authenticated;
+grant execute on function private.list_invite_matches(text, text) to authenticated;
+grant execute on function private.is_active_list_member(text, uuid) to authenticated;
+grant execute on function private.can_edit_list(text, uuid) to authenticated;
 
 drop policy if exists "profiles are readable" on public.profiles;
 create policy "profiles are readable"
@@ -193,7 +216,7 @@ for select
 to authenticated
 using (
   owner_user_id = (select auth.uid())
-  or public.is_active_list_member(id, (select auth.uid()))
+  or private.is_active_list_member(id, (select auth.uid()))
   or invite_code = (select current_setting('request.mart_invite_code', true))
 );
 
@@ -209,12 +232,12 @@ create policy "editors update lists without stealing ownership"
 on public.shopping_lists
 for update
 to authenticated
-using (public.can_edit_list(id, (select auth.uid())))
+using (private.can_edit_list(id, (select auth.uid())))
 with check (
-  public.can_edit_list(id, (select auth.uid()))
+  private.can_edit_list(id, (select auth.uid()))
   and (
-    owner_user_id = public.list_owner_id(id)
-    or public.list_owner_id(id) = (select auth.uid())
+    owner_user_id = private.list_owner_id(id)
+    or private.list_owner_id(id) = (select auth.uid())
   )
 );
 
@@ -231,8 +254,8 @@ on public.list_members
 for select
 to authenticated
 using (
-  public.is_active_list_member(list_id, (select auth.uid()))
-  or public.list_invite_matches(list_id, (select current_setting('request.mart_invite_code', true)))
+  private.is_active_list_member(list_id, (select auth.uid()))
+  or private.list_invite_matches(list_id, (select current_setting('request.mart_invite_code', true)))
 );
 
 drop policy if exists "owners and invitees insert members" on public.list_members;
@@ -241,10 +264,10 @@ on public.list_members
 for insert
 to authenticated
 with check (
-  public.list_owner_id(list_id) = (select auth.uid())
+  private.list_owner_id(list_id) = (select auth.uid())
   or (
     user_id = (select auth.uid())
-    and public.list_invite_matches(list_id, (select current_setting('request.mart_invite_code', true)))
+    and private.list_invite_matches(list_id, (select current_setting('request.mart_invite_code', true)))
   )
 );
 
@@ -254,11 +277,11 @@ on public.list_members
 for update
 to authenticated
 using (
-  public.list_owner_id(list_id) = (select auth.uid())
+  private.list_owner_id(list_id) = (select auth.uid())
   or user_id = (select auth.uid())
 )
 with check (
-  public.list_owner_id(list_id) = (select auth.uid())
+  private.list_owner_id(list_id) = (select auth.uid())
   or (
     user_id = (select auth.uid())
     and removed_at is not null
@@ -270,36 +293,36 @@ create policy "owners delete members"
 on public.list_members
 for delete
 to authenticated
-using (public.list_owner_id(list_id) = (select auth.uid()));
+using (private.list_owner_id(list_id) = (select auth.uid()));
 
 drop policy if exists "members read items" on public.list_items;
 create policy "members read items"
 on public.list_items
 for select
 to authenticated
-using (public.is_active_list_member(list_id, (select auth.uid())));
+using (private.is_active_list_member(list_id, (select auth.uid())));
 
 drop policy if exists "editors insert items" on public.list_items;
 create policy "editors insert items"
 on public.list_items
 for insert
 to authenticated
-with check (public.can_edit_list(list_id, (select auth.uid())));
+with check (private.can_edit_list(list_id, (select auth.uid())));
 
 drop policy if exists "editors update items" on public.list_items;
 create policy "editors update items"
 on public.list_items
 for update
 to authenticated
-using (public.can_edit_list(list_id, (select auth.uid())))
-with check (public.can_edit_list(list_id, (select auth.uid())));
+using (private.can_edit_list(list_id, (select auth.uid())))
+with check (private.can_edit_list(list_id, (select auth.uid())));
 
 drop policy if exists "editors delete items" on public.list_items;
 create policy "editors delete items"
 on public.list_items
 for delete
 to authenticated
-using (public.can_edit_list(list_id, (select auth.uid())));
+using (private.can_edit_list(list_id, (select auth.uid())));
 
 create or replace function public.join_shopping_list(
   target_list_id text,
@@ -316,13 +339,13 @@ declare
   clean_name text := left(coalesce(nullif(trim(display_name), ''), 'Gast'), 24);
   clean_avatar text := left(coalesce(avatar_url, ''), 512);
 begin
-  if request_user_id is null then
-    raise exception 'authentication required';
+  if request_user_id is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) then
+    raise exception 'permanent account required';
   end if;
 
   perform set_config('request.mart_invite_code', target_invite_code, true);
 
-  if not public.list_invite_matches(target_list_id, target_invite_code) then
+  if not private.list_invite_matches(target_list_id, target_invite_code) then
     raise exception 'invalid invite';
   end if;
 
@@ -343,7 +366,7 @@ begin
     clean_name,
     clean_avatar,
     'editor',
-    public.list_owner_id(target_list_id),
+    private.list_owner_id(target_list_id),
     now(),
     null,
     null
@@ -375,11 +398,11 @@ as $$
 declare
   request_user_id uuid := auth.uid();
 begin
-  if request_user_id is null then
-    raise exception 'authentication required';
+  if request_user_id is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) then
+    raise exception 'permanent account required';
   end if;
 
-  if public.list_owner_id(target_list_id) = request_user_id then
+  if private.list_owner_id(target_list_id) = request_user_id then
     raise exception 'owner cannot leave list';
   end if;
 
@@ -404,8 +427,8 @@ as $$
 declare
   request_user_id uuid := auth.uid();
 begin
-  if request_user_id is null then
-    raise exception 'authentication required';
+  if request_user_id is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, true) then
+    raise exception 'permanent account required';
   end if;
 
   update public.shopping_lists
@@ -591,3 +614,43 @@ begin
     alter publication supabase_realtime add table public.list_items;
   end if;
 end $$;
+
+comment on table public.shared_lists is
+  'Archived legacy snapshot table. Kept for recovery only and no longer exposed to app clients.';
+revoke all on public.shared_lists from anon, authenticated;
+
+do $$
+begin
+  if exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'shared_lists'
+  ) then
+    execute 'alter publication supabase_realtime drop table public.shared_lists';
+  end if;
+end $$;
+
+drop policy if exists "permanent accounts only" on public.profiles;
+create policy "permanent accounts only"
+on public.profiles as restrictive for all to authenticated
+using (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false)
+with check (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false);
+
+drop policy if exists "permanent accounts only" on public.shopping_lists;
+create policy "permanent accounts only"
+on public.shopping_lists as restrictive for all to authenticated
+using (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false)
+with check (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false);
+
+drop policy if exists "permanent accounts only" on public.list_members;
+create policy "permanent accounts only"
+on public.list_members as restrictive for all to authenticated
+using (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false)
+with check (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false);
+
+drop policy if exists "permanent accounts only" on public.list_items;
+create policy "permanent accounts only"
+on public.list_items as restrictive for all to authenticated
+using (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false)
+with check (coalesce(((select auth.jwt()) ->> 'is_anonymous')::boolean, true) is false);
