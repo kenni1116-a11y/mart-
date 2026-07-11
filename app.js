@@ -1202,6 +1202,10 @@ class SupabaseRealtimeService {
     this.url = this.config.url || this.config.projectUrl || "";
     this.publishableKey = this.config.publishableKey || this.config.anonKey || "";
     this.authUserId = "";
+    this.profileSignature = "";
+    this.profileSyncedAt = 0;
+    this.profileSyncPromise = null;
+    this.profileSyncSignature = "";
     this.client = this.createClient();
   }
 
@@ -1283,6 +1287,10 @@ class SupabaseRealtimeService {
     if (!this.client) return { ok: true };
     const { error } = await this.client.auth.signOut({ scope: "local" });
     this.authUserId = "";
+    this.profileSignature = "";
+    this.profileSyncedAt = 0;
+    this.profileSyncPromise = null;
+    this.profileSyncSignature = "";
     if (this.listChannel) {
       this.client.removeChannel?.(this.listChannel);
       this.listChannel = null;
@@ -1348,17 +1356,41 @@ class SupabaseRealtimeService {
     if (!this.client) return { ok: false, offline: true };
     const authUser = await this.ensureAuthenticated();
     if (!authUser?.id) return { ok: false, error: "Keine Nutzerkennung" };
+    const displayName = cleanDisplayName(user.displayName, "Gast");
+    const avatarUrl = typeof user.avatarUrl === "string" ? user.avatarUrl : "";
+    const signature = JSON.stringify([authUser.id, displayName, avatarUrl]);
+    if (signature === this.profileSignature && Date.now() - this.profileSyncedAt < 60000) {
+      return { ok: true, userId: authUser.id, cached: true };
+    }
+    if (signature === this.profileSyncSignature && this.profileSyncPromise) {
+      return this.profileSyncPromise;
+    }
     const profileRow = {
       id: authUser.id,
-      display_name: cleanDisplayName(user.displayName, "Gast"),
-      avatar_url: typeof user.avatarUrl === "string" ? user.avatarUrl : "",
+      display_name: displayName,
+      avatar_url: avatarUrl,
       updated_at: isoNow(),
       last_seen_at: isoNow()
     };
-    const { error } = await this.client
-      .from(this.profileTable)
-      .upsert(profileRow, { onConflict: "id" });
-    return error ? { ok: false, error: error.message, rawError: error } : { ok: true, userId: authUser.id };
+    const request = (async () => {
+      const { error } = await this.client
+        .from(this.profileTable)
+        .upsert(profileRow, { onConflict: "id" });
+      if (error) return { ok: false, error: error.message, rawError: error };
+      this.profileSignature = signature;
+      this.profileSyncedAt = Date.now();
+      return { ok: true, userId: authUser.id };
+    })();
+    this.profileSyncSignature = signature;
+    this.profileSyncPromise = request;
+    try {
+      return await request;
+    } finally {
+      if (this.profileSyncPromise === request) {
+        this.profileSyncPromise = null;
+        this.profileSyncSignature = "";
+      }
+    }
   }
 
   listRowFromList(listData) {
@@ -1898,6 +1930,7 @@ let pendingFullRender = false;
 let syncFlushTimer = 0;
 let isFlushingSyncQueue = false;
 let activeWriteCount = 0;
+let localMutationVersion = 0;
 let mainSearchRenderTimer = 0;
 let modalSearchRenderTimer = 0;
 let authSubscription = null;
@@ -2362,6 +2395,7 @@ async function activateAccount(authUser) {
   };
   lists = loadAccountLists(currentUser.userId);
   activeListId = loadAccountActiveListId(currentUser.userId, lists);
+  localMutationVersion = 0;
   syncState.pendingWrites = syncQueueLength();
   saveCurrentUser();
   await collaborationService.upsertProfile?.(currentUser);
@@ -2388,6 +2422,7 @@ async function deactivateAccount(message = "") {
   currentUser = signedOutUser();
   lists = [];
   activeListId = "";
+  localMutationVersion = 0;
   manualDrafts = {};
   syncState = {
     status: navigator.onLine ? "idle" : "offline",
@@ -2952,6 +2987,7 @@ async function flushSyncQueue() {
 }
 
 function save(options = {}) {
+  if (options.source !== "remote") localMutationVersion += 1;
   lists = lists.map(normalizeListData);
   if (isAuthenticatedAccount()) {
     localStorage.setItem(accountStorageKey(storageKeys.lists), JSON.stringify(lists));
@@ -3605,7 +3641,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
     }
   }
   if (!didChange) return false;
-  save({ broadcast: false });
+  save({ broadcast: false, source: "remote" });
   render({ background: true });
   return true;
 }
@@ -3613,6 +3649,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
 async function pullRemoteLists(reason = "auto") {
   if (!collaborationService.fetchSharedLists) return false;
   if (remoteSyncPromise) return remoteSyncPromise;
+  const mutationVersionAtStart = localMutationVersion;
   markSyncAttempt();
   remoteSyncPromise = (async () => {
     try {
@@ -3621,7 +3658,9 @@ async function pullRemoteLists(reason = "auto") {
         markSyncError("Serverstand konnte nicht geladen werden");
         return false;
       }
-      const didChange = mergeRemoteLists(remoteLists, { pruneMissing: true });
+      const didChange = mergeRemoteLists(remoteLists, {
+        pruneMissing: mutationVersionAtStart === localMutationVersion
+      });
       markSyncSuccess();
       if (!didChange && reason === "manual") renderNotes({ force: true });
       return true;
