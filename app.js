@@ -1697,6 +1697,34 @@ class SupabaseRealtimeService {
     });
   }
 
+  async persistOwnedListRow(row) {
+    const updateRow = async () => this.client
+      .from(this.listTable)
+      .update(row)
+      .eq("id", row.id)
+      .select("id");
+
+    const initialUpdate = await updateRow();
+    if (initialUpdate.error) {
+      return { ok: false, error: initialUpdate.error.message, rawError: initialUpdate.error };
+    }
+    if (initialUpdate.data?.length) return { ok: true, created: false };
+
+    const { error: insertError } = await this.client.from(this.listTable).insert(row);
+    if (!insertError) return { ok: true, created: true };
+    if (insertError.code !== "23505") {
+      return { ok: false, error: insertError.message, rawError: insertError };
+    }
+
+    // A second device may have created the same local list after our first check.
+    const retryUpdate = await updateRow();
+    if (retryUpdate.error || !retryUpdate.data?.length) {
+      const retryError = retryUpdate.error ?? insertError;
+      return { ok: false, error: retryError.message, rawError: retryError };
+    }
+    return { ok: true, created: false };
+  }
+
   async publishRelationalLists(nextLists, user = currentUser) {
     const profileResult = await this.upsertProfile(user);
     if (profileResult.ok === false) return profileResult;
@@ -1710,9 +1738,9 @@ class SupabaseRealtimeService {
     });
     const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
 
-    if (ownedListRows.length) {
-      const { error } = await this.client.from(this.listTable).upsert(ownedListRows, { onConflict: "id" });
-      if (error) return { ok: false, error: error.message, rawError: error };
+    for (const row of ownedListRows) {
+      const listResult = await this.persistOwnedListRow(row);
+      if (!listResult.ok) return listResult;
     }
     for (const row of joinedListRows) {
       const { error } = await this.client
@@ -3777,7 +3805,11 @@ async function shareList(listId = activeListId) {
   listData.inviteCode = listData.inviteCode || generateInviteCode();
   touchList(listData);
   save({ broadcast: false });
-  await publishListSnapshot([listData], "share");
+  const published = await publishListSnapshot([listData], "share");
+  if (!published) {
+    window.alert("Der Zettel konnte noch nicht online gespeichert werden. Es wurde kein Einladungslink erstellt. Bitte prüfe die Verbindung und versuche es erneut.");
+    return;
+  }
 
   const url = shareBaseUrl();
   url.searchParams.set("invite", encodeShareValue({
@@ -3884,7 +3916,7 @@ function regenerateInvite(listId) {
   if (!canPerform(listData, "invite")) return;
   listData.inviteCode = generateInviteCode();
   touchList(listData);
-  save();
+  save({ broadcast: false });
   shareList(listId);
 }
 
