@@ -672,6 +672,72 @@ h2 {
   font-size: 1rem;
 }
 
+.manual-add-wrap {
+  position: relative;
+  z-index: 4;
+  margin: 11px 0 9px;
+}
+
+.manual-add-wrap .manual-add {
+  margin-bottom: 0;
+}
+
+.manual-suggestions {
+  display: grid;
+  max-height: 220px;
+  margin-top: 5px;
+  overflow: auto;
+  border: 1px solid rgba(119, 106, 64, 0.24);
+  border-radius: 11px;
+  background: rgba(255, 254, 246, 0.98);
+  box-shadow: 0 12px 25px rgba(64, 54, 31, 0.14);
+}
+
+.manual-suggestions[hidden] {
+  display: none;
+}
+
+.manual-suggestions button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 43px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(119, 106, 64, 0.12);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.manual-suggestions button:last-child {
+  border-bottom: 0;
+}
+
+.manual-suggestions button:hover,
+.manual-suggestions button:focus-visible,
+.manual-suggestions button.is-active {
+  outline: 0;
+  background: rgba(214, 241, 252, 0.68);
+}
+
+.manual-suggestions button span {
+  overflow: hidden;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 690;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manual-suggestions button small {
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+
 .note-footer {
   display: flex;
   justify-content: flex-end;
@@ -1399,6 +1465,37 @@ button.sync-chip:hover {
   padding: 0;
   overflow: auto;
   list-style: none;
+}
+
+.list-value-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px dashed rgba(111, 93, 37, 0.2);
+  border-radius: 9px;
+  background: rgba(255, 253, 231, 0.38);
+  color: rgba(62, 56, 40, 0.74);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+.list-value-summary strong {
+  font-size: 0.76rem;
+  font-weight: 720;
+}
+
+.list-value-summary small {
+  color: rgba(93, 83, 58, 0.64);
+  font-size: 0.64rem;
+  font-weight: 620;
+}
+
+.note-card.is-shared .list-value-summary {
+  border-color: rgba(126, 70, 62, 0.18);
+  background: rgba(255, 245, 241, 0.36);
 }
 
 .list-item {
