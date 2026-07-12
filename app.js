@@ -1697,6 +1697,34 @@ class SupabaseRealtimeService {
     });
   }
 
+  async persistOwnedListRow(row) {
+    const updateRow = async () => this.client
+      .from(this.listTable)
+      .update(row)
+      .eq("id", row.id)
+      .select("id");
+
+    const initialUpdate = await updateRow();
+    if (initialUpdate.error) {
+      return { ok: false, error: initialUpdate.error.message, rawError: initialUpdate.error };
+    }
+    if (initialUpdate.data?.length) return { ok: true, created: false };
+
+    const { error: insertError } = await this.client.from(this.listTable).insert(row);
+    if (!insertError) return { ok: true, created: true };
+    if (insertError.code !== "23505") {
+      return { ok: false, error: insertError.message, rawError: insertError };
+    }
+
+    // A second device may have created the same local list after our first check.
+    const retryUpdate = await updateRow();
+    if (retryUpdate.error || !retryUpdate.data?.length) {
+      const retryError = retryUpdate.error ?? insertError;
+      return { ok: false, error: retryError.message, rawError: retryError };
+    }
+    return { ok: true, created: false };
+  }
+
   async publishRelationalLists(nextLists, user = currentUser) {
     const profileResult = await this.upsertProfile(user);
     if (profileResult.ok === false) return profileResult;
@@ -1710,10 +1738,13 @@ class SupabaseRealtimeService {
     });
     const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
 
-    if (ownedListRows.length) {
-      const { error } = await this.client.from(this.listTable).upsert(ownedListRows, { onConflict: "id" });
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
+    const listResults = await MartLogic.mapWithConcurrency(
+      ownedListRows,
+      3,
+      (row) => this.persistOwnedListRow(row)
+    );
+    const failedListResult = listResults.find((result) => !result.ok);
+    if (failedListResult) return failedListResult;
     for (const row of joinedListRows) {
       const { error } = await this.client
         .from(this.listTable)
@@ -3771,14 +3802,7 @@ function shareBaseUrl() {
   }
 }
 
-async function shareList(listId = activeListId) {
-  const listData = lists.find((item) => item.id === listId) ?? activeList();
-  if (!listData || !canPerform(listData, "invite")) return;
-  listData.inviteCode = listData.inviteCode || generateInviteCode();
-  touchList(listData);
-  save({ broadcast: false });
-  await publishListSnapshot([listData], "share");
-
+function openShareListModal(listData) {
   const url = shareBaseUrl();
   url.searchParams.set("invite", encodeShareValue({
     listId: listData.id,
@@ -3807,6 +3831,20 @@ async function shareList(listId = activeListId) {
       ${shareMemberRowsMarkup(listData)}
     </div>
   `);
+}
+
+async function shareList(listId = activeListId) {
+  const listData = lists.find((item) => item.id === listId) ?? activeList();
+  if (!listData || !canPerform(listData, "invite")) return;
+  listData.inviteCode = listData.inviteCode || generateInviteCode();
+  touchList(listData);
+  save({ broadcast: false });
+  const published = await publishListSnapshot([listData], "share", { queueOnFail: false });
+  if (!published) {
+    window.alert("Der Zettel konnte noch nicht online gespeichert werden. Es wurde kein Einladungslink erstellt. Bitte prüfe die Verbindung und versuche es erneut.");
+    return;
+  }
+  openShareListModal(listData);
 }
 
 async function nativeShareInvite() {
@@ -3878,14 +3916,26 @@ function transferOwnership(listId, userId) {
   showMembers(listId);
 }
 
-function regenerateInvite(listId) {
+async function regenerateInvite(listId) {
   const listData = listById(listId);
   if (!listData) return;
   if (!canPerform(listData, "invite")) return;
-  listData.inviteCode = generateInviteCode();
-  touchList(listData);
-  save();
-  shareList(listId);
+  const published = await MartLogic.rotateInviteWithRollback({
+    target: listData,
+    nextCode: generateInviteCode(),
+    mutate(target, nextCode) {
+      target.inviteCode = nextCode;
+      touchList(target);
+      save({ broadcast: false });
+    },
+    persist: () => publishListSnapshot([listData], "share", { queueOnFail: false }),
+    rollback: () => save({ broadcast: false })
+  });
+  if (!published) {
+    window.alert("Der Einladungslink konnte nicht erneuert werden. Der bisherige Link bleibt gültig. Bitte prüfe die Verbindung und versuche es erneut.");
+    return;
+  }
+  openShareListModal(listData);
 }
 
 function markMemberRemoved(listData, userId, removedByUserId = currentUser.userId) {
