@@ -1,10 +1,11 @@
-const CACHE_NAME = "einkaufszettel-v57";
+const CACHE_NAME = "einkaufszettel-v59";
 // Keep this file changing when the installed iPhone app needs a fresh cache.
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./supabase-config.js",
+  "./app-logic.js",
   "./app.js",
   "./manifest.json",
   "./icon.svg"

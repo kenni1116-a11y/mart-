@@ -3814,9 +3814,17 @@ function openShareListModal(listData) {
     inviteCode: listData.inviteCode
   }));
   const inviteCode = listData.inviteCode.slice(0, 8).toUpperCase();
+  const qrMarkup = qrSvgMarkup(url.href);
   openModal(`
     <h2 id="modalTitle">Zettel teilen</h2>
     <div class="share-panel" data-invite-url="${escapeText(url.href)}" data-invite-title="${escapeText(listData.title)}">
+      <div class="share-qr">
+        <strong>Scannen und direkt beitreten</strong>
+        <div class="share-qr-code" role="img" aria-label="QR-Code zum Beitritt in ${escapeText(listData.title)}">
+          ${qrMarkup || icon("link")}
+        </div>
+        <small>Mit der Kamera des zweiten Geräts scannen. Der Zettel wird nach dem Öffnen sofort verbunden.</small>
+      </div>
       <div class="invite-card">
         <span>Einladungscode</span>
         <strong>${escapeText(inviteCode)}</strong>

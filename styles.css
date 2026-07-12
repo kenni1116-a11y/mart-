@@ -1767,6 +1767,48 @@ button.sync-chip:hover {
   resize: vertical;
 }
 
+.share-qr {
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  padding: 15px;
+  border: 1px solid rgba(204, 195, 179, 0.62);
+  border-radius: 13px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 246, 238, 0.9));
+  text-align: center;
+}
+
+.share-qr > strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 740;
+}
+
+.share-qr > small {
+  max-width: 320px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.share-qr-code {
+  display: grid;
+  width: min(240px, 70vw);
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 12px;
+  border: 1px solid rgba(42, 39, 34, 0.12);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 9px 24px rgba(43, 38, 29, 0.1);
+}
+
+.share-qr-code svg {
+  width: 100%;
+  height: 100%;
+}
+
 .invite-code {
   display: inline-grid;
   justify-self: start;
