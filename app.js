@@ -2403,7 +2403,7 @@ function loadAccountLists(userId) {
 
 function loadAccountActiveListId(userId, accountLists = lists) {
   const storedId = localStorage.getItem(accountStorageKey(storageKeys.activeList, userId)) || "";
-  return accountLists.some((listData) => listData.id === storedId) ? storedId : (accountLists[0]?.id ?? "");
+  return MartLogic.chooseActiveListId(storedId, accountLists.map((listData) => listData.id));
 }
 
 function authErrorMessage(error) {
@@ -3751,11 +3751,14 @@ async function importSharedListFromUrl() {
     const existingIndex = lists.findIndex((listData) => listData.id === importedList.id);
     if (existingIndex === -1) {
       lists.push(importedList);
-      activeListId = importedList.id;
     } else {
       lists[existingIndex] = mergeList(lists[existingIndex], importedList);
-      activeListId = lists[existingIndex].id;
     }
+    activeListId = MartLogic.chooseActiveListId(
+      activeListId,
+      lists.map((listData) => listData.id),
+      importedList.id
+    );
     save({ broadcast: false });
   } catch {
     window.alert("Der geteilte Zettel konnte nicht verbunden werden. Bitte lass dir eine neue Einladung senden.");
@@ -4820,8 +4823,8 @@ function showAddFeedback(button) {
   }, 720);
 }
 
-function addToList(product) {
-  const currentList = activeList();
+function addToList(product, listId = activeListId) {
+  const currentList = lists.find((listData) => listData.id === listId) ?? activeList();
   if (!currentList) return false;
   if (!canPerform(currentList, "add")) return false;
   triggerHapticFeedback();
@@ -4853,13 +4856,12 @@ function addManualItem(listId, input) {
   if (!input) return false;
   const name = (input.value || manualDrafts[listId] || "").trim();
   if (!name) return false;
-  activeListId = listId;
   const added = addToList({
     id: `manual:${Date.now()}`,
     name,
     shelfId: "manual",
     shelfTitle: "Eigener Artikel"
-  });
+  }, listId);
   if (!added) return false;
   manualDrafts[listId] = "";
   input.value = "";
@@ -5151,25 +5153,32 @@ function addList() {
   if (!isAuthenticatedAccount()) return;
   const newList = createList(nextListTitle());
   lists.push(newList);
-  activeListId = newList.id;
+  activeListId = MartLogic.chooseActiveListId(
+    activeListId,
+    lists.map((listData) => listData.id),
+    newList.id
+  );
   save();
   renderNotes();
 }
 
-function selectList(id) {
+function activateList(id) {
   if (!lists.some((listData) => listData.id === id)) return;
   if (activeListId === id) return;
   activeListId = id;
-  save();
+  save({ broadcast: false });
   renderNotes();
 }
 
 function removeLocalList(id, index = lists.findIndex((listData) => listData.id === id)) {
   if (index === -1) return;
   lists = lists.filter((listData) => listData.id !== id);
-  if (activeListId === id) {
-    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0]?.id ?? "";
-  }
+  const preferredId = lists[Math.max(0, index - 1)]?.id ?? lists[0]?.id ?? "";
+  activeListId = MartLogic.chooseActiveListId(
+    activeListId,
+    lists.map((listData) => listData.id),
+    preferredId
+  );
 }
 
 async function deleteList(id) {
@@ -5226,7 +5235,6 @@ function saveRenamedList() {
   listData.title = cleanTitle;
   listData.listName = cleanTitle;
   touchList(listData);
-  activeListId = listData.id;
   pendingRenameListId = null;
   save();
   closeModal();
@@ -5274,7 +5282,6 @@ function saveItemNote() {
     delete item.note;
   }
   touchItem(item, listData);
-  activeListId = pendingItemNoteEdit.listId;
   pendingItemNoteEdit = null;
   save();
   closeModal();
@@ -5290,7 +5297,6 @@ function clearItemNote() {
   if (!item) return;
   delete item.note;
   touchItem(item, listData);
-  activeListId = pendingItemNoteEdit.listId;
   pendingItemNoteEdit = null;
   save();
   closeModal();
@@ -5348,7 +5354,6 @@ function attachNoteLongPress(element, listId) {
       }, 0);
       return;
     }
-    selectList(listId);
   });
 }
 
@@ -5529,8 +5534,12 @@ function noteMarkup(listData) {
   const canAdd = Boolean(member) && canPerform(listData, "add");
   const sharedClass = isSharedList(listData) ? "is-shared" : "";
   const manualDraft = manualDrafts[listData.id] ?? "";
+  const isActive = listData.id === activeListId;
   return `
-    <article class="list-panel note-card ${sharedClass} ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
+    <article class="list-panel note-card ${sharedClass} ${isActive ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
+      <button class="list-activation-button ${isActive ? "is-active" : ""}" type="button" aria-pressed="${isActive}" data-activate-list="${escapeText(listData.id)}">
+        ${isActive ? "Aktiv" : "Für Einkäufe aktivieren"}
+      </button>
       <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
         <h2 class="list-title">
           <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
@@ -5601,11 +5610,8 @@ function renderNotes(options = {}) {
     button.addEventListener("click", addList);
   });
 
-  elements.notesStack.querySelectorAll("[data-note]").forEach((note) => {
-    note.addEventListener("click", (event) => {
-      if (event.target.closest("button, input")) return;
-      selectList(note.dataset.note);
-    });
+  elements.notesStack.querySelectorAll("[data-activate-list]").forEach((button) => {
+    button.addEventListener("click", () => activateList(button.dataset.activateList));
   });
   elements.notesStack.querySelectorAll("[data-note-grip]").forEach((grip) => {
     attachNoteLongPress(grip, grip.dataset.noteGrip);

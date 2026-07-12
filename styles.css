@@ -285,7 +285,7 @@ svg {
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 36px;
+  min-height: 40px;
   padding: 0;
 }
 
@@ -452,7 +452,7 @@ h2 {
 }
 
 .list-panel {
-  padding: 15px 14px 12px;
+  padding: 52px 14px 12px;
   position: relative;
   overflow: hidden;
   transform: rotate(-0.12deg);
@@ -470,10 +470,11 @@ h2 {
 }
 
 .note-card.is-active {
-  border-color: rgba(91, 75, 24, 0.72);
+  border-color: rgba(210, 242, 255, 0.98);
   box-shadow:
-    0 26px 44px rgba(86, 73, 31, 0.18),
-    0 0 0 2px rgba(255, 255, 255, 0.34),
+    0 28px 50px rgba(68, 116, 142, 0.22),
+    0 0 0 3px rgba(236, 249, 255, 0.92),
+    0 0 20px rgba(157, 221, 248, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
@@ -487,29 +488,53 @@ h2 {
 }
 
 .note-card.is-shared.is-active {
-  border-color: rgba(128, 61, 53, 0.58);
+  border-color: rgba(210, 242, 255, 0.98);
   box-shadow:
-    0 26px 44px rgba(92, 47, 39, 0.17),
-    0 0 0 2px rgba(255, 255, 255, 0.3),
+    0 28px 50px rgba(68, 116, 142, 0.22),
+    0 0 0 3px rgba(236, 249, 255, 0.92),
+    0 0 20px rgba(157, 221, 248, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.48);
 }
 
 .list-panel::before {
-  content: "";
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  width: 96px;
-  height: 30px;
-  transform: translateX(-50%) rotate(0.8deg);
-  border: 1px solid rgba(178, 163, 106, 0.22);
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.28);
-  box-shadow: 0 2px 9px rgba(80, 72, 40, 0.06);
+  display: none;
 }
 
 .list-panel > * {
   position: relative;
+}
+
+.list-activation-button {
+  position: absolute;
+  z-index: 3;
+  top: 9px;
+  left: 50%;
+  min-width: min(220px, calc(100% - 32px));
+  min-height: 36px;
+  padding: 0 18px;
+  transform: translateX(-50%) rotate(0.35deg);
+  border: 1px solid rgba(137, 121, 70, 0.3);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  color: rgba(58, 53, 39, 0.72);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 720;
+  box-shadow: 0 3px 10px rgba(80, 72, 40, 0.08);
+}
+
+.list-activation-button.is-active {
+  border-color: rgba(132, 199, 228, 0.72);
+  background: linear-gradient(180deg, rgba(246, 253, 255, 0.98), rgba(218, 244, 255, 0.94));
+  color: rgba(37, 91, 118, 0.92);
+  box-shadow:
+    0 5px 16px rgba(86, 164, 198, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.list-activation-button:focus-visible {
+  outline: 3px solid rgba(68, 153, 194, 0.28);
+  outline-offset: 2px;
 }
 
 .edit-note-button {
@@ -2502,7 +2527,7 @@ button.sync-chip:hover {
   }
 
   .list-panel {
-    padding: 14px 13px 11px;
+    padding: 54px 13px 11px;
   }
 
   .notes-board {
