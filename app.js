@@ -818,14 +818,13 @@ const externalMarketSeeds = [
 const marketBaseCatalog = [...defaultMarkets, ...externalMarketSeeds];
 
 const storageKeys = {
-  list: "shopping-list-app.items",
+  dataEpoch: "shopping-list-app.data-epoch",
   lists: "shopping-list-app.lists",
   activeList: "shopping-list-app.active-list",
   favorites: "shopping-list-app.favorites",
   shelfOrder: "shopping-list-app.shelf-order",
   background: "shopping-list-app.background",
   currentUser: "shopping-list-app.current-user",
-  legacyMigration: "shopping-list-app.legacy-migration-complete",
   realtime: "shopping-list-app.mock-realtime",
   presence: "shopping-list-app.mock-presence",
   outbox: "shopping-list-app.sync-outbox",
@@ -834,6 +833,46 @@ const storageKeys = {
   productPrices: "shopping-list-app.product-prices",
   priceSync: "shopping-list-app.price-sync"
 };
+
+function applyDataEpochReset() {
+  const config = window.MART_SUPABASE_CONFIG ?? {};
+  const targetEpoch = String(config.dataEpoch || "1");
+  if (localStorage.getItem(storageKeys.dataEpoch) === targetEpoch) return false;
+
+  const accountStoragePrefixes = [
+    "shopping-list-app.items",
+    storageKeys.lists,
+    storageKeys.activeList,
+    storageKeys.currentUser,
+    "shopping-list-app.legacy-migration-complete",
+    storageKeys.realtime,
+    storageKeys.presence,
+    storageKeys.outbox,
+    storageKeys.syncQueue
+  ];
+  Object.keys(localStorage).forEach((key) => {
+    if (accountStoragePrefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) {
+      localStorage.removeItem(key);
+    }
+  });
+
+  try {
+    const projectRef = new URL(config.url).hostname.split(".")[0];
+    const authPrefix = projectRef ? `sb-${projectRef}-auth-token` : "";
+    if (authPrefix) {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith(authPrefix)) localStorage.removeItem(key);
+      });
+    }
+  } catch {
+    // A missing project URL must not block the local reset.
+  }
+
+  localStorage.setItem(storageKeys.dataEpoch, targetEpoch);
+  return true;
+}
+
+applyDataEpochReset();
 
 const iconPaths = {
   leaf: '<path d="M5 21c8 0 14-6 14-14V3h-4C7 3 3 7 3 15c0 2 1 4 2 6Zm0 0c2-6 6-10 12-12"/>',
@@ -913,6 +952,9 @@ const iconPaths = {
   thermometer: '<path d="M10 14V5a3 3 0 0 1 6 0v9a5 5 0 1 1-6 0Zm3-9v11m-2 0h4"/>',
   diaper: '<path d="M5 7h14v7c0 4-3 7-7 7s-7-3-7-7V7Zm0 0c2 2 4 3 7 3s5-1 7-3M8 14h.01M16 14h.01"/>',
   warning: '<path d="M12 3 2 21h20L12 3Zm0 6v5m0 4h.01"/>',
+  phone: '<path d="M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 3h4m-3 14h2"/>',
+  copy: '<path d="M9 9h11v11H9V9Zm-5 6H3V4h11v1"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1m3 6a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
@@ -1198,7 +1240,6 @@ class SupabaseRealtimeService {
     this.listTable = this.config.listsTable || "shopping_lists";
     this.memberTable = this.config.membersTable || "list_members";
     this.itemTable = this.config.itemsTable || "list_items";
-    this.profileTable = this.config.profilesTable || "profiles";
     this.url = this.config.url || this.config.projectUrl || "";
     this.publishableKey = this.config.publishableKey || this.config.anonKey || "";
     this.authUserId = "";
@@ -1225,14 +1266,39 @@ class SupabaseRealtimeService {
   async initializeUser() {
     if (!this.client) return null;
     try {
-      const { data, error } = await this.client.auth.getSession();
-      if (error) throw error;
-      const authUser = data?.session?.user ?? null;
+      const { data: sessionData, error: sessionError } = await this.client.auth.getSession();
+      if (sessionError) throw sessionError;
+      let authUser = sessionData?.session?.user ?? null;
+      if (authUser) {
+        const { data: verifiedData, error: verificationError } = await this.client.auth.getUser();
+        if (!verificationError && verifiedData?.user?.id === authUser.id) {
+          authUser = verifiedData.user;
+        } else {
+          await this.client.auth.signOut({ scope: "local" });
+          authUser = null;
+        }
+      }
+      if (authUser && !isDeviceAuthUser(authUser)) {
+        await this.client.auth.signOut({ scope: "local" });
+        authUser = null;
+      }
+      if (!authUser) {
+        const { data: anonymousData, error: anonymousError } = await this.client.auth.signInAnonymously({
+          options: {
+            data: {
+              deviceLabel: defaultDeviceLabel(),
+              devicePlatform: devicePlatform()
+            }
+          }
+        });
+        if (anonymousError) throw anonymousError;
+        authUser = anonymousData?.user ?? null;
+      }
       this.authUserId = authUser?.id ?? "";
       return authUser;
     } catch (error) {
       this.queueOffline({ type: "auth", createdAt: isoNow(), error: error?.message ?? "Supabase Auth nicht erreichbar" });
-      return null;
+      throw error;
     }
   }
 
@@ -1241,7 +1307,7 @@ class SupabaseRealtimeService {
     try {
       const { data: sessionData } = await this.client.auth.getSession();
       const authUser = sessionData?.session?.user ?? null;
-      if (!isPermanentAuthUser(authUser)) return null;
+      if (!isDeviceAuthUser(authUser)) return null;
       this.authUserId = authUser?.id ?? "";
       return authUser;
     } catch (error) {
@@ -1250,29 +1316,16 @@ class SupabaseRealtimeService {
     }
   }
 
-  async sendLoginEmail(email, displayName) {
-    if (!this.client) return { ok: false, error: "Anmeldung ist nicht erreichbar." };
-    const { error } = await this.client.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: this.config.publicUrl || window.location.origin,
-        data: {
-          displayName: cleanDisplayName(displayName, "Nutzer")
-        }
-      }
+  async bootstrapAccount(label = defaultDeviceLabel(), platform = devicePlatform()) {
+    if (!this.client) return null;
+    const authUser = await this.ensureAuthenticated();
+    if (!authUser) return null;
+    const { data, error } = await this.client.rpc("bootstrap_account", {
+      device_label: label,
+      device_platform: platform
     });
-    return error ? { ok: false, error: error.message } : { ok: true };
-  }
-
-  async fetchProfile(userId) {
-    if (!this.client || !isUuid(userId)) return null;
-    const { data, error } = await this.client
-      .from(this.profileTable)
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
-    return error ? null : data;
+    if (error) throw error;
+    return data;
   }
 
   onAuthStateChange(listener) {
@@ -1358,28 +1411,22 @@ class SupabaseRealtimeService {
     if (!authUser?.id) return { ok: false, error: "Keine Nutzerkennung" };
     const displayName = cleanDisplayName(user.displayName, "Gast");
     const avatarUrl = typeof user.avatarUrl === "string" ? user.avatarUrl : "";
-    const signature = JSON.stringify([authUser.id, displayName, avatarUrl]);
+    const signature = JSON.stringify([user.userId, displayName, avatarUrl]);
     if (signature === this.profileSignature && Date.now() - this.profileSyncedAt < 60000) {
-      return { ok: true, userId: authUser.id, cached: true };
+      return { ok: true, userId: user.userId, cached: true };
     }
     if (signature === this.profileSyncSignature && this.profileSyncPromise) {
       return this.profileSyncPromise;
     }
-    const profileRow = {
-      id: authUser.id,
-      display_name: displayName,
-      avatar_url: avatarUrl,
-      updated_at: isoNow(),
-      last_seen_at: isoNow()
-    };
     const request = (async () => {
-      const { error } = await this.client
-        .from(this.profileTable)
-        .upsert(profileRow, { onConflict: "id" });
+      const { data, error } = await this.client.rpc("update_account_profile", {
+        display_name: displayName,
+        avatar_url: avatarUrl
+      });
       if (error) return { ok: false, error: error.message, rawError: error };
       this.profileSignature = signature;
       this.profileSyncedAt = Date.now();
-      return { ok: true, userId: authUser.id };
+      return { ok: true, userId: user.userId, account: data };
     })();
     this.profileSyncSignature = signature;
     this.profileSyncPromise = request;
@@ -1391,6 +1438,87 @@ class SupabaseRealtimeService {
         this.profileSyncSignature = "";
       }
     }
+  }
+
+  async touchDevice(label = null, platform = null) {
+    if (!this.client || !(await this.ensureAuthenticated())) return { ok: false, offline: true };
+    const { data, error } = await this.client.rpc("touch_current_device", {
+      device_label: label,
+      device_platform: platform
+    });
+    return error ? { ok: false, error: error.message } : (data ?? { ok: true });
+  }
+
+  async listDevices() {
+    if (!this.client || !await this.ensureAuthenticated()) return [];
+    const { data, error } = await this.client.rpc("list_account_devices");
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+  }
+
+  async renameDevice(deviceId, label) {
+    const { data, error } = await this.client.rpc("rename_account_device", {
+      target_device_id: deviceId,
+      device_label: label
+    });
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async removeDevice(deviceId) {
+    const { data, error } = await this.client.rpc("remove_account_device", {
+      target_device_id: deviceId
+    });
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async rotateRecoveryCode() {
+    const { data, error } = await this.client.rpc("rotate_recovery_code");
+    return error ? { ok: false, error: error.message } : { ok: true, ...data };
+  }
+
+  async recoverAccount(code, label = defaultDeviceLabel(), platform = devicePlatform()) {
+    const { data, error } = await this.client.rpc("recover_account", {
+      recovery_code: code,
+      device_label: label,
+      device_platform: platform
+    });
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async createDevicePairing() {
+    const { data, error } = await this.client.rpc("create_device_pairing");
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async requestDevicePairing(pairingId, token, label = defaultDeviceLabel(), platform = devicePlatform()) {
+    const { data, error } = await this.client.rpc("request_device_pairing", {
+      target_pairing_id: pairingId,
+      pairing_token: token,
+      device_label: label,
+      device_platform: platform
+    });
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async devicePairingStatus(pairingId) {
+    const { data, error } = await this.client.rpc("get_device_pairing_status", {
+      target_pairing_id: pairingId
+    });
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async approveDevicePairing(pairingId) {
+    const { data, error } = await this.client.rpc("approve_device_pairing", {
+      target_pairing_id: pairingId
+    });
+    return error ? { ok: false, error: error.message } : data;
+  }
+
+  async cancelDevicePairing(pairingId) {
+    const { data, error } = await this.client.rpc("cancel_device_pairing", {
+      target_pairing_id: pairingId
+    });
+    return error ? { ok: false, error: error.message } : data;
   }
 
   listRowFromList(listData) {
@@ -1732,6 +1860,7 @@ class SupabaseRealtimeService {
     const now = isoNow();
     const presencePayload = {
       userId: user.userId,
+      deviceId: this.authUserId || this.clientId,
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
       role: memberRole(listData, user.userId),
@@ -1742,18 +1871,27 @@ class SupabaseRealtimeService {
     let channel = this.presenceChannels.get(listData.id);
     if (!channel) {
       channel = this.client.channel(`mart-presence:${listData.id}`, {
-        config: { presence: { key: user.userId } }
+        config: { presence: { key: `${user.userId}:${this.authUserId || this.clientId}` } }
       });
       channel.on("presence", { event: "sync" }, () => {
         const state = channel.presenceState();
-        const members = Object.values(state).flat().map((entry) => ({
-          userId: entry.userId,
-          displayName: cleanDisplayName(entry.displayName, "Gast"),
-          avatarUrl: typeof entry.avatarUrl === "string" ? entry.avatarUrl : "",
-          role: normalizeRole(entry.role),
-          joinedAt: safeDate(entry.joinedAt),
-          lastSeenAt: safeDate(entry.lastSeenAt)
-        }));
+        const membersByUser = new Map();
+        Object.values(state).flat().forEach((entry) => {
+          if (!entry?.userId) return;
+          const member = {
+            userId: entry.userId,
+            displayName: cleanDisplayName(entry.displayName, "Gast"),
+            avatarUrl: typeof entry.avatarUrl === "string" ? entry.avatarUrl : "",
+            role: normalizeRole(entry.role),
+            joinedAt: safeDate(entry.joinedAt),
+            lastSeenAt: safeDate(entry.lastSeenAt)
+          };
+          const existing = membersByUser.get(member.userId);
+          if (!existing || newerDate(member.lastSeenAt, existing.lastSeenAt)) {
+            membersByUser.set(member.userId, member);
+          }
+        });
+        const members = Array.from(membersByUser.values());
         this.notify({
           type: "presence",
           sourceId: "supabase",
@@ -1937,12 +2075,15 @@ let authSubscription = null;
 let realtimeSubscription = null;
 let presenceTimer = 0;
 let refreshTimer = 0;
-let legacySnapshot = null;
+let deviceHeartbeatTimer = 0;
+let devicePairingPollTimer = 0;
+let accountSetupPromise = null;
+let currentAuthUser = null;
+let pendingDevicePairing = null;
+let accountSessionVersion = 0;
 let authState = {
   status: "loading",
-  email: "",
   displayName: "",
-  emailRequestedAt: 0,
   activatingUserId: "",
   accountReady: false
 };
@@ -1954,12 +2095,8 @@ const priceService = new MockPriceService();
 const elements = {
   body: document.body,
   authGate: document.querySelector("#authGate"),
-  authEmailForm: document.querySelector("#authEmailForm"),
-  authLinkPanel: document.querySelector("#authLinkPanel"),
-  authNameInput: document.querySelector("#authNameInput"),
-  authEmailInput: document.querySelector("#authEmailInput"),
-  authEmailTarget: document.querySelector("#authEmailTarget"),
-  authBackButton: document.querySelector("#authBackButton"),
+  authDeviceLoader: document.querySelector(".auth-device-loader"),
+  authRetryButton: document.querySelector("#authRetryButton"),
   authStatus: document.querySelector("#authStatus"),
   appShell: document.querySelector("#appShell"),
   tabs: document.querySelectorAll(".tab"),
@@ -2149,6 +2286,22 @@ function cleanDisplayName(value, fallback = "Ken") {
   return name || fallback;
 }
 
+function devicePlatform() {
+  const userAgent = navigator.userAgent || "";
+  if (/iPhone/i.test(userAgent)) return "iPhone";
+  if (/iPad/i.test(userAgent)) return "iPad";
+  if (/Android/i.test(userAgent)) return "Android";
+  if (/Macintosh/i.test(userAgent)) return "Mac";
+  if (/Windows/i.test(userAgent)) return "Windows";
+  return "Web-App";
+}
+
+function defaultDeviceLabel() {
+  const platform = devicePlatform();
+  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone === true;
+  return standalone ? `${platform} App` : platform;
+}
+
 function userInitials(user) {
   const name = cleanDisplayName(user?.displayName, "K");
   const words = name.split(/\s+/).filter(Boolean);
@@ -2159,9 +2312,13 @@ function userInitials(user) {
 function signedOutUser() {
   return {
     userId: "",
-    email: "",
+    authUserId: "",
+    username: "",
     displayName: "",
     avatarUrl: "",
+    deviceId: "",
+    deviceLabel: "",
+    recoveryReady: false,
     role: collaborationRoles.viewer,
     joinedAt: ""
   };
@@ -2171,27 +2328,31 @@ function accountStorageKey(baseKey, userId = currentUser.userId) {
   return userId ? `${baseKey}:${userId}` : "";
 }
 
-function isPermanentAuthUser(user) {
-  return Boolean(user?.id && user?.email && !user?.is_anonymous);
+function isDeviceAuthUser(user) {
+  return Boolean(user?.id && isUuid(user.id) && user.is_anonymous === true);
 }
 
 function isAuthenticatedAccount() {
-  return authState.accountReady && isUuid(currentUser.userId) && Boolean(currentUser.email);
+  return authState.accountReady && isUuid(currentUser.userId) && isUuid(currentUser.authUserId);
 }
 
-function accountUserFromAuth(authUser, profile = null) {
-  const cachedUser = load(accountStorageKey(storageKeys.currentUser, authUser.id), null);
-  const metadataName = authUser.user_metadata?.displayName ?? authUser.user_metadata?.display_name;
-  const emailName = typeof authUser.email === "string" ? authUser.email.split("@")[0] : "";
+function accountUserFromAuth(authUser, account) {
+  const accountId = account?.id ?? "";
+  const cachedUser = load(accountStorageKey(storageKeys.currentUser, accountId), null);
+  const username = typeof account?.username === "string" ? account.username : "user-UNKNOWN";
   return {
-    userId: authUser.id,
-    email: typeof authUser.email === "string" ? authUser.email : "",
-    displayName: cleanDisplayName(profile?.display_name ?? cachedUser?.displayName ?? metadataName, emailName || "Nutzer"),
-    avatarUrl: typeof profile?.avatar_url === "string"
-      ? profile.avatar_url
+    userId: accountId,
+    authUserId: authUser.id,
+    username,
+    displayName: cleanDisplayName(account?.displayName ?? cachedUser?.displayName, username),
+    avatarUrl: typeof account?.avatarUrl === "string"
+      ? account.avatarUrl
       : (typeof cachedUser?.avatarUrl === "string" ? cachedUser.avatarUrl : ""),
+    deviceId: typeof account?.deviceId === "string" ? account.deviceId : "",
+    deviceLabel: cleanText(account?.deviceLabel, defaultDeviceLabel(), 40),
+    recoveryReady: Boolean(account?.recoveryReady),
     role: collaborationRoles.owner,
-    joinedAt: safeDate(profile?.created_at ?? cachedUser?.joinedAt)
+    joinedAt: safeDate(account?.createdAt ?? cachedUser?.joinedAt)
   };
 }
 
@@ -2214,48 +2375,13 @@ function loadAccountActiveListId(userId, accountLists = lists) {
   return accountLists.some((listData) => listData.id === storedId) ? storedId : (accountLists[0]?.id ?? "");
 }
 
-function captureLegacySnapshot() {
-  const storedUser = load(storageKeys.currentUser, null);
-  const storedLists = load(storageKeys.lists, null);
-  const legacyItems = load(storageKeys.list, []);
-  const candidates = Array.isArray(storedLists)
-    ? storedLists
-    : (Array.isArray(legacyItems) && legacyItems.length
-      ? [{
-          id: "legacy:zettel:1",
-          title: "Dein Zettel",
-          ownerId: storedUser?.userId ?? "",
-          members: storedUser ? [storedUser] : [],
-          items: legacyItems
-        }]
-      : []);
-  return {
-    user: storedUser,
-    anonymousUserId: "",
-    lists: candidates.filter((listData) => listData && typeof listData === "object")
-  };
-}
-
-function clearLegacyListStorage() {
-  [
-    storageKeys.list,
-    storageKeys.lists,
-    storageKeys.activeList,
-    storageKeys.currentUser,
-    storageKeys.realtime,
-    storageKeys.presence,
-    storageKeys.outbox,
-    storageKeys.syncQueue
-  ].forEach((key) => localStorage.removeItem(key));
-}
-
 function authErrorMessage(error) {
   const message = typeof error === "string" ? error : (error?.message ?? "");
   const normalizedMessage = message.toLowerCase();
   if (normalizedMessage.includes("rate limit")) return "Zu viele Versuche. Bitte warte kurz und versuche es erneut.";
-  if (normalizedMessage.includes("expired") || normalizedMessage.includes("invalid")) return "Der Anmeldelink ist ungültig oder abgelaufen. Fordere eine neue E-Mail an.";
-  if (normalizedMessage.includes("email")) return "Die E-Mail-Adresse konnte nicht verwendet werden.";
-  return message || "Die Anmeldung ist gerade nicht erreichbar.";
+  if (normalizedMessage.includes("anonymous sign-ins are disabled")) return "Geräte-Accounts sind serverseitig noch nicht aktiviert.";
+  if (normalizedMessage.includes("network") || normalizedMessage.includes("fetch")) return "Keine Verbindung zum Account-Server.";
+  return message || "Der Geräte-Account ist gerade nicht erreichbar.";
 }
 
 function setAuthStatus(message = "", state = "") {
@@ -2266,63 +2392,38 @@ function setAuthStatus(message = "", state = "") {
 }
 
 function setAuthBusy(isBusy) {
-  elements.authEmailForm?.querySelectorAll("button, input").forEach((control) => {
-    control.disabled = isBusy;
-  });
-  elements.authLinkPanel?.querySelectorAll("button, input").forEach((control) => {
-    control.disabled = isBusy;
-  });
+  if (elements.authRetryButton) elements.authRetryButton.disabled = isBusy;
 }
 
-function showAuthEmailStep(message = "") {
-  authState.status = "signed-out";
+function showDeviceSetup(message = "Dein Geräte-Account wird vorbereitet.", canRetry = false) {
+  authState.status = canRetry ? "error" : "loading";
   authState.accountReady = false;
   elements.appShell?.classList.add("is-hidden");
   elements.authGate?.classList.remove("is-hidden");
-  elements.authEmailForm?.classList.remove("is-hidden");
-  elements.authLinkPanel?.classList.add("is-hidden");
-  if (elements.authNameInput && !elements.authNameInput.value) {
-    elements.authNameInput.value = cleanDisplayName(legacySnapshot?.user?.displayName, "");
-  }
+  elements.authDeviceLoader?.classList.toggle("is-hidden", canRetry);
+  elements.authRetryButton?.classList.toggle("is-hidden", !canRetry);
   setAuthBusy(false);
   setAuthStatus(message);
 }
 
-function showAuthLinkStep() {
-  authState.status = "link-sent";
-  elements.authEmailForm?.classList.add("is-hidden");
-  elements.authLinkPanel?.classList.remove("is-hidden");
-  if (elements.authEmailTarget) elements.authEmailTarget.textContent = authState.email;
-  setAuthBusy(false);
-  setAuthStatus("Anmeldelink wurde gesendet.", "success");
-}
-
-async function requestLoginEmail() {
-  const email = elements.authEmailInput?.value.trim().toLowerCase() ?? "";
-  const displayName = cleanDisplayName(elements.authNameInput?.value, "Nutzer");
-  if (!email || !elements.authEmailInput?.checkValidity()) {
-    setAuthStatus("Bitte gib eine gültige E-Mail-Adresse ein.", "error");
-    elements.authEmailInput?.focus();
-    return;
-  }
-  const requestedAt = Number(authState.emailRequestedAt || 0);
-  if (authState.email === email && Date.now() - requestedAt < 60000) {
-    authState = { ...authState, displayName };
-    showAuthLinkStep();
-    setAuthStatus("Die E-Mail wurde bereits gesendet. Nutze bitte die neueste Nachricht.", "success");
-    return;
-  }
-  authState = { ...authState, status: "sending-link", email, displayName };
+async function connectDeviceAccount() {
+  if (accountSetupPromise) return accountSetupPromise;
+  showDeviceSetup();
   setAuthBusy(true);
-  setAuthStatus("Anmeldung wird gesendet …");
-  const result = await collaborationService.sendLoginEmail?.(email, displayName);
-  if (!result?.ok) {
-    setAuthBusy(false);
-    setAuthStatus(authErrorMessage(result?.error), "error");
-    return;
-  }
-  authState.emailRequestedAt = Date.now();
-  showAuthLinkStep();
+  accountSetupPromise = (async () => {
+    try {
+      const authUser = await collaborationService.initializeUser?.();
+      if (!isDeviceAuthUser(authUser)) throw new Error("Keine Gerätekennung erhalten");
+      return await activateAccount(authUser, { force: true });
+    } catch (error) {
+      showDeviceSetup(authErrorMessage(error), true);
+      return false;
+    } finally {
+      setAuthBusy(false);
+      accountSetupPromise = null;
+    }
+  })();
+  return accountSetupPromise;
 }
 
 function handleRealtimeMessage(message) {
@@ -2359,8 +2460,10 @@ function stopAccountActivity() {
   realtimeSubscription = null;
   if (presenceTimer) window.clearInterval(presenceTimer);
   if (refreshTimer) window.clearInterval(refreshTimer);
+  if (deviceHeartbeatTimer) window.clearInterval(deviceHeartbeatTimer);
   presenceTimer = 0;
   refreshTimer = 0;
+  deviceHeartbeatTimer = 0;
   activeMembersByList = {};
 }
 
@@ -2369,26 +2472,46 @@ function startAccountActivity() {
   realtimeSubscription = collaborationService.subscribe(handleRealtimeMessage);
   presenceTimer = window.setInterval(updatePresence, 15000);
   refreshTimer = window.setInterval(() => refreshRealtimeNow("interval"), 12000);
+  collaborationService.touchDevice?.(null, devicePlatform());
+  deviceHeartbeatTimer = window.setInterval(() => {
+    collaborationService.touchDevice?.(null, devicePlatform());
+  }, 60000);
 }
 
-async function activateAccount(authUser) {
-  if (!isPermanentAuthUser(authUser)) {
-    showAuthEmailStep("Bitte melde dich mit deinem Account an.");
+async function activateAccount(authUser, options = {}) {
+  if (!isDeviceAuthUser(authUser)) {
+    showDeviceSetup("Der Geräte-Account konnte nicht verbunden werden.", true);
     return false;
   }
-  if (authState.accountReady && currentUser.userId === authUser.id) return true;
+  if (!options.force && authState.accountReady && currentUser.authUserId === authUser.id) return true;
   if (authState.status === "loading-account" && authState.activatingUserId === authUser.id) return false;
 
   authState = { ...authState, status: "loading-account", activatingUserId: authUser.id };
-  const profile = await collaborationService.fetchProfile?.(authUser.id);
-  currentUser = accountUserFromAuth(authUser, profile);
-  if (!profile?.display_name && authState.displayName) {
-    currentUser.displayName = cleanDisplayName(authState.displayName, currentUser.displayName);
+  let account;
+  try {
+    account = await collaborationService.bootstrapAccount?.(defaultDeviceLabel(), devicePlatform());
+  } catch (error) {
+    showDeviceSetup(authErrorMessage(error), true);
+    return false;
   }
+  if (!account?.id) {
+    showDeviceSetup("Der Account konnte nicht vorbereitet werden.", true);
+    return false;
+  }
+
+  if (currentUser.userId !== account.id) {
+    stopAccountActivity();
+    accountSessionVersion += 1;
+    remoteSyncPromise = null;
+    if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
+    syncFlushTimer = 0;
+  }
+
+  currentAuthUser = authUser;
+  currentUser = accountUserFromAuth(authUser, account);
   authState = {
     ...authState,
     status: "signed-in",
-    email: currentUser.email,
     displayName: currentUser.displayName,
     activatingUserId: "",
     accountReady: true
@@ -2398,7 +2521,6 @@ async function activateAccount(authUser) {
   localMutationVersion = 0;
   syncState.pendingWrites = syncQueueLength();
   saveCurrentUser();
-  await collaborationService.upsertProfile?.(currentUser);
 
   elements.authGate?.classList.add("is-hidden");
   elements.appShell?.classList.remove("is-hidden");
@@ -2412,13 +2534,16 @@ async function activateAccount(authUser) {
   scheduleSyncFlush(900);
   updatePresence();
   render();
-  maybeShowLegacyMigration();
+  if (pendingDevicePairing && options.handlePairing !== false) {
+    window.setTimeout(() => requestPendingDevicePairing(), 0);
+  }
   return true;
 }
 
 async function deactivateAccount(message = "") {
   stopAccountActivity();
-  authState = { status: "signed-out", email: "", displayName: "", emailRequestedAt: 0, activatingUserId: "", accountReady: false };
+  authState = { status: "signed-out", displayName: "", activatingUserId: "", accountReady: false };
+  currentAuthUser = null;
   currentUser = signedOutUser();
   lists = [];
   activeListId = "";
@@ -2432,15 +2557,8 @@ async function deactivateAccount(message = "") {
     realtimeStatus: "",
     pendingWrites: 0
   };
-  if (elements.authNameInput) elements.authNameInput.value = "";
-  if (elements.authEmailInput) elements.authEmailInput.value = "";
   closeModal();
-  showAuthEmailStep(message);
-}
-
-async function signOutAccount() {
-  const result = await collaborationService.signOut?.();
-  await deactivateAccount(result?.ok === false ? authErrorMessage(result.error) : "Du bist abgemeldet.");
+  showDeviceSetup(message || "Der Geräte-Account wird neu verbunden.", true);
 }
 
 function createMember(user = currentUser, role = collaborationRoles.editor, joinedAt = isoNow()) {
@@ -2612,142 +2730,6 @@ function createList(title = "Dein Zettel", items = [], id = null) {
     removedMembers: [],
     items: Array.isArray(items) ? items : []
   });
-}
-
-function legacyMigrationHandled() {
-  return Boolean(localStorage.getItem(storageKeys.legacyMigration));
-}
-
-function legacyListCandidates() {
-  if (!legacySnapshot || !Array.isArray(legacySnapshot.lists)) return [];
-  const byId = new Map();
-  legacySnapshot.lists.forEach((listData, index) => {
-    if (!listData || typeof listData !== "object") return;
-    const fallbackId = `legacy:${index + 1}`;
-    const id = typeof listData.id === "string" && listData.id
-      ? listData.id
-      : (typeof listData.listId === "string" && listData.listId ? listData.listId : fallbackId);
-    if (!byId.has(id)) byId.set(id, { ...listData, id, listId: id });
-  });
-  return Array.from(byId.values());
-}
-
-function legacyOwnerIds() {
-  return new Set([
-    legacySnapshot?.user?.userId,
-    legacySnapshot?.anonymousUserId
-  ].filter(Boolean));
-}
-
-function legacyListWasOwned(listData, ownerIds) {
-  const ownerId = typeof listData?.ownerId === "string" ? listData.ownerId : "";
-  return !ownerId || ownerIds.has(ownerId);
-}
-
-function cloneLegacyOwnedList(listData, index) {
-  const now = isoNow();
-  const title = cleanText(listData?.title ?? listData?.listName, index === 0 ? "Dein Zettel" : `Zettel ${index + 1}`, 24);
-  const sourceItems = Array.isArray(listData?.items) ? listData.items : [];
-  const clonedItems = sourceItems.map((item, itemIndex) => normalizeShoppingItem({
-    ...item,
-    id: typeof item?.id === "string" && item.id ? item.id : `legacy-item:${Date.now()}:${itemIndex}`,
-    addedByUserId: currentUser.userId,
-    addedByDisplayName: currentUser.displayName,
-    addedByAvatarUrl: currentUser.avatarUrl,
-    checkedByUserId: item?.done ? currentUser.userId : "",
-    updatedByUserId: currentUser.userId,
-    updatedAt: now,
-    revision: Math.max(1, Number(item?.revision || 0))
-  }, itemIndex)).filter(Boolean);
-  return createList(title, clonedItems);
-}
-
-function finishLegacyMigration() {
-  localStorage.setItem(storageKeys.legacyMigration, currentUser.userId);
-  clearLegacyListStorage();
-  legacySnapshot = null;
-}
-
-function maybeShowLegacyMigration() {
-  if (!isAuthenticatedAccount() || legacyMigrationHandled()) return;
-  const candidates = legacyListCandidates();
-  if (!candidates.length) {
-    finishLegacyMigration();
-    return;
-  }
-  openModal(`
-    <h2 id="modalTitle">Vorhandene Zettel</h2>
-    <div class="migration-panel">
-      <p>Auf diesem Gerät wurden ${candidates.length} frühere${candidates.length === 1 ? "r" : ""} Zettel gefunden.</p>
-      <p>Du kannst sie einmalig in diesen Account übernehmen oder mit einem leeren Account beginnen.</p>
-      <div class="modal-actions modal-actions-stack">
-        <button type="button" data-import-legacy-lists>Vorhandene Zettel übernehmen</button>
-        <button type="button" class="is-danger" data-skip-legacy-lists>Mit leerem Account starten</button>
-      </div>
-      <p class="migration-status" data-migration-status role="status"></p>
-    </div>
-  `);
-}
-
-async function importLegacyListsIntoAccount() {
-  if (!isAuthenticatedAccount()) return;
-  const candidates = legacyListCandidates();
-  const ownerIds = legacyOwnerIds();
-  const ownedLists = [];
-  const joinedLists = [];
-  let failedJoins = 0;
-  const status = elements.modalContent.querySelector("[data-migration-status]");
-  elements.modalContent.querySelectorAll("button").forEach((button) => {
-    button.disabled = true;
-  });
-  if (status) status.textContent = "Zettel werden übernommen …";
-
-  for (let index = 0; index < candidates.length; index += 1) {
-    const candidate = candidates[index];
-    if (legacyListWasOwned(candidate, ownerIds)) {
-      ownedLists.push(cloneLegacyOwnedList(candidate, ownedLists.length));
-      continue;
-    }
-    if (!candidate.inviteCode) {
-      failedJoins += 1;
-      continue;
-    }
-    const joined = await collaborationService.joinSharedList?.({
-      id: candidate.id ?? candidate.listId,
-      listId: candidate.id ?? candidate.listId,
-      inviteCode: candidate.inviteCode
-    }, currentUser);
-    const normalizedJoined = joined ? importedListFromValue(joined) : null;
-    if (!normalizedJoined) {
-      failedJoins += 1;
-      continue;
-    }
-    if (!joinedLists.some((listData) => listData.id === normalizedJoined.id)) joinedLists.push(normalizedJoined);
-  }
-
-  const existingIds = new Set(lists.map((listData) => listData.id));
-  [...ownedLists, ...joinedLists].forEach((listData) => {
-    if (existingIds.has(listData.id)) return;
-    lists.push(listData);
-    existingIds.add(listData.id);
-  });
-  activeListId = lists[0]?.id ?? "";
-  save({ broadcast: false });
-  if (ownedLists.length) await publishListSnapshot(ownedLists, "legacy-import");
-  finishLegacyMigration();
-  await pullRemoteLists("legacy-import");
-  closeModal();
-  render();
-  if (failedJoins) {
-    window.alert(`${failedJoins} alter geteilte${failedJoins === 1 ? "r" : ""} Zettel konnte nicht erneut verbunden werden.`);
-  }
-}
-
-function skipLegacyLists() {
-  if (!window.confirm("Alte Zettel auf diesem Gerät nicht übernehmen? Sie werden aus dem lokalen App-Speicher entfernt und nicht in diesen Account übernommen.")) return;
-  finishLegacyMigration();
-  closeModal();
-  render();
 }
 
 function activeList() {
@@ -3649,11 +3631,17 @@ function mergeRemoteLists(remoteLists, options = {}) {
 async function pullRemoteLists(reason = "auto") {
   if (!collaborationService.fetchSharedLists) return false;
   if (remoteSyncPromise) return remoteSyncPromise;
+  const accountIdAtStart = currentUser.userId;
+  const accountSessionAtStart = accountSessionVersion;
+  const userAtStart = { ...currentUser };
   const mutationVersionAtStart = localMutationVersion;
   markSyncAttempt();
-  remoteSyncPromise = (async () => {
+  const request = (async () => {
     try {
-      const remoteLists = await collaborationService.fetchSharedLists(currentUser);
+      const remoteLists = await collaborationService.fetchSharedLists(userAtStart);
+      if (accountSessionAtStart !== accountSessionVersion || accountIdAtStart !== currentUser.userId) {
+        return false;
+      }
       if (!remoteLists) {
         markSyncError("Serverstand konnte nicht geladen werden");
         return false;
@@ -3668,10 +3656,11 @@ async function pullRemoteLists(reason = "auto") {
       markSyncError(error);
       return false;
     }
-  })().finally(() => {
-    remoteSyncPromise = null;
+  })();
+  remoteSyncPromise = request;
+  return remoteSyncPromise.finally(() => {
+    if (remoteSyncPromise === request) remoteSyncPromise = null;
   });
-  return remoteSyncPromise;
 }
 
 function pullRemoteListsSoon(reason = "auto", delay = 450) {
@@ -3964,6 +3953,10 @@ function closeModal() {
   if (modalSearchRenderTimer) {
     window.clearTimeout(modalSearchRenderTimer);
     modalSearchRenderTimer = 0;
+  }
+  if (devicePairingPollTimer) {
+    window.clearTimeout(devicePairingPollTimer);
+    devicePairingPollTimer = 0;
   }
   elements.modalLayer.classList.add("is-hidden");
   elements.modalLayer.setAttribute("aria-hidden", "true");
@@ -4299,27 +4292,42 @@ function showMore() {
 function showProfile() {
   openModal(`
     <h2 id="modalTitle">Account</h2>
-    <div class="profile-form">
-      <div class="profile-preview">
+    <div class="profile-form account-panel">
+      <div class="profile-preview account-identity">
         ${memberAvatarMarkup(currentUser, "is-current")}
-        <span>${escapeText(currentUser.email)}</span>
+        <span>
+          <strong>${escapeText(currentUser.displayName)}</strong>
+          <small>${escapeText(currentUser.username)}</small>
+        </span>
       </div>
-      <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
-      <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Avatar-Link">
+      <label class="account-field" for="profileNameInput">
+        <span>Anzeigename</span>
+        <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
+      </label>
+      <label class="account-field" for="profileAvatarInput">
+        <span>Avatar-Link</span>
+        <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Optional">
+      </label>
       <div class="modal-actions">
         <button type="button" data-save-profile>Speichern</button>
-        <button type="button" class="is-danger" data-sign-out>Abmelden</button>
+        <button type="button" data-open-devices>Geräte</button>
+      </div>
+      <div class="account-security-row ${currentUser.recoveryReady ? "is-secured" : ""}">
+        <span>${currentUser.recoveryReady ? icon("check") : icon("warning")}</span>
+        <div>
+          <strong>${currentUser.recoveryReady ? "Account gesichert" : "Noch nicht gesichert"}</strong>
+          <small>${currentUser.recoveryReady ? "Ein Wiederherstellungscode ist aktiv." : "Ohne Code ist der Account nach einer Neuinstallation nicht wiederherstellbar."}</small>
+        </div>
+      </div>
+      <div class="modal-actions modal-actions-stack account-secondary-actions">
+        <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
+        <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
       </div>
     </div>
   `);
-  window.setTimeout(() => {
-    const input = elements.modalContent.querySelector("#profileNameInput");
-    input?.focus();
-    input?.select();
-  }, 0);
 }
 
-function saveProfile() {
+async function saveProfile() {
   const nameInput = elements.modalContent.querySelector("#profileNameInput");
   const avatarInput = elements.modalContent.querySelector("#profileAvatarInput");
   if (!nameInput) return;
@@ -4342,10 +4350,370 @@ function saveProfile() {
       }
     });
   });
+  const profileResult = await collaborationService.upsertProfile?.(currentUser);
+  if (profileResult?.ok === false) {
+    window.alert("Der Name konnte gerade nicht mit dem Account synchronisiert werden.");
+  }
   save();
   updatePresence();
   closeModal();
   render();
+}
+
+function accountFlowError(error) {
+  const value = typeof error === "string" ? error : (error?.error ?? error?.message ?? "");
+  const messages = {
+    invalid_code: "Der Wiederherstellungscode ist ungültig.",
+    rate_limited: "Zu viele Versuche. Bitte warte eine Stunde.",
+    current_account_not_empty: "Auf diesem Gerät wurden bereits Zettel erstellt. Die Wiederherstellung ist nur in einem leeren, neuen Account möglich.",
+    invalid_pairing: "Dieser QR-Code ist ungültig oder abgelaufen.",
+    pairing_in_use: "Dieser QR-Code wird bereits von einem anderen Gerät verwendet.",
+    already_connected: "Dieses Gerät gehört bereits zum Account.",
+    pairing_not_ready: "Das neue Gerät wartet noch nicht auf Freigabe.",
+    pending_account_not_empty: "Das neue Gerät enthält bereits eigene Zettel.",
+    pairing_not_found: "Die Geräteverbindung wurde nicht gefunden.",
+    device_required: "Der Geräte-Account ist nicht verbunden."
+  };
+  return messages[value] ?? authErrorMessage(value);
+}
+
+function clearLocalAccountCache(accountId) {
+  if (!accountId) return;
+  [storageKeys.currentUser, storageKeys.lists, storageKeys.activeList, storageKeys.outbox, storageKeys.syncQueue]
+    .forEach((key) => localStorage.removeItem(accountStorageKey(key, accountId)));
+}
+
+async function showDevices() {
+  openModal(`
+    <h2 id="modalTitle">Geräte</h2>
+    <div class="account-devices-panel" data-account-devices>
+      <p class="account-loading">Geräte werden geladen …</p>
+    </div>
+  `);
+  try {
+    const devices = await collaborationService.listDevices?.();
+    const panel = elements.modalContent.querySelector("[data-account-devices]");
+    if (!panel) return;
+    panel.innerHTML = `
+      <div class="account-device-list">
+        ${devices.map((device) => `
+          <div class="account-device-row ${device.is_current ? "is-current" : ""}">
+            <span class="account-device-icon">${icon("phone")}</span>
+            <span class="account-device-copy">
+              <strong>${escapeText(device.label || "Gerät")}${device.is_current ? " · dieses Gerät" : ""}</strong>
+              <small>${escapeText(device.platform || "Web-App")} · zuletzt ${escapeText(formatDateTime(device.last_seen_at))}</small>
+            </span>
+            <button type="button" title="Gerät benennen" aria-label="Gerät benennen" data-rename-account-device="${escapeText(device.device_id)}" data-device-label="${escapeText(device.label || "Gerät")}">${icon("pencil")}</button>
+            ${device.is_current ? "" : `<button class="is-danger" type="button" title="Gerät entfernen" aria-label="Gerät entfernen" data-remove-account-device="${escapeText(device.device_id)}">${icon("trash")}</button>`}
+          </div>
+        `).join("") || '<p class="empty-state">Keine Geräte gefunden.</p>'}
+      </div>
+      <div class="modal-actions">
+        <button type="button" data-add-account-device>${icon("plus")} Gerät hinzufügen</button>
+        <button type="button" class="is-muted" data-open-profile>Zurück zum Account</button>
+      </div>
+    `;
+  } catch (error) {
+    const panel = elements.modalContent.querySelector("[data-account-devices]");
+    if (panel) panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(error))}</p>`;
+  }
+}
+
+function showRenameDevice(deviceId, label) {
+  openModal(`
+    <h2 id="modalTitle">Gerät benennen</h2>
+    <div class="rename-form" data-device-id="${escapeText(deviceId)}">
+      <input id="deviceNameInput" type="text" maxlength="40" value="${escapeText(label)}" placeholder="Gerätename">
+      <div class="modal-actions">
+        <button type="button" data-save-device-name>Speichern</button>
+        <button type="button" class="is-muted" data-open-devices>Abbrechen</button>
+      </div>
+    </div>
+  `);
+  window.setTimeout(() => elements.modalContent.querySelector("#deviceNameInput")?.select(), 0);
+}
+
+async function saveDeviceName() {
+  const form = elements.modalContent.querySelector("[data-device-id]");
+  const input = elements.modalContent.querySelector("#deviceNameInput");
+  if (!form || !input) return;
+  const label = cleanText(input.value, "Gerät", 40);
+  const result = await collaborationService.renameDevice?.(form.dataset.deviceId, label);
+  if (result?.ok === false) {
+    window.alert(accountFlowError(result));
+    return;
+  }
+  if (form.dataset.deviceId === currentUser.deviceId) {
+    currentUser.deviceLabel = label;
+    saveCurrentUser();
+  }
+  showDevices();
+}
+
+async function removeAccountDevice(deviceId) {
+  if (!window.confirm("Dieses Gerät wirklich vom Account entfernen?")) return;
+  const result = await collaborationService.removeDevice?.(deviceId);
+  if (result?.ok === false) {
+    window.alert(accountFlowError(result));
+    return;
+  }
+  showDevices();
+}
+
+function showRecoveryCodeResult(code, title = "Account gesichert") {
+  openModal(`
+    <h2 id="modalTitle">${escapeText(title)}</h2>
+    <div class="recovery-code-panel" data-recovery-code="${escapeText(code)}">
+      <p>Bewahre diesen Code sicher auf. Er wird nur jetzt vollständig angezeigt.</p>
+      <code>${escapeText(code)}</code>
+      <div class="modal-actions">
+        <button type="button" data-copy-recovery-code>${icon("copy")} Code kopieren</button>
+        <button type="button" class="is-muted" data-open-profile>Fertig</button>
+      </div>
+    </div>
+  `);
+}
+
+async function createRecoveryCode() {
+  const result = await collaborationService.rotateRecoveryCode?.();
+  if (!result?.ok || !result.recoveryCode) {
+    window.alert(accountFlowError(result));
+    return;
+  }
+  currentUser.recoveryReady = true;
+  saveCurrentUser();
+  showRecoveryCodeResult(result.recoveryCode);
+}
+
+async function copyRecoveryCode() {
+  const panel = elements.modalContent.querySelector("[data-recovery-code]");
+  const code = panel?.dataset.recoveryCode;
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+    window.alert("Wiederherstellungscode kopiert.");
+  } catch {
+    window.prompt("Wiederherstellungscode kopieren:", code);
+  }
+}
+
+function showAccountRecovery() {
+  openModal(`
+    <h2 id="modalTitle">Account wiederherstellen</h2>
+    <div class="recovery-form">
+      <p>Der aktuelle Geräte-Account muss noch leer sein. Der verwendete Code wird anschließend automatisch ersetzt.</p>
+      <input id="recoveryCodeInput" type="text" maxlength="48" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ZTL-XXXX-XXXX-…">
+      <p class="form-status" id="recoveryStatus" role="status"></p>
+      <div class="modal-actions">
+        <button type="button" data-submit-account-recovery>Wiederherstellen</button>
+        <button type="button" class="is-muted" data-open-profile>Abbrechen</button>
+      </div>
+    </div>
+  `);
+  window.setTimeout(() => elements.modalContent.querySelector("#recoveryCodeInput")?.focus(), 0);
+}
+
+async function restoreAccountFromCode() {
+  const input = elements.modalContent.querySelector("#recoveryCodeInput");
+  const status = elements.modalContent.querySelector("#recoveryStatus");
+  const code = input?.value.trim() ?? "";
+  if (!code) return;
+  if (status) status.textContent = "Account wird verbunden …";
+  const previousAccountId = currentUser.userId;
+  const result = await collaborationService.recoverAccount?.(code, defaultDeviceLabel(), devicePlatform());
+  if (!result?.ok) {
+    if (status) status.textContent = accountFlowError(result);
+    return;
+  }
+  clearLocalAccountCache(previousAccountId);
+  await activateAccount(currentAuthUser, { force: true, handlePairing: false });
+  showRecoveryCodeResult(result.recoveryCode, "Account wiederhergestellt");
+}
+
+function pairingPayloadFromUrl() {
+  const url = new URL(window.location.href);
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const pairingId = hashParams.get("pair") ?? url.searchParams.get("pair") ?? "";
+  const pairingToken = hashParams.get("pairToken") ?? url.searchParams.get("pairToken") ?? "";
+  if (!pairingId && !pairingToken) return null;
+  hashParams.delete("pair");
+  hashParams.delete("pairToken");
+  url.searchParams.delete("pair");
+  url.searchParams.delete("pairToken");
+  url.hash = hashParams.toString();
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  if (!isUuid(pairingId) || !/^[a-f0-9]{48}$/i.test(pairingToken)) return { invalid: true };
+  return { pairingId, pairingToken };
+}
+
+function devicePairingUrl(pairing) {
+  const url = shareBaseUrl();
+  url.hash = new URLSearchParams({
+    pair: pairing.pairingId,
+    pairToken: pairing.pairingToken
+  }).toString();
+  return url.href;
+}
+
+function qrSvgMarkup(value) {
+  try {
+    if (typeof window.qrcode !== "function") return "";
+    const qr = window.qrcode(0, "M");
+    qr.addData(value);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 5, margin: 0, scalable: true });
+  } catch {
+    return "";
+  }
+}
+
+async function startDevicePairing() {
+  const result = await collaborationService.createDevicePairing?.();
+  if (!result?.ok) {
+    window.alert(accountFlowError(result));
+    return;
+  }
+  const pairingUrl = devicePairingUrl(result);
+  const qrMarkup = qrSvgMarkup(pairingUrl);
+  openModal(`
+    <h2 id="modalTitle">Gerät hinzufügen</h2>
+    <div class="device-pairing-panel" data-device-pairing="${escapeText(result.pairingId)}" data-pairing-url="${escapeText(pairingUrl)}">
+      <p>Scanne den QR-Code mit dem neuen Gerät. Er ist fünf Minuten gültig.</p>
+      <div class="device-qr">${qrMarkup || icon("link")}</div>
+      <div class="pairing-compare-code">
+        <span>Vergleichscode</span>
+        <strong>${escapeText(result.confirmationCode)}</strong>
+      </div>
+      <div class="pairing-status" data-pairing-status>Warte auf das neue Gerät …</div>
+      <div class="modal-actions">
+        <button type="button" data-copy-pairing-link>${icon("copy")} Link kopieren</button>
+        <button type="button" class="is-muted" data-cancel-device-pairing="${escapeText(result.pairingId)}">Abbrechen</button>
+      </div>
+    </div>
+  `);
+  pollOwnerPairing(result.pairingId);
+}
+
+async function copyPairingLink() {
+  const panel = elements.modalContent.querySelector("[data-pairing-url]");
+  const url = panel?.dataset.pairingUrl;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    window.alert("Gerätelink kopiert.");
+  } catch {
+    window.prompt("Gerätelink kopieren:", url);
+  }
+}
+
+function schedulePairingPoll(callback) {
+  if (devicePairingPollTimer) window.clearTimeout(devicePairingPollTimer);
+  devicePairingPollTimer = window.setTimeout(callback, 1600);
+}
+
+async function pollOwnerPairing(pairingId) {
+  const panel = elements.modalContent.querySelector(`[data-device-pairing="${pairingId}"]`);
+  if (!panel) return;
+  const statusElement = panel.querySelector("[data-pairing-status]");
+  const result = await collaborationService.devicePairingStatus?.(pairingId);
+  if (!result?.ok) {
+    if (statusElement) statusElement.textContent = accountFlowError(result);
+    return;
+  }
+  if (result.status === "pending") {
+    if (statusElement) {
+      statusElement.innerHTML = `
+        <strong>${escapeText(result.pendingDeviceLabel || "Neues Gerät")}</strong>
+        <span>möchte verbunden werden.</span>
+        <button type="button" data-approve-device-pairing="${escapeText(pairingId)}">Gerät bestätigen</button>
+      `;
+    }
+    schedulePairingPoll(() => pollOwnerPairing(pairingId));
+    return;
+  }
+  if (result.status === "approved") {
+    if (statusElement) statusElement.innerHTML = `<strong>Gerät verbunden.</strong><button type="button" data-open-devices>Geräte anzeigen</button>`;
+    return;
+  }
+  if (result.status === "expired" || result.status === "cancelled") {
+    if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Verbindung abgebrochen.";
+    return;
+  }
+  schedulePairingPoll(() => pollOwnerPairing(pairingId));
+}
+
+async function approveDevicePairing(pairingId) {
+  const result = await collaborationService.approveDevicePairing?.(pairingId);
+  if (!result?.ok) {
+    window.alert(accountFlowError(result));
+    return;
+  }
+  pollOwnerPairing(pairingId);
+}
+
+async function cancelDevicePairing(pairingId) {
+  await collaborationService.cancelDevicePairing?.(pairingId);
+  showDevices();
+}
+
+async function requestPendingDevicePairing() {
+  const pairing = pendingDevicePairing;
+  if (!pairing) return;
+  if (pairing.invalid) {
+    pendingDevicePairing = null;
+    window.alert("Der QR-Code ist ungültig.");
+    return;
+  }
+  const result = await collaborationService.requestDevicePairing?.(
+    pairing.pairingId,
+    pairing.pairingToken,
+    defaultDeviceLabel(),
+    devicePlatform()
+  );
+  if (!result?.ok) {
+    pendingDevicePairing = null;
+    window.alert(accountFlowError(result));
+    return;
+  }
+  pendingDevicePairing = { ...pairing, requested: true };
+  openModal(`
+    <h2 id="modalTitle">Gerät verbinden</h2>
+    <div class="device-pairing-wait" data-pending-device-pairing="${escapeText(pairing.pairingId)}">
+      <p>Bestätige auf dem bereits verbundenen Gerät denselben Vergleichscode:</p>
+      <strong>${escapeText(result.confirmationCode)}</strong>
+      <span data-pending-pairing-status>Warte auf Bestätigung …</span>
+    </div>
+  `);
+  pollPendingPairing(pairing.pairingId);
+}
+
+async function pollPendingPairing(pairingId) {
+  const panel = elements.modalContent.querySelector(`[data-pending-device-pairing="${pairingId}"]`);
+  if (!panel) return;
+  const statusElement = panel.querySelector("[data-pending-pairing-status]");
+  const result = await collaborationService.devicePairingStatus?.(pairingId);
+  if (!result?.ok) {
+    if (statusElement) statusElement.textContent = accountFlowError(result);
+    return;
+  }
+  if (result.status === "approved") {
+    const previousAccountId = currentUser.userId;
+    pendingDevicePairing = null;
+    clearLocalAccountCache(previousAccountId);
+    await activateAccount(currentAuthUser, { force: true, handlePairing: false });
+    openModal(`
+      <h2 id="modalTitle">Gerät verbunden</h2>
+      <div class="modal-copy"><p>Dieser Account ist jetzt auch auf diesem Gerät verfügbar.</p></div>
+      <div class="modal-actions"><button type="button" data-open-devices>Geräte anzeigen</button></div>
+    `);
+    return;
+  }
+  if (result.status === "expired" || result.status === "cancelled") {
+    pendingDevicePairing = null;
+    if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Die Verbindung wurde abgebrochen.";
+    return;
+  }
+  schedulePairingPoll(() => pollPendingPairing(pairingId));
 }
 
 async function copyBugReport() {
@@ -5289,16 +5657,7 @@ function schedulePriceSearchRender(query) {
   }, 140);
 }
 
-elements.authEmailForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  requestLoginEmail();
-});
-elements.authBackButton?.addEventListener("click", () => {
-  elements.authEmailForm?.classList.remove("is-hidden");
-  elements.authLinkPanel?.classList.add("is-hidden");
-  setAuthStatus("");
-  window.setTimeout(() => elements.authEmailInput?.focus(), 0);
-});
+elements.authRetryButton?.addEventListener("click", connectDeviceAccount);
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 elements.searchInput.addEventListener("input", scheduleMainSearchRender);
 elements.backButton.addEventListener("click", backToShelves);
@@ -5381,16 +5740,56 @@ elements.modalContent.addEventListener("click", (event) => {
     showProfile();
     return;
   }
-  if (event.target.closest("[data-sign-out]")) {
-    signOutAccount();
+  if (event.target.closest("[data-open-devices]")) {
+    showDevices();
     return;
   }
-  if (event.target.closest("[data-import-legacy-lists]")) {
-    importLegacyListsIntoAccount();
+  if (event.target.closest("[data-create-recovery-code]")) {
+    createRecoveryCode();
     return;
   }
-  if (event.target.closest("[data-skip-legacy-lists]")) {
-    skipLegacyLists();
+  if (event.target.closest("[data-copy-recovery-code]")) {
+    copyRecoveryCode();
+    return;
+  }
+  if (event.target.closest("[data-open-account-recovery]")) {
+    showAccountRecovery();
+    return;
+  }
+  if (event.target.closest("[data-submit-account-recovery]")) {
+    restoreAccountFromCode();
+    return;
+  }
+  const renameDeviceButton = event.target.closest("[data-rename-account-device]");
+  if (renameDeviceButton) {
+    showRenameDevice(renameDeviceButton.dataset.renameAccountDevice, renameDeviceButton.dataset.deviceLabel);
+    return;
+  }
+  if (event.target.closest("[data-save-device-name]")) {
+    saveDeviceName();
+    return;
+  }
+  const removeDeviceButton = event.target.closest("[data-remove-account-device]");
+  if (removeDeviceButton) {
+    removeAccountDevice(removeDeviceButton.dataset.removeAccountDevice);
+    return;
+  }
+  if (event.target.closest("[data-add-account-device]")) {
+    startDevicePairing();
+    return;
+  }
+  if (event.target.closest("[data-copy-pairing-link]")) {
+    copyPairingLink();
+    return;
+  }
+  const cancelPairingButton = event.target.closest("[data-cancel-device-pairing]");
+  if (cancelPairingButton) {
+    cancelDevicePairing(cancelPairingButton.dataset.cancelDevicePairing);
+    return;
+  }
+  const approvePairingButton = event.target.closest("[data-approve-device-pairing]");
+  if (approvePairingButton) {
+    approveDevicePairing(approvePairingButton.dataset.approveDevicePairing);
     return;
   }
   if (event.target.closest("[data-copy-bug]")) {
@@ -5465,6 +5864,12 @@ elements.modalContent.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.id === "profileNameInput") {
     saveProfile();
   }
+  if (event.key === "Enter" && event.target.id === "deviceNameInput") {
+    saveDeviceName();
+  }
+  if (event.key === "Enter" && event.target.id === "recoveryCodeInput") {
+    restoreAccountFromCode();
+  }
 });
 
 function updatePresence() {
@@ -5481,25 +5886,18 @@ async function refreshRealtimeNow(reason) {
 }
 
 async function bootApp() {
+  pendingDevicePairing = pairingPayloadFromUrl();
   applyBackgroundTheme();
-  legacySnapshot = captureLegacySnapshot();
-  const authUser = await collaborationService.initializeUser?.();
-  if (authUser?.is_anonymous) {
-    legacySnapshot.anonymousUserId = authUser.id;
-    await collaborationService.signOut?.();
-    showAuthEmailStep("Erstelle oder öffne deinen Account.");
-  } else if (isPermanentAuthUser(authUser)) {
-    await activateAccount(authUser);
-  } else {
-    showAuthEmailStep("Erstelle oder öffne deinen Account.");
-  }
+  await connectDeviceAccount();
 
   authSubscription = collaborationService.onAuthStateChange?.((event, nextUser) => {
+    if (accountSetupPromise) return;
     if (event === "SIGNED_OUT" || !nextUser) {
-      if (authState.accountReady) deactivateAccount("Du bist abgemeldet.");
+      if (authState.accountReady) deactivateAccount("Der Geräte-Account wird neu verbunden.");
+      window.setTimeout(() => connectDeviceAccount(), 0);
       return;
     }
-    if (isPermanentAuthUser(nextUser)) activateAccount(nextUser);
+    if (isDeviceAuthUser(nextUser)) activateAccount(nextUser);
   }) ?? null;
 
   window.addEventListener("online", () => {

@@ -6,7 +6,7 @@ window.MART_SUPABASE_CONFIG = {
   listsTable: "shopping_lists",
   membersTable: "list_members",
   itemsTable: "list_items",
-  profilesTable: "profiles",
-  useAnonymousAuth: false,
-  authMode: "emailLink"
+  useAnonymousAuth: true,
+  authMode: "deviceAccount",
+  dataEpoch: "device-accounts-v2"
 };

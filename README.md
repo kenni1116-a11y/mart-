@@ -10,8 +10,8 @@ Danach kann die App auf dem iPhone in Safari geöffnet und über Teilen -> Zum H
 
 ## Accounts und Supabase
 
-Die App verwendet dauerhafte Supabase-E-Mail-Accounts. Einkaufszettel werden unter der Supabase-Nutzer-ID gespeichert und lokal ebenfalls pro Account getrennt.
+Die App erstellt beim ersten Start automatisch einen anonym authentifizierten Geräte-Account mit einem Namen wie `user-A4F82C1`. Einkaufszettel gehören zu einer dauerhaften Account-ID und werden lokal ebenfalls pro Account getrennt gespeichert. Eine E-Mail-Adresse ist nicht erforderlich.
 
-Für ein neues Supabase-Projekt enthält `supabase/relational_collaboration_schema.sql` das vollständige relationale Listen-Schema. Bei einem bestehenden Projekt dokumentieren `supabase/account_scoped_auth.sql` und `supabase/harden_account_helpers.sql` die nachträgliche Kontoabsicherung.
+Unter `Mehr` -> `Account` kann der Anzeigename geändert und ein einmal sichtbarer Wiederherstellungscode erzeugt werden. Unter `Account` -> `Geräte` lassen sich weitere Geräte per fünf Minuten gültigem QR-Code, Vergleichscode und Bestätigung durch ein bereits verbundenes Gerät hinzufügen.
 
-In Supabase Auth muss `https://kenni1116-a11y.github.io/mart-/` als Site URL und erlaubte Redirect URL eingetragen sein. Anonymous Sign-Ins sollten deaktiviert werden. Mit dem Supabase-Standardversand erfolgt die Anmeldung über den Link in der neuesten E-Mail.
+Das aktuelle Schema liegt in `supabase/device_accounts_v2.sql`. Es trennt Supabase-Auth-Geräte von dauerhaften Accounts und enthält RLS-Regeln, Recovery, Geräte-Pairing sowie die relationalen gemeinsamen Zettel. In Supabase Auth muss `Allow anonymous sign-ins` aktiviert sein.
