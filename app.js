@@ -1738,10 +1738,13 @@ class SupabaseRealtimeService {
     });
     const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
 
-    for (const row of ownedListRows) {
-      const listResult = await this.persistOwnedListRow(row);
-      if (!listResult.ok) return listResult;
-    }
+    const listResults = await MartLogic.mapWithConcurrency(
+      ownedListRows,
+      3,
+      (row) => this.persistOwnedListRow(row)
+    );
+    const failedListResult = listResults.find((result) => !result.ok);
+    if (failedListResult) return failedListResult;
     for (const row of joinedListRows) {
       const { error } = await this.client
         .from(this.listTable)
@@ -2400,7 +2403,7 @@ function loadAccountLists(userId) {
 
 function loadAccountActiveListId(userId, accountLists = lists) {
   const storedId = localStorage.getItem(accountStorageKey(storageKeys.activeList, userId)) || "";
-  return accountLists.some((listData) => listData.id === storedId) ? storedId : (accountLists[0]?.id ?? "");
+  return MartLogic.chooseActiveListId(storedId, accountLists.map((listData) => listData.id));
 }
 
 function authErrorMessage(error) {
@@ -3748,11 +3751,14 @@ async function importSharedListFromUrl() {
     const existingIndex = lists.findIndex((listData) => listData.id === importedList.id);
     if (existingIndex === -1) {
       lists.push(importedList);
-      activeListId = importedList.id;
     } else {
       lists[existingIndex] = mergeList(lists[existingIndex], importedList);
-      activeListId = lists[existingIndex].id;
     }
+    activeListId = MartLogic.chooseActiveListId(
+      activeListId,
+      lists.map((listData) => listData.id),
+      importedList.id
+    );
     save({ broadcast: false });
   } catch {
     window.alert("Der geteilte Zettel konnte nicht verbunden werden. Bitte lass dir eine neue Einladung senden.");
@@ -3799,18 +3805,7 @@ function shareBaseUrl() {
   }
 }
 
-async function shareList(listId = activeListId) {
-  const listData = lists.find((item) => item.id === listId) ?? activeList();
-  if (!listData || !canPerform(listData, "invite")) return;
-  listData.inviteCode = listData.inviteCode || generateInviteCode();
-  touchList(listData);
-  save({ broadcast: false });
-  const published = await publishListSnapshot([listData], "share");
-  if (!published) {
-    window.alert("Der Zettel konnte noch nicht online gespeichert werden. Es wurde kein Einladungslink erstellt. Bitte prüfe die Verbindung und versuche es erneut.");
-    return;
-  }
-
+function openShareListModal(listData) {
   const url = shareBaseUrl();
   url.searchParams.set("invite", encodeShareValue({
     listId: listData.id,
@@ -3819,9 +3814,17 @@ async function shareList(listId = activeListId) {
     inviteCode: listData.inviteCode
   }));
   const inviteCode = listData.inviteCode.slice(0, 8).toUpperCase();
+  const qrMarkup = qrSvgMarkup(url.href);
   openModal(`
     <h2 id="modalTitle">Zettel teilen</h2>
     <div class="share-panel" data-invite-url="${escapeText(url.href)}" data-invite-title="${escapeText(listData.title)}">
+      <div class="share-qr">
+        <strong>Scannen und direkt beitreten</strong>
+        <div class="share-qr-code" role="img" aria-label="QR-Code zum Beitritt in ${escapeText(listData.title)}">
+          ${qrMarkup || icon("link")}
+        </div>
+        <small>Mit der Kamera des zweiten Geräts scannen. Der Zettel wird nach dem Öffnen sofort verbunden.</small>
+      </div>
       <div class="invite-card">
         <span>Einladungscode</span>
         <strong>${escapeText(inviteCode)}</strong>
@@ -3839,6 +3842,20 @@ async function shareList(listId = activeListId) {
       ${shareMemberRowsMarkup(listData)}
     </div>
   `);
+}
+
+async function shareList(listId = activeListId) {
+  const listData = lists.find((item) => item.id === listId) ?? activeList();
+  if (!listData || !canPerform(listData, "invite")) return;
+  listData.inviteCode = listData.inviteCode || generateInviteCode();
+  touchList(listData);
+  save({ broadcast: false });
+  const published = await publishListSnapshot([listData], "share", { queueOnFail: false });
+  if (!published) {
+    window.alert("Der Zettel konnte noch nicht online gespeichert werden. Es wurde kein Einladungslink erstellt. Bitte prüfe die Verbindung und versuche es erneut.");
+    return;
+  }
+  openShareListModal(listData);
 }
 
 async function nativeShareInvite() {
@@ -3910,14 +3927,26 @@ function transferOwnership(listId, userId) {
   showMembers(listId);
 }
 
-function regenerateInvite(listId) {
+async function regenerateInvite(listId) {
   const listData = listById(listId);
   if (!listData) return;
   if (!canPerform(listData, "invite")) return;
-  listData.inviteCode = generateInviteCode();
-  touchList(listData);
-  save({ broadcast: false });
-  shareList(listId);
+  const published = await MartLogic.rotateInviteWithRollback({
+    target: listData,
+    nextCode: generateInviteCode(),
+    mutate(target, nextCode) {
+      target.inviteCode = nextCode;
+      touchList(target);
+      save({ broadcast: false });
+    },
+    persist: () => publishListSnapshot([listData], "share", { queueOnFail: false }),
+    rollback: () => save({ broadcast: false })
+  });
+  if (!published) {
+    window.alert("Der Einladungslink konnte nicht erneuert werden. Der bisherige Link bleibt gültig. Bitte prüfe die Verbindung und versuche es erneut.");
+    return;
+  }
+  openShareListModal(listData);
 }
 
 function markMemberRemoved(listData, userId, removedByUserId = currentUser.userId) {
@@ -4802,8 +4831,8 @@ function showAddFeedback(button) {
   }, 720);
 }
 
-function addToList(product) {
-  const currentList = activeList();
+function addToList(product, listId = activeListId) {
+  const currentList = lists.find((listData) => listData.id === listId) ?? activeList();
   if (!currentList) return false;
   if (!canPerform(currentList, "add")) return false;
   triggerHapticFeedback();
@@ -4835,16 +4864,103 @@ function addManualItem(listId, input) {
   if (!input) return false;
   const name = (input.value || manualDrafts[listId] || "").trim();
   if (!name) return false;
-  activeListId = listId;
+  manualDrafts[listId] = "";
+  input.value = "";
   const added = addToList({
     id: `manual:${Date.now()}`,
     name,
     shelfId: "manual",
     shelfTitle: "Eigener Artikel"
+  }, listId);
+  if (!added) {
+    manualDrafts[listId] = name;
+    input.value = name;
+    return false;
+  }
+  return true;
+}
+
+function manualSuggestionsFor(query) {
+  return MartLogic.buildManualSuggestions(
+    query,
+    allProducts(),
+    lists.flatMap((listData) => listData.items),
+    5
+  );
+}
+
+function manualSuggestionContainer(input) {
+  return input?.closest(".manual-add-wrap")?.querySelector("[data-manual-suggestions]") ?? null;
+}
+
+function hideManualSuggestions(input) {
+  const container = manualSuggestionContainer(input);
+  if (container) {
+    container.hidden = true;
+    container.innerHTML = "";
+  }
+  input?.setAttribute("aria-expanded", "false");
+  input?.removeAttribute("aria-activedescendant");
+  if (input?.dataset) input.dataset.activeSuggestion = "-1";
+}
+
+function renderManualSuggestions(input) {
+  const container = manualSuggestionContainer(input);
+  if (!container) return;
+  const suggestions = manualSuggestionsFor(input.value);
+  input.dataset.activeSuggestion = "-1";
+  input.removeAttribute("aria-activedescendant");
+  input.setAttribute("aria-expanded", String(Boolean(suggestions.length)));
+  container.hidden = !suggestions.length;
+  container.innerHTML = suggestions.map((suggestion, index) => `
+    <button id="manual-suggestion-${escapeText(input.dataset.manualInput)}-${index}" type="button" role="option" aria-selected="false" data-manual-suggestion="${index}">
+      <span>${escapeText(suggestion.name)}</span>
+      <small>${escapeText(suggestion.source === "catalog" ? (suggestion.shelfTitle || "Sortiment") : "Bereits verwendet")}</small>
+    </button>
+  `).join("");
+
+  container.querySelectorAll("[data-manual-suggestion]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
+    button.addEventListener("click", () => {
+      selectManualSuggestion(input, Number(button.dataset.manualSuggestion));
+    });
   });
-  if (!added) return false;
+}
+
+function selectManualSuggestion(input, index) {
+  const suggestion = manualSuggestionsFor(input?.value)[index];
+  const listId = input?.dataset.manualInput;
+  if (!suggestion || !listId) return false;
+  const product = suggestion.source === "catalog"
+    ? allProducts().find((entry) => entry.id === suggestion.id)
+    : {
+        id: `manual:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+        name: suggestion.name,
+        shelfId: suggestion.shelfId || "manual",
+        shelfTitle: suggestion.shelfTitle || "Eigener Artikel",
+        shelfIcon: suggestion.shelfIcon || ""
+      };
+  if (!product) return false;
   manualDrafts[listId] = "";
   input.value = "";
+  hideManualSuggestions(input);
+  return addToList(product, listId);
+}
+
+function moveManualSuggestionSelection(input, delta) {
+  const container = manualSuggestionContainer(input);
+  const buttons = Array.from(container?.querySelectorAll("[data-manual-suggestion]") ?? []);
+  if (!buttons.length) return false;
+  const current = Number(input.dataset.activeSuggestion ?? -1);
+  const next = (current + delta + buttons.length) % buttons.length;
+  input.dataset.activeSuggestion = String(next);
+  buttons.forEach((button, index) => {
+    const selected = index === next;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  input.setAttribute("aria-activedescendant", buttons[next].id);
+  buttons[next].scrollIntoView({ block: "nearest" });
   return true;
 }
 
@@ -5133,25 +5249,32 @@ function addList() {
   if (!isAuthenticatedAccount()) return;
   const newList = createList(nextListTitle());
   lists.push(newList);
-  activeListId = newList.id;
+  activeListId = MartLogic.chooseActiveListId(
+    activeListId,
+    lists.map((listData) => listData.id),
+    newList.id
+  );
   save();
   renderNotes();
 }
 
-function selectList(id) {
+function activateList(id) {
   if (!lists.some((listData) => listData.id === id)) return;
   if (activeListId === id) return;
   activeListId = id;
-  save();
+  save({ broadcast: false });
   renderNotes();
 }
 
 function removeLocalList(id, index = lists.findIndex((listData) => listData.id === id)) {
   if (index === -1) return;
   lists = lists.filter((listData) => listData.id !== id);
-  if (activeListId === id) {
-    activeListId = lists[Math.max(0, index - 1)]?.id ?? lists[0]?.id ?? "";
-  }
+  const preferredId = lists[Math.max(0, index - 1)]?.id ?? lists[0]?.id ?? "";
+  activeListId = MartLogic.chooseActiveListId(
+    activeListId,
+    lists.map((listData) => listData.id),
+    preferredId
+  );
 }
 
 async function deleteList(id) {
@@ -5208,7 +5331,6 @@ function saveRenamedList() {
   listData.title = cleanTitle;
   listData.listName = cleanTitle;
   touchList(listData);
-  activeListId = listData.id;
   pendingRenameListId = null;
   save();
   closeModal();
@@ -5256,7 +5378,6 @@ function saveItemNote() {
     delete item.note;
   }
   touchItem(item, listData);
-  activeListId = pendingItemNoteEdit.listId;
   pendingItemNoteEdit = null;
   save();
   closeModal();
@@ -5272,7 +5393,6 @@ function clearItemNote() {
   if (!item) return;
   delete item.note;
   touchItem(item, listData);
-  activeListId = pendingItemNoteEdit.listId;
   pendingItemNoteEdit = null;
   save();
   closeModal();
@@ -5330,7 +5450,6 @@ function attachNoteLongPress(element, listId) {
       }, 0);
       return;
     }
-    selectList(listId);
   });
 }
 
@@ -5504,6 +5623,22 @@ function noteItemsMarkup(listData) {
   }).join("");
 }
 
+function listValueMarkup(listData) {
+  const estimate = MartLogic.estimateListValue(listData.items, productPrices);
+  const valueText = estimate.pricedItemCount
+    ? `Geschätzter Warenwert: ${formatPrice(estimate.total, estimate.currency)}`
+    : "Noch kein Warenwert verfügbar";
+  const missingText = estimate.missingItemCount
+    ? `${estimate.missingItemCount} Artikel ohne Preis`
+    : "";
+  return `
+    <div class="list-value-summary" aria-label="${escapeText([valueText, missingText].filter(Boolean).join(", "))}">
+      <strong>${escapeText(valueText)}</strong>
+      ${missingText ? `<small>${escapeText(missingText)}</small>` : ""}
+    </div>
+  `;
+}
+
 function noteMarkup(listData) {
   const member = memberFor(listData, currentUser.userId)
     ?? (listData.ownerId === currentUser.userId ? createMember(currentUser, collaborationRoles.owner, listData.createdAt) : null);
@@ -5511,8 +5646,13 @@ function noteMarkup(listData) {
   const canAdd = Boolean(member) && canPerform(listData, "add");
   const sharedClass = isSharedList(listData) ? "is-shared" : "";
   const manualDraft = manualDrafts[listData.id] ?? "";
+  const isActive = listData.id === activeListId;
+  const suggestionListId = `manual-suggestions-${listData.id}`;
   return `
-    <article class="list-panel note-card ${sharedClass} ${listData.id === activeListId ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
+    <article class="list-panel note-card ${sharedClass} ${isActive ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
+      <button class="list-activation-button ${isActive ? "is-active" : ""}" type="button" aria-pressed="${isActive}" data-activate-list="${escapeText(listData.id)}">
+        ${isActive ? "Aktiv" : "Für Einkäufe aktivieren"}
+      </button>
       <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
         <h2 class="list-title">
           <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
@@ -5535,15 +5675,19 @@ function noteMarkup(listData) {
             : `<span class="sync-chip">${escapeText(roleLabels[memberRole(listData)] ?? "Viewer")}</span>`}
         </div>
       </div>
-      <form class="manual-add" data-manual-form="${escapeText(listData.id)}">
-        <input type="text" placeholder="Eigener Artikel" autocomplete="off" enterkeyhint="done" value="${escapeText(manualDraft)}" ${canAdd ? "" : "disabled"} data-manual-input="${escapeText(listData.id)}">
-        <button type="submit" ${canAdd ? "" : "disabled"} title="Hinzufügen" aria-label="Hinzufügen">
-          ${icon("plus")}
-        </button>
-      </form>
       <ul class="shopping-list">
         ${noteItemsMarkup(listData)}
       </ul>
+      ${listValueMarkup(listData)}
+      <div class="manual-add-wrap">
+        <form class="manual-add" data-manual-form="${escapeText(listData.id)}">
+          <input type="text" placeholder="Eigener Artikel" autocomplete="off" enterkeyhint="done" value="${escapeText(manualDraft)}" ${canAdd ? "" : "disabled"} role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${escapeText(suggestionListId)}" data-manual-input="${escapeText(listData.id)}">
+          <button type="submit" ${canAdd ? "" : "disabled"} title="Hinzufügen" aria-label="Hinzufügen">
+            ${icon("plus")}
+          </button>
+        </form>
+        <div class="manual-suggestions" id="${escapeText(suggestionListId)}" role="listbox" data-manual-suggestions hidden></div>
+      </div>
       <footer class="note-footer">
         <button class="note-delete-button" type="button" data-delete-list="${escapeText(listData.id)}">
           ${icon(listData.ownerId === currentUser.userId ? "trash" : "logout")}
@@ -5583,11 +5727,8 @@ function renderNotes(options = {}) {
     button.addEventListener("click", addList);
   });
 
-  elements.notesStack.querySelectorAll("[data-note]").forEach((note) => {
-    note.addEventListener("click", (event) => {
-      if (event.target.closest("button, input")) return;
-      selectList(note.dataset.note);
-    });
+  elements.notesStack.querySelectorAll("[data-activate-list]").forEach((button) => {
+    button.addEventListener("click", () => activateList(button.dataset.activateList));
   });
   elements.notesStack.querySelectorAll("[data-note-grip]").forEach((grip) => {
     attachNoteLongPress(grip, grip.dataset.noteGrip);
@@ -5623,9 +5764,30 @@ function renderNotes(options = {}) {
   elements.notesStack.querySelectorAll("[data-manual-input]").forEach((input) => {
     input.addEventListener("input", () => {
       manualDrafts[input.dataset.manualInput] = input.value;
+      renderManualSuggestions(input);
+    });
+    input.addEventListener("focus", () => {
+      renderManualSuggestions(input);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (manualSuggestionContainer(input)?.hidden) renderManualSuggestions(input);
+        if (moveManualSuggestionSelection(input, event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+        return;
+      }
+      if (event.key === "Enter" && Number(input.dataset.activeSuggestion ?? -1) >= 0) {
+        event.preventDefault();
+        selectManualSuggestion(input, Number(input.dataset.activeSuggestion));
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        hideManualSuggestions(input);
+      }
     });
     input.addEventListener("blur", () => {
       manualDrafts[input.dataset.manualInput] = input.value;
+      window.setTimeout(() => hideManualSuggestions(input), 80);
       flushPendingNotesRender();
     });
   });
