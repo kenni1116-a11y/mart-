@@ -45,6 +45,11 @@ begin
   if current_account_id is not null
     and (
       private.account_has_data(current_account_id)
+      or exists (
+        select 1
+        from public.account_recovery_credentials recovery
+        where recovery.account_id = current_account_id
+      )
       or (select count(*) from public.account_devices where account_id = current_account_id) <> 1
     ) then
     return jsonb_build_object('ok', false, 'error', 'account_in_use');
@@ -61,7 +66,12 @@ begin
         from public.account_devices devices
         where devices.account_id = accounts.id
       )
-      and not private.account_has_data(accounts.id);
+      and not private.account_has_data(accounts.id)
+      and not exists (
+        select 1
+        from public.account_recovery_credentials recovery
+        where recovery.account_id = accounts.id
+      );
   end if;
 
   update public.device_pairings
@@ -113,8 +123,10 @@ begin
     return jsonb_build_object('ok', false, 'error', 'pairing_not_ready');
   end if;
 
-  select devices.account_id
-  into pending_account_id
+  perform pg_advisory_xact_lock(hashtextextended(pairing_row.pending_auth_user_id::text, 0));
+
+  select devices.account_id, devices.id
+  into pending_account_id, paired_device_id
   from public.account_devices devices
   where devices.auth_user_id = pairing_row.pending_auth_user_id
   for update;
@@ -124,19 +136,43 @@ begin
     return jsonb_build_object('ok', false, 'error', 'account_in_use');
   end if;
 
-  insert into public.account_devices (account_id, auth_user_id, label, platform)
-  values (
-    pairing_row.account_id,
-    pairing_row.pending_auth_user_id,
-    private.clean_device_label(pairing_row.pending_device_label),
-    private.clean_platform(pairing_row.pending_device_platform)
-  )
-  on conflict (auth_user_id) do update
-  set account_id = excluded.account_id,
-      label = excluded.label,
-      platform = excluded.platform,
+  if paired_device_id is null then
+    insert into public.account_devices (account_id, auth_user_id, label, platform)
+    values (
+      pairing_row.account_id,
+      pairing_row.pending_auth_user_id,
+      private.clean_device_label(pairing_row.pending_device_label),
+      private.clean_platform(pairing_row.pending_device_platform)
+    )
+    on conflict (auth_user_id) do nothing
+    returning id into paired_device_id;
+
+    if paired_device_id is not null then
+      pending_account_id := pairing_row.account_id;
+    else
+      select devices.account_id, devices.id
+      into pending_account_id, paired_device_id
+      from public.account_devices devices
+      where devices.auth_user_id = pairing_row.pending_auth_user_id
+      for update;
+    end if;
+  end if;
+
+  if pending_account_id is distinct from pairing_row.account_id then
+    return jsonb_build_object('ok', false, 'error', 'account_in_use');
+  end if;
+
+  update public.account_devices devices
+  set label = private.clean_device_label(pairing_row.pending_device_label),
+      platform = private.clean_platform(pairing_row.pending_device_platform),
       last_seen_at = now()
-  returning id into paired_device_id;
+  where devices.id = paired_device_id
+    and devices.account_id = pairing_row.account_id
+  returning devices.id into paired_device_id;
+
+  if paired_device_id is null then
+    return jsonb_build_object('ok', false, 'error', 'account_in_use');
+  end if;
 
   update public.device_pairings
   set approved_at = now()
