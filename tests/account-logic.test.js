@@ -103,6 +103,46 @@ test("paired activation requests approval before bootstrap, pull, and writes wit
   assert.equal(calls.includes("publish"), false);
 });
 
+test("ordinary activation bootstraps and pulls before enabling writes", async () => {
+  const calls = [];
+  const result = await AccountLogic.runActivationSequence({
+    authenticate: async () => {
+      calls.push("authenticate");
+      return { id: "123e4567-e89b-12d3-a456-426614174001" };
+    },
+    bootstrap: async () => {
+      calls.push("bootstrap");
+      return { id: "123e4567-e89b-12d3-a456-426614174002" };
+    },
+    pull: async () => {
+      calls.push("pull");
+      return true;
+    },
+    enableWrites: async () => calls.push("enableWrites")
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ["authenticate", "bootstrap", "pull", "enableWrites"]);
+});
+
+test("a failed initial pull never enables writes and returns the authenticated user", async () => {
+  const authUser = { id: "123e4567-e89b-12d3-a456-426614174001" };
+  const calls = [];
+  const result = await AccountLogic.runActivationSequence({
+    authenticate: async () => authUser,
+    bootstrap: async () => ({ id: "123e4567-e89b-12d3-a456-426614174002" }),
+    pull: async () => {
+      calls.push("pull");
+      return false;
+    },
+    enableWrites: async () => calls.push("enableWrites")
+  });
+
+  assert.equal(result.status, "initial_load_failed");
+  assert.equal(result.authUser, authUser);
+  assert.deepEqual(calls, ["pull"]);
+});
+
 test("account_in_use stops paired activation without bootstrap or cache cleanup", async () => {
   const calls = [];
   const result = await AccountLogic.runActivationSequence({
@@ -122,7 +162,134 @@ test("account_in_use stops paired activation without bootstrap or cache cleanup"
   });
 
   assert.equal(result.status, "account_in_use");
+  assert.equal(result.authUser.id, "123e4567-e89b-12d3-a456-426614174001");
   assert.deepEqual(calls, ["authenticate", "requestPairing"]);
+});
+
+test("every post-auth activation failure returns the authenticated user", async () => {
+  const authUser = { id: "123e4567-e89b-12d3-a456-426614174001" };
+  const pairing = { pairingId: "123e4567-e89b-12d3-a456-426614174000", pairingToken: "a".repeat(48) };
+  const cases = [
+    {
+      name: "request",
+      options: {
+        pairing,
+        requestPairing: async () => ({ ok: false, error: "request_failed" }),
+        waitForApproval: async () => ({ ok: true, status: "approved" }),
+        bootstrap: async () => ({ id: "account" }),
+        pull: async () => true
+      }
+    },
+    {
+      name: "status",
+      options: {
+        pairing,
+        requestPairing: async () => ({ ok: true }),
+        waitForApproval: async () => ({ ok: false, error: "status_failed" }),
+        bootstrap: async () => ({ id: "account" }),
+        pull: async () => true
+      }
+    },
+    {
+      name: "bootstrap",
+      options: {
+        bootstrap: async () => null,
+        pull: async () => true
+      }
+    },
+    {
+      name: "pull",
+      options: {
+        bootstrap: async () => ({ id: "account" }),
+        pull: async () => false
+      }
+    }
+  ];
+
+  for (const failureCase of cases) {
+    const result = await AccountLogic.runActivationSequence({
+      authenticate: async () => authUser,
+      enableWrites: async () => assert.fail(`${failureCase.name} failure enabled writes`),
+      ...failureCase.options
+    });
+    assert.equal(result.ok, false, failureCase.name);
+    assert.equal(result.authUser, authUser, failureCase.name);
+  }
+});
+
+test("auth events route pending pairing and signed-out state through connection", () => {
+  assert.equal(AccountLogic.routeAuthEvent({
+    event: "SIGNED_IN",
+    hasAuthUser: true,
+    isDeviceUser: true,
+    hasPendingPairing: true,
+    accountReady: true
+  }), "connect");
+  assert.equal(AccountLogic.routeAuthEvent({
+    event: "SIGNED_OUT",
+    hasAuthUser: false,
+    isDeviceUser: false,
+    hasPendingPairing: false,
+    accountReady: true
+  }), "reconnect");
+  assert.equal(AccountLogic.routeAuthEvent({
+    event: "TOKEN_REFRESHED",
+    hasAuthUser: true,
+    isDeviceUser: true,
+    hasPendingPairing: false,
+    accountReady: true
+  }), "activate");
+});
+
+test("pairing and data-epoch activation discard target and unscoped snapshot queues", () => {
+  const storage = createStorage({
+    "shopping-list-app.sync-write-queue": "unscoped queue",
+    "shopping-list-app.sync-outbox": "unscoped outbox",
+    "shopping-list-app.sync-write-queue:target-account": "target queue",
+    "shopping-list-app.sync-outbox:target-account": "target outbox",
+    "shopping-list-app.sync-write-queue:old-account": "old queue",
+    "shopping-list-app.lists:target-account": "target lists"
+  });
+
+  AccountLogic.prepareAccountActivationStorage(storage, {
+    accountId: "target-account",
+    prefixes: ["shopping-list-app.lists", "shopping-list-app.sync-write-queue", "shopping-list-app.sync-outbox"],
+    queueKeys: ["shopping-list-app.sync-write-queue", "shopping-list-app.sync-outbox"],
+    discardStaleQueues: true
+  });
+
+  assert.equal(storage.getItem("shopping-list-app.sync-write-queue"), null);
+  assert.equal(storage.getItem("shopping-list-app.sync-outbox"), null);
+  assert.equal(storage.getItem("shopping-list-app.sync-write-queue:target-account"), null);
+  assert.equal(storage.getItem("shopping-list-app.sync-outbox:target-account"), null);
+  assert.equal(storage.getItem("shopping-list-app.sync-write-queue:old-account"), null);
+  assert.equal(storage.getItem("shopping-list-app.lists:target-account"), "target lists");
+});
+
+test("ordinary activation preserves the current account snapshot queue", () => {
+  const storage = createStorage({
+    "shopping-list-app.sync-write-queue:target-account": "target queue",
+    "shopping-list-app.sync-outbox:target-account": "target outbox"
+  });
+
+  AccountLogic.prepareAccountActivationStorage(storage, {
+    accountId: "target-account",
+    prefixes: ["shopping-list-app.sync-write-queue", "shopping-list-app.sync-outbox"],
+    queueKeys: ["shopping-list-app.sync-write-queue", "shopping-list-app.sync-outbox"],
+    discardStaleQueues: false
+  });
+
+  assert.equal(storage.getItem("shopping-list-app.sync-write-queue:target-account"), "target queue");
+  assert.equal(storage.getItem("shopping-list-app.sync-outbox:target-account"), "target outbox");
+});
+
+test("pairing retention distinguishes terminal, account, and transient results", () => {
+  for (const terminal of ["invalid_pairing", "expired", "cancelled", "pairing_cancelled"]) {
+    assert.equal(AccountLogic.pairingRetentionAction({ error: terminal }), "clear", terminal);
+  }
+  assert.equal(AccountLogic.pairingRetentionAction({ error: "account_in_use" }), "open-account");
+  assert.equal(AccountLogic.pairingRetentionAction({ error: "Failed to fetch" }), "retain");
+  assert.equal(AccountLogic.pairingRetentionAction({ error: "pairing_not_found" }), "retain");
 });
 
 test("an invalid refresh token keeps foreign caches until verification, then clears them before anonymous sign-in", async () => {

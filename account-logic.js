@@ -54,6 +54,37 @@
     return removed;
   }
 
+  function prepareAccountActivationStorage(storage, options) {
+    if (!options?.discardStaleQueues) return [];
+    const removed = new Set(removeForeignAccountCaches(
+      storage,
+      options.prefixes ?? [],
+      options.accountId ?? ""
+    ));
+    (options.queueKeys ?? []).forEach((baseKey) => {
+      [baseKey, accountStorageKey(baseKey, options.accountId)].forEach((key) => {
+        if (!key || storage.getItem(key) === null) return;
+        storage.removeItem(key);
+        removed.add(key);
+      });
+    });
+    return [...removed];
+  }
+
+  function routeAuthEvent({ event, hasAuthUser, isDeviceUser, hasPendingPairing, accountReady }) {
+    if (hasPendingPairing) return "connect";
+    if (event === "SIGNED_OUT" || !hasAuthUser) return "reconnect";
+    if (!isDeviceUser) return "ignore";
+    return accountReady ? "activate" : "connect";
+  }
+
+  function pairingRetentionAction(value) {
+    const status = typeof value === "string" ? value : (value?.error ?? value?.status ?? "");
+    if (status === "account_in_use") return "open-account";
+    if (["invalid_pairing", "expired", "cancelled", "pairing_cancelled"].includes(status)) return "clear";
+    return "retain";
+  }
+
   function pairingFromValue(value) {
     if (!value || typeof value !== "object") return null;
     const pairingId = typeof value.pairingId === "string" ? value.pairingId : "";
@@ -145,21 +176,57 @@
   }) {
     const authUser = await authenticate();
     if (pairing) {
-      const pairingResult = await requestPairing(pairing, authUser);
-      if (!pairingResult?.ok) {
-        return { ok: false, status: pairingResult?.error || pairingResult?.status || "pairing_failed", pairingResult };
+      let pairingResult;
+      try {
+        pairingResult = await requestPairing(pairing, authUser);
+      } catch (error) {
+        return { ok: false, status: error?.message || "pairing_failed", authUser, error };
       }
-      const approvalResult = await waitForApproval(pairing, authUser);
+      if (!pairingResult?.ok) {
+        return {
+          ok: false,
+          status: pairingResult?.error || pairingResult?.status || "pairing_failed",
+          pairingResult,
+          authUser
+        };
+      }
+      let approvalResult;
+      try {
+        approvalResult = await waitForApproval(pairing, authUser);
+      } catch (error) {
+        return { ok: false, status: error?.message || "pairing_failed", authUser, error };
+      }
       if (!approvalResult?.ok || approvalResult.status !== "approved") {
-        return { ok: false, status: approvalResult?.error || approvalResult?.status || "pairing_failed", pairingResult: approvalResult };
+        return {
+          ok: false,
+          status: approvalResult?.error || approvalResult?.status || "pairing_failed",
+          pairingResult: approvalResult,
+          authUser
+        };
       }
     }
 
-    const account = await bootstrap(authUser);
-    if (!account?.id) return { ok: false, status: "account_unavailable" };
-    const pullResult = await pull(account, authUser);
-    if (pullResult === false) return { ok: false, status: "initial_load_failed" };
-    await enableWrites(account, authUser);
+    let account;
+    try {
+      account = await bootstrap(authUser);
+    } catch (error) {
+      return { ok: false, status: error?.message || "account_unavailable", authUser, error };
+    }
+    if (!account?.id) return { ok: false, status: "account_unavailable", authUser };
+
+    let pullResult;
+    try {
+      pullResult = await pull(account, authUser);
+    } catch (error) {
+      return { ok: false, status: error?.message || "initial_load_failed", account, authUser, error };
+    }
+    if (pullResult === false) return { ok: false, status: "initial_load_failed", account, authUser };
+
+    try {
+      await enableWrites(account, authUser);
+    } catch (error) {
+      return { ok: false, status: error?.message || "enable_writes_failed", account, authUser, error };
+    }
     return { ok: true, status: "ready", account, authUser };
   }
 
@@ -168,6 +235,9 @@
     nextActivationState,
     accountStorageKey,
     removeForeignAccountCaches,
+    prepareAccountActivationStorage,
+    routeAuthEvent,
+    pairingRetentionAction,
     pendingDevicePairingStorageKey,
     restorePendingDevicePairing,
     capturePendingDevicePairing,

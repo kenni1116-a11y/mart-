@@ -859,9 +859,8 @@ function clearInvalidSessionAccountCaches() {
   MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, "");
 }
 
-function completeDataEpochReset(accountId) {
+function completeDataEpochReset() {
   if (!pendingDataEpochReset) return false;
-  MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, accountId);
   localStorage.setItem(storageKeys.dataEpoch, targetDataEpoch);
   pendingDataEpochReset = false;
   return true;
@@ -1494,7 +1493,7 @@ class SupabaseRealtimeService {
   }
 
   async devicePairingStatus(pairingId) {
-    const { data, error } = await this.client.rpc("get_device_pairing_status", {
+    const { data, error } = await this.client.rpc("get_device_pairing_status_v3", {
       target_pairing_id: pairingId
     });
     return error ? { ok: false, error: error.message } : data;
@@ -1762,8 +1761,6 @@ class SupabaseRealtimeService {
   }
 
   async fetchRelationalLists(user) {
-    const profileResult = await this.upsertProfile(user);
-    if (profileResult.ok === false) return profileResult;
     const { data: listRows, error: listError } = await this.client
       .from(this.listTable)
       .select("*")
@@ -2437,6 +2434,35 @@ function showDeviceSetup(message = "Dein Geräte-Account wird vorbereitet.", can
   setAuthStatus(message);
 }
 
+async function openExistingAccountForPairing(authUser) {
+  if (!isDeviceAuthUser(authUser)) return false;
+  try {
+    if (!(await activateAccount(authUser, { force: true, handlePairing: false }))) return false;
+    window.alert("Dieses Gerät hat bereits einen eigenen Account. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.");
+    showMore();
+    showProfile();
+    const reachedAccount = elements.modalContent.querySelector("#modalTitle")?.textContent?.trim() === "Account";
+    if (!reachedAccount) return false;
+    clearPendingDevicePairing();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showRetainedPairingError(message) {
+  openModal(`
+    <h2 id="modalTitle">Gerät verbinden</h2>
+    <div class="device-pairing-wait">
+      <p class="form-status" role="status">${escapeText(message)}</p>
+      <div class="modal-actions">
+        <button type="button" data-retry-pending-device-pairing>Erneut versuchen</button>
+        <button type="button" class="is-muted" data-cancel-pending-device-pairing>Abbrechen</button>
+      </div>
+    </div>
+  `);
+}
+
 async function connectDeviceAccount() {
   if (accountSetupPromise) return accountSetupPromise;
   showDeviceSetup();
@@ -2444,6 +2470,7 @@ async function connectDeviceAccount() {
   accountSetupPromise = (async () => {
     try {
       if (pendingDevicePairing?.invalid) {
+        clearPendingDevicePairing();
         showDeviceSetup("Der QR-Code ist ungültig. Öffne einen neuen Gerätelink.", true);
         return false;
       }
@@ -2458,21 +2485,29 @@ async function connectDeviceAccount() {
         enableWrites: enableAccountWrites
       });
       if (!result.ok) {
-        if (result.status === "account_in_use" && await activateAccount(result.authUser, { force: true })) {
-          window.alert("Dieses Gerät hat bereits einen eigenen Account. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.");
-          showMore();
+        const retentionAction = pairing
+          ? MartAccountLogic.pairingRetentionAction(result)
+          : "retain";
+        if (retentionAction === "clear") clearPendingDevicePairing();
+        if (retentionAction === "open-account"
+          && await openExistingAccountForPairing(result.authUser)) {
           return true;
         }
         const message = result.status === "account_in_use"
           ? "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest."
           : (result.status === "initial_load_failed" ? "Der aktuelle Serverstand konnte nicht geladen werden." : accountFlowError({ error: result.status }));
         showDeviceSetup(message, true);
+        if (pendingDevicePairing && retentionAction !== "clear") {
+          showRetainedPairingError(message);
+        }
         return false;
       }
       await startReadyAccountFeatures();
       return true;
     } catch (error) {
-      showDeviceSetup(authErrorMessage(error), true);
+      const message = authErrorMessage(error);
+      showDeviceSetup(message, true);
+      if (pendingDevicePairing) showRetainedPairingError(message);
       return false;
     } finally {
       setAuthBusy(false);
@@ -2579,10 +2614,14 @@ async function resolveAndLoadAccount(authUser, options = {}) {
     activatingUserId: "",
     accountReady: false
   };
-  if (pendingDataEpochReset || options.clearForeignCaches) {
-    MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, currentUser.userId);
-  }
-  completeDataEpochReset(currentUser.userId);
+  const discardStaleQueues = pendingDataEpochReset || Boolean(options.clearForeignCaches);
+  MartAccountLogic.prepareAccountActivationStorage(localStorage, {
+    accountId: currentUser.userId,
+    prefixes: accountStoragePrefixes,
+    queueKeys: [storageKeys.syncQueue, storageKeys.outbox],
+    discardStaleQueues
+  });
+  completeDataEpochReset();
   lists = [];
   activeListId = "";
   localMutationVersion = 0;
@@ -2595,6 +2634,12 @@ async function enableAccountWrites() {
   saveCurrentUser();
   save({ broadcast: false, source: "remote" });
   outboundSyncEnabled = true;
+  try {
+    const profileResult = await collaborationService.upsertProfile?.(currentUser);
+    if (profileResult?.ok === false) markSyncError(profileResult.error || "Profil-Sync nicht erreichbar");
+  } catch (error) {
+    markSyncError(error);
+  }
   if (elements.addListButton) elements.addListButton.disabled = false;
   elements.authGate?.classList.add("is-hidden");
   elements.appShell?.classList.remove("is-hidden");
@@ -4494,6 +4539,10 @@ function accountFlowError(error) {
     pairing_in_use: "Dieser QR-Code wird bereits von einem anderen Gerät verwendet.",
     already_connected: "Dieses Gerät gehört bereits zum Account.",
     account_in_use: "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.",
+    expired: "Der Gerätelink ist abgelaufen.",
+    cancelled: "Die Geräteverbindung wurde abgebrochen.",
+    pairing_failed: "Die Geräteverbindung konnte gerade nicht geprüft werden.",
+    account_unavailable: "Der Geräte-Account konnte nicht geöffnet werden.",
     pairing_not_ready: "Das neue Gerät wartet noch nicht auf Freigabe.",
     pending_account_not_empty: "Das neue Gerät enthält bereits eigene Zettel.",
     pairing_not_found: "Die Geräteverbindung wurde nicht gefunden.",
@@ -4823,6 +4872,9 @@ async function finishPendingDevicePairing(pairing = pendingDevicePairing) {
     const statusElement = panel?.querySelector("[data-pending-pairing-status]");
     const result = await collaborationService.devicePairingStatus?.(pairing.pairingId);
     if (!result?.ok) {
+      if (MartAccountLogic.pairingRetentionAction(result) === "clear") {
+        clearPendingDevicePairing();
+      }
       if (statusElement) statusElement.textContent = accountFlowError(result);
       return result ?? { ok: false, error: "pairing_not_found" };
     }
@@ -6066,6 +6118,11 @@ elements.modalContent.addEventListener("click", (event) => {
     cancelPendingDevicePairing();
     return;
   }
+  if (event.target.closest("[data-retry-pending-device-pairing]")) {
+    closeModal();
+    connectDeviceAccount();
+    return;
+  }
   if (event.target.closest("[data-copy-bug]")) {
     copyBugReport();
     return;
@@ -6168,12 +6225,19 @@ async function bootApp() {
 
   authSubscription = collaborationService.onAuthStateChange?.((event, nextUser) => {
     if (accountSetupPromise) return;
-    if (event === "SIGNED_OUT" || !nextUser) {
+    const route = MartAccountLogic.routeAuthEvent({
+      event,
+      hasAuthUser: Boolean(nextUser),
+      isDeviceUser: isDeviceAuthUser(nextUser),
+      hasPendingPairing: Boolean(pendingDevicePairing),
+      accountReady: authState.accountReady
+    });
+    if (route === "connect" || route === "reconnect") {
       if (authState.accountReady) deactivateAccount("Der Geräte-Account wird neu verbunden.");
       window.setTimeout(() => connectDeviceAccount(), 0);
       return;
     }
-    if (isDeviceAuthUser(nextUser)) activateAccount(nextUser);
+    if (route === "activate") activateAccount(nextUser);
   }) ?? null;
 
   window.addEventListener("online", () => {
