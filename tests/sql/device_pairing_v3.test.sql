@@ -1,57 +1,210 @@
 begin;
 
+create function pg_temp.pairing_v3_account_state(target_account_id uuid)
+returns jsonb
+language sql
+stable
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'account', (
+      select to_jsonb(accounts)
+      from public.accounts accounts
+      where accounts.id = target_account_id
+    ),
+    'devices', coalesce((
+      select jsonb_agg(to_jsonb(devices) order by devices.id)
+      from public.account_devices devices
+      where devices.account_id = target_account_id
+    ), '[]'::jsonb),
+    'recoveryCredentials', coalesce((
+      select jsonb_agg(to_jsonb(credentials) order by credentials.account_id)
+      from public.account_recovery_credentials credentials
+      where credentials.account_id = target_account_id
+    ), '[]'::jsonb),
+    'ownedPairings', coalesce((
+      select jsonb_agg(to_jsonb(pairings) order by pairings.id)
+      from public.device_pairings pairings
+      where pairings.account_id = target_account_id
+    ), '[]'::jsonb),
+    'ownedLists', coalesce((
+      select jsonb_agg(to_jsonb(lists) order by lists.id)
+      from public.shopping_lists lists
+      where lists.owner_user_id = target_account_id
+    ), '[]'::jsonb),
+    'listMembers', coalesce((
+      select jsonb_agg(to_jsonb(members) order by members.list_id, members.user_id)
+      from public.list_members members
+      where members.user_id = target_account_id
+        or members.invited_by_user_id = target_account_id
+        or members.removed_by_user_id = target_account_id
+        or exists (
+          select 1
+          from public.shopping_lists lists
+          where lists.id = members.list_id
+            and lists.owner_user_id = target_account_id
+        )
+    ), '[]'::jsonb),
+    'listItems', coalesce((
+      select jsonb_agg(to_jsonb(items) order by items.list_id, items.item_id)
+      from public.list_items items
+      where items.added_by_user_id = target_account_id
+        or items.checked_by_user_id = target_account_id
+        or items.updated_by_user_id = target_account_id
+        or items.deleted_by_user_id = target_account_id
+        or exists (
+          select 1
+          from public.shopping_lists lists
+          where lists.id = items.list_id
+            and lists.owner_user_id = target_account_id
+        )
+    ), '[]'::jsonb),
+    'attributedLists', coalesce((
+      select jsonb_agg(to_jsonb(lists) order by lists.id)
+      from public.shopping_lists lists
+      where lists.updated_by_user_id = target_account_id
+        or lists.deleted_by_user_id = target_account_id
+    ), '[]'::jsonb)
+  )
+$$;
+
+create function pg_temp.assert_pairing_account_in_use(
+  case_name text,
+  owner_auth_user_id uuid,
+  pending_auth_user_id uuid,
+  pending_account_id uuid,
+  pairing jsonb
+)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+declare
+  account_state_before_request jsonb;
+  account_state_after_request jsonb;
+  state_before_approval jsonb;
+  state_after_approval jsonb;
+  request_result jsonb;
+  approval_result jsonb;
+begin
+  account_state_before_request := pg_temp.pairing_v3_account_state(pending_account_id);
+
+  perform set_config('request.jwt.claim.sub', pending_auth_user_id::text, true);
+  request_result := public.request_device_pairing_v3(
+    (pairing->>'pairingId')::uuid,
+    pairing->>'pairingToken',
+    case_name,
+    'test'
+  );
+
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception '%: expected request status pending, got %', case_name, request_result;
+  end if;
+
+  account_state_after_request := pg_temp.pairing_v3_account_state(pending_account_id);
+  if account_state_before_request is distinct from account_state_after_request then
+    raise exception '%: request mutated the pending account, device, or durable data', case_name;
+  end if;
+
+  state_before_approval := jsonb_build_object(
+    'accountState', account_state_after_request,
+    'pairing', (
+      select to_jsonb(pairings)
+      from public.device_pairings pairings
+      where pairings.id = (pairing->>'pairingId')::uuid
+    )
+  );
+
+  perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
+  approval_result := public.approve_device_pairing_v3((pairing->>'pairingId')::uuid);
+
+  if approval_result->>'error' is distinct from 'account_in_use' then
+    raise exception '%: expected account_in_use approval, got %', case_name, approval_result;
+  end if;
+
+  state_after_approval := jsonb_build_object(
+    'accountState', pg_temp.pairing_v3_account_state(pending_account_id),
+    'pairing', (
+      select to_jsonb(pairings)
+      from public.device_pairings pairings
+      where pairings.id = (pairing->>'pairingId')::uuid
+    )
+  );
+
+  if state_before_approval is distinct from state_after_approval then
+    raise exception '%: account_in_use changed account, device, data, or pairing state', case_name;
+  end if;
+end;
+$$;
+
 do $$
 declare
   owner_auth_user_id uuid := gen_random_uuid();
   unbootstrapped_auth_user_id uuid := gen_random_uuid();
-  technical_auth_user_id uuid := gen_random_uuid();
-  occupied_auth_user_id uuid := gen_random_uuid();
+  transition_auth_user_id uuid := gen_random_uuid();
+  two_device_auth_user_id uuid := gen_random_uuid();
+  two_device_second_auth_user_id uuid := gen_random_uuid();
   recovery_auth_user_id uuid := gen_random_uuid();
+  soft_deleted_list_auth_user_id uuid := gen_random_uuid();
+  removed_membership_auth_user_id uuid := gen_random_uuid();
+  pairing_history_auth_user_id uuid := gen_random_uuid();
   competing_owner_auth_user_id uuid := gen_random_uuid();
   contested_auth_user_id uuid := gen_random_uuid();
   owner_account_id uuid;
-  technical_account_id uuid := gen_random_uuid();
-  occupied_account_id uuid := gen_random_uuid();
+  transition_account_id uuid := gen_random_uuid();
+  two_device_account_id uuid := gen_random_uuid();
   recovery_account_id uuid := gen_random_uuid();
+  soft_deleted_list_account_id uuid := gen_random_uuid();
+  removed_membership_account_id uuid := gen_random_uuid();
+  pairing_history_account_id uuid := gen_random_uuid();
   competing_owner_account_id uuid;
-  technical_device_id uuid;
+  transition_device_id uuid;
+  pairing_history_device_id uuid;
   unbootstrapped_pairing jsonb;
-  technical_pairing jsonb;
-  occupied_pairing jsonb;
+  transition_pairing jsonb;
+  two_device_pairing jsonb;
   recovery_pairing jsonb;
+  soft_deleted_list_pairing jsonb;
+  removed_membership_pairing jsonb;
+  pairing_history_pairing jsonb;
   first_owner_pairing jsonb;
   second_owner_pairing jsonb;
+  reference_pairing jsonb;
   request_result jsonb;
   approval_result jsonb;
-  occupied_state_before jsonb;
-  occupied_state_after jsonb;
-  recovery_state_before jsonb;
-  recovery_state_after jsonb;
+  account_state_before_request jsonb;
+  account_state_after_request jsonb;
+  competing_state_before jsonb;
+  competing_state_after jsonb;
+  approval_definition text;
+  request_definition text;
+  durable_reference record;
+  reference_auth_user_id uuid;
+  reference_account_id uuid;
+  reference_id text;
 begin
   insert into auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, is_anonymous)
   values
     (owner_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-owner-' || owner_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
     (unbootstrapped_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-unbootstrapped-' || unbootstrapped_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
-    (technical_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-technical-' || technical_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
-    (occupied_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-occupied-' || occupied_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
+    (transition_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-transition-' || transition_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
+    (two_device_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-two-device-' || two_device_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
+    (two_device_second_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-two-device-second-' || two_device_second_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
     (recovery_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-recovery-' || recovery_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
+    (soft_deleted_list_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-soft-deleted-' || soft_deleted_list_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
+    (removed_membership_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-removed-member-' || removed_membership_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
+    (pairing_history_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-pairing-history-' || pairing_history_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
     (competing_owner_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-competing-owner-' || competing_owner_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true),
     (contested_auth_user_id, 'authenticated', 'authenticated', 'pairing-v3-contested-' || contested_auth_user_id || '@example.test', '{}'::jsonb, '{}'::jsonb, true);
 
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
   owner_account_id := (public.bootstrap_account('Owner device', 'test')->>'id')::uuid;
 
-  -- A newly authenticated device has no account or device mapping before pairing.
+  -- An unbootstrapped identity is attached only when the owner approves.
   unbootstrapped_pairing := public.create_device_pairing();
   perform set_config('request.jwt.claim.sub', unbootstrapped_auth_user_id::text, true);
-  if private.current_account_id() is not null
-    or private.current_device_id() is not null
-    or exists (
-      select 1
-      from public.account_devices devices
-      where devices.auth_user_id = unbootstrapped_auth_user_id
-    ) then
-    raise exception 'unbootstrapped user unexpectedly has an account device';
+  if private.current_account_id() is not null or private.current_device_id() is not null then
+    raise exception 'unbootstrapped identity unexpectedly has an account or device';
   end if;
 
   request_result := public.request_device_pairing_v3(
@@ -60,67 +213,104 @@ begin
     'Unbootstrapped device',
     'test'
   );
-
-  if (request_result->>'status') <> 'pending' then
-    raise exception 'expected unbootstrapped request to be pending, got %', request_result;
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception 'expected unbootstrapped request pending, got %', request_result;
   end if;
-  if exists (
-    select 1
-    from public.account_devices devices
-    where devices.auth_user_id = unbootstrapped_auth_user_id
-  ) then
-    raise exception 'unbootstrapped request created an account device before approval';
+  if private.current_account_id() is not null or private.current_device_id() is not null then
+    raise exception 'unbootstrapped request created an account or device before approval';
   end if;
 
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
   approval_result := public.approve_device_pairing_v3((unbootstrapped_pairing->>'pairingId')::uuid);
-  if (approval_result->>'status') <> 'approved' then
+  if approval_result->>'status' is distinct from 'approved' then
     raise exception 'expected unbootstrapped approval, got %', approval_result;
   end if;
 
   perform set_config('request.jwt.claim.sub', unbootstrapped_auth_user_id::text, true);
-  if private.current_account_id() <> owner_account_id then
-    raise exception 'unbootstrapped device was not attached to owner account';
+  if private.current_account_id() is distinct from owner_account_id then
+    raise exception 'unbootstrapped identity was not attached to owner account';
   end if;
 
-  -- A one-device, data-free transition account may be removed during pairing.
+  -- Requesting is non-mutating; empty transition cleanup happens during approval.
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
-  technical_pairing := public.create_device_pairing();
+  transition_pairing := public.create_device_pairing();
   insert into public.accounts (id, username, display_name)
   values (
-    technical_account_id,
-    'user-' || upper(substr(replace(technical_account_id::text, '-', ''), 1, 7)),
-    'Technical'
+    transition_account_id,
+    'user-' || upper(substr(replace(transition_account_id::text, '-', ''), 1, 7)),
+    'Transition'
   );
   insert into public.account_devices (account_id, auth_user_id, label, platform)
-  values (technical_account_id, technical_auth_user_id, 'Technical device', 'test')
-  returning id into technical_device_id;
+  values (transition_account_id, transition_auth_user_id, 'Transition device', 'old-platform')
+  returning id into transition_device_id;
 
-  perform set_config('request.jwt.claim.sub', technical_auth_user_id::text, true);
+  account_state_before_request := pg_temp.pairing_v3_account_state(transition_account_id);
+  perform set_config('request.jwt.claim.sub', transition_auth_user_id::text, true);
   request_result := public.request_device_pairing_v3(
-    (technical_pairing->>'pairingId')::uuid,
-    technical_pairing->>'pairingToken',
-    'Paired technical device',
-    'test'
+    (transition_pairing->>'pairingId')::uuid,
+    transition_pairing->>'pairingToken',
+    'Paired transition device',
+    'new-platform'
   );
-  if (request_result->>'status') <> 'pending' then
-    raise exception 'expected technical request to be pending, got %', request_result;
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception 'expected transition request pending, got %', request_result;
   end if;
-  if exists (select 1 from public.accounts where id = technical_account_id) then
-    raise exception 'empty technical account still exists';
+
+  account_state_after_request := pg_temp.pairing_v3_account_state(transition_account_id);
+  if account_state_before_request is distinct from account_state_after_request then
+    raise exception 'request mutated the empty transition account or device';
   end if;
-  if exists (select 1 from public.account_devices where id = technical_device_id) then
-    raise exception 'empty technical device still exists';
+  if not exists (
+    select 1
+    from public.account_devices devices
+    where devices.id = transition_device_id
+      and devices.account_id = transition_account_id
+      and devices.auth_user_id = transition_auth_user_id
+      and devices.label = 'Transition device'
+      and devices.platform = 'old-platform'
+  ) then
+    raise exception 'request detached, reassigned, or relabeled the transition device';
   end if;
 
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
-  approval_result := public.approve_device_pairing_v3((technical_pairing->>'pairingId')::uuid);
-  if (approval_result->>'status') <> 'approved' then
-    raise exception 'expected technical approval, got %', approval_result;
+  approval_result := public.approve_device_pairing_v3((transition_pairing->>'pairingId')::uuid);
+  if approval_result->>'status' is distinct from 'approved' then
+    raise exception 'expected transition approval, got %', approval_result;
+  end if;
+  if exists (select 1 from public.accounts where id = transition_account_id) then
+    raise exception 'empty transition account still exists after approval';
+  end if;
+  if not exists (
+    select 1
+    from public.account_devices devices
+    where devices.id = transition_device_id
+      and devices.account_id = owner_account_id
+      and devices.auth_user_id = transition_auth_user_id
+      and devices.label = 'Paired transition device'
+      and devices.platform = 'new-platform'
+  ) then
+    raise exception 'transition device was not atomically moved to owner account';
   end if;
 
-  -- A recovery credential alone makes a one-device account non-empty.
+  -- More than one device makes the pending account durable.
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
+  two_device_pairing := public.create_device_pairing();
+  insert into public.accounts (id, username, display_name)
+  values (
+    two_device_account_id,
+    'user-' || upper(substr(replace(two_device_account_id::text, '-', ''), 1, 7)),
+    'Two devices'
+  );
+  insert into public.account_devices (account_id, auth_user_id, label, platform)
+  values
+    (two_device_account_id, two_device_auth_user_id, 'Pending device', 'test'),
+    (two_device_account_id, two_device_second_auth_user_id, 'Other device', 'test');
+  perform pg_temp.assert_pairing_account_in_use(
+    'two devices', owner_auth_user_id, two_device_auth_user_id,
+    two_device_account_id, two_device_pairing
+  );
+
+  -- A recovery credential makes a one-device account durable.
   recovery_pairing := public.create_device_pairing();
   insert into public.accounts (id, username, display_name)
   values (
@@ -132,53 +322,161 @@ begin
   values (recovery_account_id, recovery_auth_user_id, 'Recovery device', 'test');
   insert into public.account_recovery_credentials (account_id, code_hash)
   values (recovery_account_id, private.secret_hash('recovery-v3-' || recovery_account_id::text));
-
-  select jsonb_build_object(
-    'account', (select to_jsonb(accounts) from public.accounts accounts where accounts.id = recovery_account_id),
-    'devices', coalesce((
-      select jsonb_agg(to_jsonb(devices) order by devices.id)
-      from public.account_devices devices
-      where devices.account_id = recovery_account_id
-    ), '[]'::jsonb),
-    'recoveryCredentials', coalesce((
-      select jsonb_agg(to_jsonb(credentials) order by credentials.account_id)
-      from public.account_recovery_credentials credentials
-      where credentials.account_id = recovery_account_id
-    ), '[]'::jsonb),
-    'pairing', (select to_jsonb(pairings) from public.device_pairings pairings where pairings.id = (recovery_pairing->>'pairingId')::uuid)
-  ) into recovery_state_before;
-
-  perform set_config('request.jwt.claim.sub', recovery_auth_user_id::text, true);
-  request_result := public.request_device_pairing_v3(
-    (recovery_pairing->>'pairingId')::uuid,
-    recovery_pairing->>'pairingToken',
-    'Recovery device',
-    'test'
+  perform pg_temp.assert_pairing_account_in_use(
+    'recovery credential', owner_auth_user_id, recovery_auth_user_id,
+    recovery_account_id, recovery_pairing
   );
-  if request_result->>'error' is distinct from 'account_in_use' then
-    raise exception 'expected recovery-enabled account_in_use, got %', request_result;
-  end if;
 
-  select jsonb_build_object(
-    'account', (select to_jsonb(accounts) from public.accounts accounts where accounts.id = recovery_account_id),
-    'devices', coalesce((
-      select jsonb_agg(to_jsonb(devices) order by devices.id)
-      from public.account_devices devices
-      where devices.account_id = recovery_account_id
-    ), '[]'::jsonb),
-    'recoveryCredentials', coalesce((
-      select jsonb_agg(to_jsonb(credentials) order by credentials.account_id)
-      from public.account_recovery_credentials credentials
-      where credentials.account_id = recovery_account_id
-    ), '[]'::jsonb),
-    'pairing', (select to_jsonb(pairings) from public.device_pairings pairings where pairings.id = (recovery_pairing->>'pairingId')::uuid)
-  ) into recovery_state_after;
+  -- Soft-deleted owned lists remain durable history.
+  soft_deleted_list_pairing := public.create_device_pairing();
+  insert into public.accounts (id, username, display_name)
+  values (
+    soft_deleted_list_account_id,
+    'user-' || upper(substr(replace(soft_deleted_list_account_id::text, '-', ''), 1, 7)),
+    'Soft deleted owner'
+  );
+  insert into public.account_devices (account_id, auth_user_id, label, platform)
+  values (soft_deleted_list_account_id, soft_deleted_list_auth_user_id, 'Soft deleted owner device', 'test');
+  insert into public.shopping_lists (id, name, owner_user_id, deleted_at, deleted_by_user_id)
+  values (
+    'pairing-v3-soft-deleted-' || replace(soft_deleted_list_account_id::text, '-', ''),
+    'Soft-deleted list',
+    soft_deleted_list_account_id,
+    now(),
+    soft_deleted_list_account_id
+  );
+  perform pg_temp.assert_pairing_account_in_use(
+    'soft-deleted owned list', owner_auth_user_id, soft_deleted_list_auth_user_id,
+    soft_deleted_list_account_id, soft_deleted_list_pairing
+  );
 
-  if recovery_state_before is distinct from recovery_state_after then
-    raise exception 'recovery-enabled account_in_use changed account, device, credential, or pairing state';
-  end if;
+  -- Removed memberships remain durable history.
+  removed_membership_pairing := public.create_device_pairing();
+  insert into public.accounts (id, username, display_name)
+  values (
+    removed_membership_account_id,
+    'user-' || upper(substr(replace(removed_membership_account_id::text, '-', ''), 1, 7)),
+    'Removed member'
+  );
+  insert into public.account_devices (account_id, auth_user_id, label, platform)
+  values (removed_membership_account_id, removed_membership_auth_user_id, 'Removed member device', 'test');
+  reference_id := 'pairing-v3-member-host-' || replace(removed_membership_account_id::text, '-', '');
+  insert into public.shopping_lists (id, name, owner_user_id)
+  values (reference_id, 'Membership host', owner_account_id);
+  insert into public.list_members (
+    list_id, user_id, display_name, role, invited_by_user_id, removed_at, removed_by_user_id
+  ) values (
+    reference_id, removed_membership_account_id, 'Removed member', 'editor',
+    owner_account_id, now(), owner_account_id
+  );
+  perform pg_temp.assert_pairing_account_in_use(
+    'removed membership', owner_auth_user_id, removed_membership_auth_user_id,
+    removed_membership_account_id, removed_membership_pairing
+  );
 
-  -- Sequential approvals from two owners cannot move one pending identity.
+  -- Pairing history would cascade on account deletion and must block cleanup.
+  pairing_history_pairing := public.create_device_pairing();
+  insert into public.accounts (id, username, display_name)
+  values (
+    pairing_history_account_id,
+    'user-' || upper(substr(replace(pairing_history_account_id::text, '-', ''), 1, 7)),
+    'Pairing history'
+  );
+  insert into public.account_devices (account_id, auth_user_id, label, platform)
+  values (pairing_history_account_id, pairing_history_auth_user_id, 'Pairing history device', 'test')
+  returning id into pairing_history_device_id;
+  insert into public.device_pairings (
+    account_id, token_hash, confirmation_code, created_by_device_id, expires_at, cancelled_at
+  ) values (
+    pairing_history_account_id,
+    private.secret_hash('pairing-history-' || pairing_history_account_id::text),
+    '0001',
+    pairing_history_device_id,
+    now() + interval '5 minutes',
+    now()
+  );
+  perform pg_temp.assert_pairing_account_in_use(
+    'device pairing history', owner_auth_user_id, pairing_history_auth_user_id,
+    pairing_history_account_id, pairing_history_pairing
+  );
+
+  -- Every SET NULL attribution FK is meaningful history and blocks cleanup.
+  for durable_reference in
+    select refs.table_name, refs.column_name
+    from (values
+      ('shopping_lists', 'updated_by_user_id'),
+      ('shopping_lists', 'deleted_by_user_id'),
+      ('list_members', 'invited_by_user_id'),
+      ('list_members', 'removed_by_user_id'),
+      ('list_items', 'added_by_user_id'),
+      ('list_items', 'checked_by_user_id'),
+      ('list_items', 'updated_by_user_id'),
+      ('list_items', 'deleted_by_user_id')
+    ) as refs(table_name, column_name)
+  loop
+    reference_auth_user_id := gen_random_uuid();
+    reference_account_id := gen_random_uuid();
+    reference_id := 'pairing-v3-ref-' || replace(reference_account_id::text, '-', '');
+
+    insert into auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, is_anonymous)
+    values (
+      reference_auth_user_id,
+      'authenticated',
+      'authenticated',
+      'pairing-v3-reference-' || reference_auth_user_id || '@example.test',
+      '{}'::jsonb,
+      '{}'::jsonb,
+      true
+    );
+    insert into public.accounts (id, username, display_name)
+    values (
+      reference_account_id,
+      'user-' || upper(substr(replace(reference_account_id::text, '-', ''), 1, 7)),
+      'Durable reference'
+    );
+    insert into public.account_devices (account_id, auth_user_id, label, platform)
+    values (reference_account_id, reference_auth_user_id, durable_reference.column_name, 'test');
+
+    perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
+    reference_pairing := public.create_device_pairing();
+
+    if durable_reference.table_name = 'shopping_lists' then
+      insert into public.shopping_lists (id, name, owner_user_id)
+      values (reference_id, durable_reference.column_name, owner_account_id);
+      execute format(
+        'update public.shopping_lists set %I = $1 where id = $2',
+        durable_reference.column_name
+      ) using reference_account_id, reference_id;
+    elsif durable_reference.table_name = 'list_members' then
+      insert into public.shopping_lists (id, name, owner_user_id)
+      values (reference_id, durable_reference.column_name, owner_account_id);
+      insert into public.list_members (list_id, user_id, display_name, role, removed_at)
+      values (reference_id, owner_account_id, 'Owner history', 'owner', now());
+      execute format(
+        'update public.list_members set %I = $1 where list_id = $2 and user_id = $3',
+        durable_reference.column_name
+      ) using reference_account_id, reference_id, owner_account_id;
+    else
+      insert into public.shopping_lists (id, name, owner_user_id)
+      values (reference_id, durable_reference.column_name, owner_account_id);
+      insert into public.list_items (list_id, item_id, name)
+      values (reference_id, durable_reference.column_name, durable_reference.column_name);
+      execute format(
+        'update public.list_items set %I = $1 where list_id = $2 and item_id = $3',
+        durable_reference.column_name
+      ) using reference_account_id, reference_id, durable_reference.column_name;
+    end if;
+
+    perform pg_temp.assert_pairing_account_in_use(
+      durable_reference.table_name || '.' || durable_reference.column_name,
+      owner_auth_user_id,
+      reference_auth_user_id,
+      reference_account_id,
+      reference_pairing
+    );
+  end loop;
+
+  -- Sequential competing approvals are the strongest single-session race evidence.
   perform set_config('request.jwt.claim.sub', competing_owner_auth_user_id::text, true);
   competing_owner_account_id := (public.bootstrap_account('Competing owner', 'test')->>'id')::uuid;
   first_owner_pairing := public.create_device_pairing();
@@ -192,8 +490,8 @@ begin
     'Contested device',
     'test'
   );
-  if (request_result->>'status') <> 'pending' then
-    raise exception 'expected first contested request to be pending, got %', request_result;
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception 'expected first contested request pending, got %', request_result;
   end if;
   request_result := public.request_device_pairing_v3(
     (second_owner_pairing->>'pairingId')::uuid,
@@ -201,20 +499,42 @@ begin
     'Contested device',
     'test'
   );
-  if (request_result->>'status') <> 'pending' then
-    raise exception 'expected second contested request to be pending, got %', request_result;
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception 'expected second contested request pending, got %', request_result;
   end if;
 
   perform set_config('request.jwt.claim.sub', competing_owner_auth_user_id::text, true);
   approval_result := public.approve_device_pairing_v3((first_owner_pairing->>'pairingId')::uuid);
-  if (approval_result->>'status') <> 'approved' then
+  if approval_result->>'status' is distinct from 'approved' then
     raise exception 'expected first contested approval, got %', approval_result;
   end if;
+
+  competing_state_before := jsonb_build_object(
+    'accountState', pg_temp.pairing_v3_account_state(competing_owner_account_id),
+    'pairing', (
+      select to_jsonb(pairings)
+      from public.device_pairings pairings
+      where pairings.id = (second_owner_pairing->>'pairingId')::uuid
+    )
+  );
 
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
   approval_result := public.approve_device_pairing_v3((second_owner_pairing->>'pairingId')::uuid);
   if approval_result->>'error' is distinct from 'account_in_use' then
-    raise exception 'expected second owner account_in_use, got %', approval_result;
+    raise exception 'expected competing approval account_in_use, got %', approval_result;
+  end if;
+
+  competing_state_after := jsonb_build_object(
+    'accountState', pg_temp.pairing_v3_account_state(competing_owner_account_id),
+    'pairing', (
+      select to_jsonb(pairings)
+      from public.device_pairings pairings
+      where pairings.id = (second_owner_pairing->>'pairingId')::uuid
+    )
+  );
+
+  if competing_state_before is distinct from competing_state_after then
+    raise exception 'competing approval changed the winning account, device, data, or rejected pairing';
   end if;
   if not exists (
     select 1
@@ -222,105 +542,28 @@ begin
     where devices.auth_user_id = contested_auth_user_id
       and devices.account_id = competing_owner_account_id
   ) then
-    raise exception 'second owner moved the contested device';
-  end if;
-  if exists (
-    select 1
-    from public.account_devices devices
-    where devices.auth_user_id = contested_auth_user_id
-      and devices.account_id = owner_account_id
-  ) then
-    raise exception 'contested device was attached to the second owner';
+    raise exception 'competing approval moved the contested identity';
   end if;
 
-  if position('pg_advisory_xact_lock' in pg_get_functiondef('public.approve_device_pairing_v3(uuid)'::regprocedure)) = 0 then
-    raise exception 'approve_device_pairing_v3 is missing pending identity advisory locking';
-  end if;
-
-  -- A non-empty account must be returned intact, including every relevant row.
-  occupied_pairing := public.create_device_pairing();
-  insert into public.accounts (id, username, display_name)
-  values (
-    occupied_account_id,
-    'user-' || upper(substr(replace(occupied_account_id::text, '-', ''), 1, 7)),
-    'Occupied'
+  approval_definition := pg_get_functiondef('public.approve_device_pairing_v3(uuid)'::regprocedure);
+  request_definition := pg_get_functiondef(
+    'public.request_device_pairing_v3(uuid,text,text,text)'::regprocedure
   );
-  insert into public.account_devices (account_id, auth_user_id, label, platform)
-  values (occupied_account_id, occupied_auth_user_id, 'Occupied device', 'test');
-  insert into public.shopping_lists (id, name, owner_user_id)
-  values ('pairing-v3-' || replace(occupied_account_id::text, '-', ''), 'Occupied list', occupied_account_id);
-  insert into public.list_members (list_id, user_id, display_name, role)
-  values ('pairing-v3-' || replace(occupied_account_id::text, '-', ''), occupied_account_id, 'Occupied', 'owner');
-  insert into public.list_items (list_id, item_id, name, added_by_user_id, updated_by_user_id)
-  values ('pairing-v3-' || replace(occupied_account_id::text, '-', ''), 'occupied-item', 'Occupied item', occupied_account_id, occupied_account_id);
 
-  select jsonb_build_object(
-    'account', (select to_jsonb(accounts) from public.accounts accounts where accounts.id = occupied_account_id),
-    'devices', coalesce((
-      select jsonb_agg(to_jsonb(devices) order by devices.id)
-      from public.account_devices devices
-      where devices.account_id = occupied_account_id
-    ), '[]'::jsonb),
-    'lists', coalesce((
-      select jsonb_agg(to_jsonb(lists) order by lists.id)
-      from public.shopping_lists lists
-      where lists.owner_user_id = occupied_account_id
-    ), '[]'::jsonb),
-    'listMembers', coalesce((
-      select jsonb_agg(to_jsonb(members) order by members.list_id, members.user_id)
-      from public.list_members members
-      join public.shopping_lists lists on lists.id = members.list_id
-      where lists.owner_user_id = occupied_account_id
-    ), '[]'::jsonb),
-    'listItems', coalesce((
-      select jsonb_agg(to_jsonb(items) order by items.list_id, items.item_id)
-      from public.list_items items
-      join public.shopping_lists lists on lists.id = items.list_id
-      where lists.owner_user_id = occupied_account_id
-    ), '[]'::jsonb),
-    'pairing', (select to_jsonb(pairings) from public.device_pairings pairings where pairings.id = (occupied_pairing->>'pairingId')::uuid)
-  ) into occupied_state_before;
-
-  perform set_config('request.jwt.claim.sub', occupied_auth_user_id::text, true);
-  request_result := public.request_device_pairing_v3(
-    (occupied_pairing->>'pairingId')::uuid,
-    occupied_pairing->>'pairingToken',
-    'Occupied device',
-    'test'
-  );
-  if request_result->>'error' <> 'account_in_use' then
-    raise exception 'expected account_in_use, got %', request_result;
+  if position('pg_advisory_xact_lock' in approval_definition) = 0 then
+    raise exception 'approve_device_pairing_v3 is missing pending identity serialization';
   end if;
-
-  select jsonb_build_object(
-    'account', (select to_jsonb(accounts) from public.accounts accounts where accounts.id = occupied_account_id),
-    'devices', coalesce((
-      select jsonb_agg(to_jsonb(devices) order by devices.id)
-      from public.account_devices devices
-      where devices.account_id = occupied_account_id
-    ), '[]'::jsonb),
-    'lists', coalesce((
-      select jsonb_agg(to_jsonb(lists) order by lists.id)
-      from public.shopping_lists lists
-      where lists.owner_user_id = occupied_account_id
-    ), '[]'::jsonb),
-    'listMembers', coalesce((
-      select jsonb_agg(to_jsonb(members) order by members.list_id, members.user_id)
-      from public.list_members members
-      join public.shopping_lists lists on lists.id = members.list_id
-      where lists.owner_user_id = occupied_account_id
-    ), '[]'::jsonb),
-    'listItems', coalesce((
-      select jsonb_agg(to_jsonb(items) order by items.list_id, items.item_id)
-      from public.list_items items
-      join public.shopping_lists lists on lists.id = items.list_id
-      where lists.owner_user_id = occupied_account_id
-    ), '[]'::jsonb),
-    'pairing', (select to_jsonb(pairings) from public.device_pairings pairings where pairings.id = (occupied_pairing->>'pairingId')::uuid)
-  ) into occupied_state_after;
-
-  if occupied_state_before is distinct from occupied_state_after then
-    raise exception 'account_in_use request changed account, device, list, or pairing state';
+  if position('pg_advisory_xact_lock' in approval_definition)
+    > position('from public.account_devices' in approval_definition) then
+    raise exception 'approve_device_pairing_v3 locks the mapping before serializing the identity';
+  end if;
+  if position('delete from public.account_devices' in request_definition) > 0
+    or position('delete from public.accounts' in request_definition) > 0
+    or position('update public.account_devices' in request_definition) > 0
+    or position('update public.accounts' in request_definition) > 0
+    or position('insert into public.account_devices' in request_definition) > 0
+    or position('insert into public.accounts' in request_definition) > 0 then
+    raise exception 'request_device_pairing_v3 contains requester account/device mutation';
   end if;
 end;
 $$;
