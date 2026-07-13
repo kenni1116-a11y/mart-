@@ -89,6 +89,7 @@ If no lists exist after activation, the app displays only the centered `Neuer Ze
 - If such an account is encountered, pairing stops and directs the user to the account settings. The user may keep the account or delete it there before starting pairing again.
 - Retrying an expired or interrupted pairing must not create another permanent account.
 - Requesting a pairing never mutates the requesting device's existing account. Empty-transition cleanup and attachment either complete together during approval or neither change is committed.
+- The legacy `approve_device_pairing(uuid)` entry point remains available for cached clients but delegates to the v3 finalizer, so mixed old/new app versions cannot bypass the atomic safety checks.
 
 ### Shared-list invitations
 
