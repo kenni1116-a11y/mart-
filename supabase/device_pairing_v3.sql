@@ -280,8 +280,19 @@ begin
 end;
 $$;
 
+create or replace function public.approve_device_pairing(target_pairing_id uuid)
+returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select public.approve_device_pairing_v3(target_pairing_id)
+$$;
+
 revoke all on function public.request_device_pairing_v3(uuid, text, text, text) from public, anon;
 revoke all on function public.approve_device_pairing_v3(uuid) from public, anon;
+revoke all on function public.approve_device_pairing(uuid) from public, anon;
 
 grant execute on function public.request_device_pairing_v3(uuid, text, text, text) to authenticated;
 grant execute on function public.approve_device_pairing_v3(uuid) to authenticated;
+grant execute on function public.approve_device_pairing(uuid) to authenticated;

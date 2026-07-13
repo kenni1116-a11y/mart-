@@ -73,7 +73,8 @@ create function pg_temp.assert_pairing_account_in_use(
   owner_auth_user_id uuid,
   pending_auth_user_id uuid,
   pending_account_id uuid,
-  pairing jsonb
+  pairing jsonb,
+  use_legacy_approval boolean default false
 )
 returns void
 language plpgsql
@@ -116,7 +117,11 @@ begin
   );
 
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
-  approval_result := public.approve_device_pairing_v3((pairing->>'pairingId')::uuid);
+  if use_legacy_approval then
+    approval_result := public.approve_device_pairing((pairing->>'pairingId')::uuid);
+  else
+    approval_result := public.approve_device_pairing_v3((pairing->>'pairingId')::uuid);
+  end if;
 
   if approval_result->>'error' is distinct from 'account_in_use' then
     raise exception '%: expected account_in_use approval, got %', case_name, approval_result;
@@ -177,6 +182,7 @@ declare
   competing_state_before jsonb;
   competing_state_after jsonb;
   approval_definition text;
+  legacy_approval_definition text;
   request_definition text;
   durable_reference record;
   reference_auth_user_id uuid;
@@ -273,7 +279,7 @@ begin
   end if;
 
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
-  approval_result := public.approve_device_pairing_v3((transition_pairing->>'pairingId')::uuid);
+  approval_result := public.approve_device_pairing((transition_pairing->>'pairingId')::uuid);
   if approval_result->>'status' is distinct from 'approved' then
     raise exception 'expected transition approval, got %', approval_result;
   end if;
@@ -322,9 +328,17 @@ begin
   values (recovery_account_id, recovery_auth_user_id, 'Recovery device', 'test');
   insert into public.account_recovery_credentials (account_id, code_hash)
   values (recovery_account_id, private.secret_hash('recovery-v3-' || recovery_account_id::text));
+  insert into public.shopping_lists (id, name, owner_user_id, deleted_at, deleted_by_user_id)
+  values (
+    'pairing-v3-recovery-history-' || replace(recovery_account_id::text, '-', ''),
+    'Recovery history',
+    recovery_account_id,
+    now(),
+    recovery_account_id
+  );
   perform pg_temp.assert_pairing_account_in_use(
-    'recovery credential', owner_auth_user_id, recovery_auth_user_id,
-    recovery_account_id, recovery_pairing
+    'legacy approval with recovery and history', owner_auth_user_id, recovery_auth_user_id,
+    recovery_account_id, recovery_pairing, true
   );
 
   -- Soft-deleted owned lists remain durable history.
@@ -546,10 +560,16 @@ begin
   end if;
 
   approval_definition := pg_get_functiondef('public.approve_device_pairing_v3(uuid)'::regprocedure);
+  legacy_approval_definition := pg_get_functiondef(
+    'public.approve_device_pairing(uuid)'::regprocedure
+  );
   request_definition := pg_get_functiondef(
     'public.request_device_pairing_v3(uuid,text,text,text)'::regprocedure
   );
 
+  if position('public.approve_device_pairing_v3' in legacy_approval_definition) = 0 then
+    raise exception 'legacy approve_device_pairing does not delegate to v3';
+  end if;
   if position('pg_advisory_xact_lock' in approval_definition) = 0 then
     raise exception 'approve_device_pairing_v3 is missing pending identity serialization';
   end if;
