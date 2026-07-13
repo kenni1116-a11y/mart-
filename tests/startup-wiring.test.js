@@ -79,3 +79,31 @@ test("retained pairing failures expose retry and cancel and clear only after Acc
   assert.ok(openBody.indexOf("showProfile()") < openBody.indexOf("clearPendingDevicePairing()"));
   assert.match(connectBody, /catch \(error\) \{[\s\S]*pendingDevicePairing[\s\S]*showRetainedPairingError/);
 });
+
+test("account deletion is confirmed, retryable, and isolated from pairing", () => {
+  const app = read("app.js");
+  const profileStart = app.indexOf("function showProfile");
+  const profileEnd = app.indexOf("async function saveProfile", profileStart);
+  const profileBody = app.slice(profileStart, profileEnd);
+  const confirmationStart = app.indexOf("function showAccountDeletionConfirmation");
+  const confirmationEnd = app.indexOf("async function deleteCurrentAccount", confirmationStart);
+  const confirmationBody = app.slice(confirmationStart, confirmationEnd);
+  const deletionStart = app.indexOf("async function deleteCurrentAccount");
+  const deletionEnd = app.indexOf("function accountFlowError", deletionStart);
+  const deletionBody = app.slice(deletionStart, deletionEnd);
+  const pairingStart = app.indexOf("async function startDevicePairing");
+  const pairingEnd = app.indexOf("async function copyBugReport", pairingStart);
+  const pairingBody = app.slice(pairingStart, pairingEnd);
+
+  assert.match(profileBody, /class="is-danger"[^>]*data-delete-account[^>]*>Account löschen<\/button>/);
+  assert.ok(profileBody.indexOf("data-delete-account") > profileBody.indexOf("data-open-account-recovery"));
+  assert.match(confirmationBody, /data-confirm-account-deletion[^>]*>Ja<\/button>/);
+  assert.match(confirmationBody, /data-cancel-account-deletion[^>]*>Abbrechen<\/button>/);
+  assert.match(confirmationBody, /data-account-deletion-status/);
+  assert.match(confirmationBody, /data-retry-account-deletion/);
+  assert.match(deletionBody, /createAccountDeletionFlow/);
+  assert.match(deletionBody, /clearPendingDevicePairing/);
+  assert.match(deletionBody, /collaborationService\.signOut/);
+  assert.equal((app.match(/rpc\("delete_current_account_v3"/g) ?? []).length, 1);
+  assert.doesNotMatch(pairingBody, /delete_current_account_v3|deleteCurrentAccount|data-delete-account/);
+});

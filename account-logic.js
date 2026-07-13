@@ -230,6 +230,27 @@
     return { ok: true, status: "ready", account, authUser };
   }
 
+  function createAccountDeletionFlow({ deleteAccount, completeDeletion }) {
+    let inProgress = false;
+    return {
+      async choose(action) {
+        if (action !== "confirm") return { ok: false, status: "cancelled" };
+        if (inProgress) return { ok: false, status: "in_progress" };
+        inProgress = true;
+        try {
+          const result = await deleteAccount();
+          if (!result?.ok) return { ok: false, error: result?.error || "account_deletion_failed" };
+          await completeDeletion(result);
+          return result;
+        } catch (error) {
+          return { ok: false, error: error?.message || "account_deletion_failed" };
+        } finally {
+          inProgress = false;
+        }
+      }
+    };
+  }
+
   return {
     parsePairingUrl,
     nextActivationState,
@@ -244,6 +265,7 @@
     clearPendingDevicePairing,
     isInvalidRefreshTokenError,
     authenticateDeviceIdentity,
-    runActivationSequence
+    runActivationSequence,
+    createAccountDeletionFlow
   };
 });

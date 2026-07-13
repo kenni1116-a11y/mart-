@@ -358,3 +358,70 @@ test("an invalid refresh token reported by session lookup also starts a clean an
   assert.equal(result.invalidSession, true);
   assert.deepEqual(calls, ["getSession", "signOut", "cleanup", "signInAnonymously"]);
 });
+
+test("cancelling account deletion makes no service or cleanup call", async () => {
+  const calls = [];
+  const deletion = AccountLogic.createAccountDeletionFlow({
+    deleteAccount: async () => calls.push("delete"),
+    completeDeletion: async () => calls.push("cleanup")
+  });
+
+  const result = await deletion.choose("cancel");
+
+  assert.deepEqual(result, { ok: false, status: "cancelled" });
+  assert.deepEqual(calls, []);
+});
+
+test("confirmed account deletion calls the service once and cleans only after success", async () => {
+  const calls = [];
+  let finishRequest;
+  const request = new Promise((resolve) => {
+    finishRequest = resolve;
+  });
+  const deletion = AccountLogic.createAccountDeletionFlow({
+    deleteAccount: async () => {
+      calls.push("delete");
+      return request;
+    },
+    completeDeletion: async (result) => calls.push(`cleanup:${result.deletedAccountId}`)
+  });
+
+  const firstChoice = deletion.choose("confirm");
+  const duplicateChoice = await deletion.choose("confirm");
+
+  assert.deepEqual(duplicateChoice, { ok: false, status: "in_progress" });
+  assert.deepEqual(calls, ["delete"]);
+
+  finishRequest({ ok: true, deletedAccountId: "d4e10000-0000-4000-8000-000000000010" });
+  const result = await firstChoice;
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [
+    "delete",
+    "cleanup:d4e10000-0000-4000-8000-000000000010"
+  ]);
+});
+
+test("failed account deletion preserves local state and remains retryable", async () => {
+  const calls = [];
+  let attempt = 0;
+  const deletion = AccountLogic.createAccountDeletionFlow({
+    deleteAccount: async () => {
+      calls.push("delete");
+      attempt += 1;
+      if (attempt === 1) return { ok: false, error: "server_error" };
+      return { ok: true, deletedAccountId: "d4e10000-0000-4000-8000-000000000010" };
+    },
+    completeDeletion: async () => calls.push("cleanup")
+  });
+
+  const failed = await deletion.choose("confirm");
+
+  assert.deepEqual(failed, { ok: false, error: "server_error" });
+  assert.deepEqual(calls, ["delete"]);
+
+  const retried = await deletion.choose("confirm");
+
+  assert.equal(retried.ok, true);
+  assert.deepEqual(calls, ["delete", "delete", "cleanup"]);
+});

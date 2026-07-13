@@ -1463,6 +1463,13 @@ class SupabaseRealtimeService {
     return error ? { ok: false, error: error.message } : data;
   }
 
+  async deleteCurrentAccount() {
+    if (!this.client) return { ok: false, error: "account_unavailable" };
+    const { data, error } = await this.client.rpc("delete_current_account_v3");
+    if (error) return { ok: false, error: error.message || "account_deletion_failed" };
+    return data;
+  }
+
   async rotateRecoveryCode() {
     const { data, error } = await this.client.rpc("rotate_recovery_code");
     return error ? { ok: false, error: error.message } : { ok: true, ...data };
@@ -2101,6 +2108,7 @@ let devicePairingPollTimer = 0;
 let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
+let accountDeletionFlow = null;
 let accountSessionVersion = 0;
 let outboundSyncEnabled = false;
 let authState = {
@@ -4491,6 +4499,9 @@ function showProfile() {
         <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
         <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
       </div>
+      <div class="modal-actions modal-actions-stack">
+        <button type="button" class="is-danger" data-delete-account>Account löschen</button>
+      </div>
     </div>
   `);
 }
@@ -4529,6 +4540,54 @@ async function saveProfile() {
   render();
 }
 
+function showAccountDeletionConfirmation(error = "") {
+  openModal(`
+    <h2 id="modalTitle">Account löschen</h2>
+    <div class="account-deletion-confirmation">
+      <p>Der Account und alle zugehörigen Zettel werden dauerhaft gelöscht.</p>
+      <p class="form-status" data-account-deletion-status role="status">${escapeText(error)}</p>
+      <div class="modal-actions">
+        ${error
+          ? '<button type="button" class="is-danger" data-retry-account-deletion>Erneut versuchen</button>'
+          : '<button type="button" class="is-danger" data-confirm-account-deletion>Ja</button>'}
+        <button type="button" class="is-muted" data-cancel-account-deletion>Abbrechen</button>
+      </div>
+    </div>
+  `);
+}
+
+async function deleteCurrentAccount() {
+  if (!isActivationReady()) return;
+  const status = elements.modalContent.querySelector("[data-account-deletion-status]");
+  const actions = elements.modalContent.querySelectorAll("[data-confirm-account-deletion], [data-retry-account-deletion], [data-cancel-account-deletion]");
+  actions.forEach((button) => {
+    button.disabled = true;
+  });
+  if (status) status.textContent = "Account wird gelöscht …";
+
+  accountDeletionFlow ??= MartAccountLogic.createAccountDeletionFlow({
+    deleteAccount: () => collaborationService.deleteCurrentAccount(),
+    completeDeletion: completeCurrentAccountDeletion
+  });
+  const result = await accountDeletionFlow.choose("confirm");
+  if (result.ok || result.status === "in_progress") return;
+  showAccountDeletionConfirmation(accountFlowError(result));
+}
+
+async function completeCurrentAccountDeletion() {
+  stopAccountActivity();
+  outboundSyncEnabled = false;
+  accountSessionVersion += 1;
+  remoteSyncPromise = null;
+  if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
+  syncFlushTimer = 0;
+  MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, "");
+  clearPendingDevicePairing();
+  await collaborationService.signOut();
+  accountDeletionFlow = null;
+  await deactivateAccount("Account gelöscht. Dieses Gerät wird neu eingerichtet.");
+}
+
 function accountFlowError(error) {
   const value = typeof error === "string" ? error : (error?.error ?? error?.message ?? "");
   const messages = {
@@ -4546,7 +4605,9 @@ function accountFlowError(error) {
     pairing_not_ready: "Das neue Gerät wartet noch nicht auf Freigabe.",
     pending_account_not_empty: "Das neue Gerät enthält bereits eigene Zettel.",
     pairing_not_found: "Die Geräteverbindung wurde nicht gefunden.",
-    device_required: "Der Geräte-Account ist nicht verbunden."
+    device_required: "Der Geräte-Account ist nicht verbunden.",
+    account_required: "Der Geräte-Account ist nicht verbunden.",
+    account_deletion_failed: "Der Account konnte nicht gelöscht werden."
   };
   return messages[value] ?? authErrorMessage(value);
 }
@@ -6080,6 +6141,19 @@ elements.modalContent.addEventListener("click", (event) => {
   }
   if (event.target.closest("[data-submit-account-recovery]")) {
     restoreAccountFromCode();
+    return;
+  }
+  if (event.target.closest("[data-delete-account]")) {
+    showAccountDeletionConfirmation();
+    return;
+  }
+  if (event.target.closest("[data-confirm-account-deletion], [data-retry-account-deletion]")) {
+    deleteCurrentAccount();
+    return;
+  }
+  if (event.target.closest("[data-cancel-account-deletion]")) {
+    accountDeletionFlow?.choose("cancel");
+    showProfile();
     return;
   }
   const renameDeviceButton = event.target.closest("[data-rename-account-device]");
