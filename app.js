@@ -834,41 +834,36 @@ const storageKeys = {
   priceSync: "shopping-list-app.price-sync"
 };
 
+const accountStoragePrefixes = [
+  "shopping-list-app.items",
+  storageKeys.lists,
+  storageKeys.activeList,
+  storageKeys.currentUser,
+  "shopping-list-app.legacy-migration-complete",
+  storageKeys.realtime,
+  storageKeys.presence,
+  storageKeys.outbox,
+  storageKeys.syncQueue
+];
+let pendingDataEpochReset = false;
+let targetDataEpoch = "1";
+
 function applyDataEpochReset() {
   const config = window.MART_SUPABASE_CONFIG ?? {};
-  const targetEpoch = String(config.dataEpoch || "1");
-  if (localStorage.getItem(storageKeys.dataEpoch) === targetEpoch) return false;
+  targetDataEpoch = String(config.dataEpoch || "1");
+  pendingDataEpochReset = localStorage.getItem(storageKeys.dataEpoch) !== targetDataEpoch;
+  return pendingDataEpochReset;
+}
 
-  const accountStoragePrefixes = [
-    "shopping-list-app.items",
-    storageKeys.lists,
-    storageKeys.activeList,
-    storageKeys.currentUser,
-    "shopping-list-app.legacy-migration-complete",
-    storageKeys.realtime,
-    storageKeys.presence,
-    storageKeys.outbox,
-    storageKeys.syncQueue
-  ];
-  Object.keys(localStorage).forEach((key) => {
-    if (accountStoragePrefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) {
-      localStorage.removeItem(key);
-    }
-  });
+function clearInvalidSessionAccountCaches() {
+  MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, "");
+}
 
-  try {
-    const projectRef = new URL(config.url).hostname.split(".")[0];
-    const authPrefix = projectRef ? `sb-${projectRef}-auth-token` : "";
-    if (authPrefix) {
-      Object.keys(localStorage).forEach((key) => {
-        if (key.startsWith(authPrefix)) localStorage.removeItem(key);
-      });
-    }
-  } catch {
-    // A missing project URL must not block the local reset.
-  }
-
-  localStorage.setItem(storageKeys.dataEpoch, targetEpoch);
+function completeDataEpochReset(accountId) {
+  if (!pendingDataEpochReset) return false;
+  MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, accountId);
+  localStorage.setItem(storageKeys.dataEpoch, targetDataEpoch);
+  pendingDataEpochReset = false;
   return true;
 }
 
@@ -1266,34 +1261,32 @@ class SupabaseRealtimeService {
   async initializeUser() {
     if (!this.client) return null;
     try {
-      const { data: sessionData, error: sessionError } = await this.client.auth.getSession();
-      if (sessionError) throw sessionError;
-      let authUser = sessionData?.session?.user ?? null;
-      if (authUser) {
-        const { data: verifiedData, error: verificationError } = await this.client.auth.getUser();
-        if (!verificationError && verifiedData?.user?.id === authUser.id) {
-          authUser = verifiedData.user;
-        } else {
-          await this.client.auth.signOut({ scope: "local" });
-          authUser = null;
-        }
-      }
-      if (authUser && !isDeviceAuthUser(authUser)) {
-        await this.client.auth.signOut({ scope: "local" });
-        authUser = null;
-      }
-      if (!authUser) {
-        const { data: anonymousData, error: anonymousError } = await this.client.auth.signInAnonymously({
-          options: {
-            data: {
-              deviceLabel: defaultDeviceLabel(),
-              devicePlatform: devicePlatform()
+      const result = await MartAccountLogic.authenticateDeviceIdentity({
+        getSession: async () => {
+          const { data, error } = await this.client.auth.getSession();
+          return { user: data?.session?.user ?? null, error };
+        },
+        getUser: async () => {
+          const { data, error } = await this.client.auth.getUser();
+          return { user: data?.user ?? null, error };
+        },
+        signOutLocal: () => this.client.auth.signOut({ scope: "local" }),
+        clearInvalidSessionData: clearInvalidSessionAccountCaches,
+        signInAnonymously: async () => {
+          const { data, error } = await this.client.auth.signInAnonymously({
+            options: {
+              data: {
+                deviceLabel: defaultDeviceLabel(),
+                devicePlatform: devicePlatform()
+              }
             }
-          }
-        });
-        if (anonymousError) throw anonymousError;
-        authUser = anonymousData?.user ?? null;
-      }
+          });
+          if (error) throw error;
+          return data?.user ?? null;
+        },
+        isDeviceAuthUser
+      });
+      const authUser = result.user;
       this.authUserId = authUser?.id ?? "";
       return authUser;
     } catch (error) {
@@ -1491,7 +1484,7 @@ class SupabaseRealtimeService {
   }
 
   async requestDevicePairing(pairingId, token, label = defaultDeviceLabel(), platform = devicePlatform()) {
-    const { data, error } = await this.client.rpc("request_device_pairing", {
+    const { data, error } = await this.client.rpc("request_device_pairing_v3", {
       target_pairing_id: pairingId,
       pairing_token: token,
       device_label: label,
@@ -1508,7 +1501,7 @@ class SupabaseRealtimeService {
   }
 
   async approveDevicePairing(pairingId) {
-    const { data, error } = await this.client.rpc("approve_device_pairing", {
+    const { data, error } = await this.client.rpc("approve_device_pairing_v3", {
       target_pairing_id: pairingId
     });
     return error ? { ok: false, error: error.message } : data;
@@ -2112,6 +2105,7 @@ let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
 let accountSessionVersion = 0;
+let outboundSyncEnabled = false;
 let authState = {
   status: "loading",
   displayName: "",
@@ -2367,6 +2361,10 @@ function isAuthenticatedAccount() {
   return authState.accountReady && isUuid(currentUser.userId) && isUuid(currentUser.authUserId);
 }
 
+function isActivationReady() {
+  return outboundSyncEnabled && isAuthenticatedAccount();
+}
+
 function accountUserFromAuth(authUser, account) {
   const accountId = account?.id ?? "";
   const cachedUser = load(accountStorageKey(storageKeys.currentUser, accountId), null);
@@ -2427,8 +2425,10 @@ function setAuthBusy(isBusy) {
 }
 
 function showDeviceSetup(message = "Dein Geräte-Account wird vorbereitet.", canRetry = false) {
+  outboundSyncEnabled = false;
   authState.status = canRetry ? "error" : "loading";
   authState.accountReady = false;
+  if (elements.addListButton) elements.addListButton.disabled = true;
   elements.appShell?.classList.add("is-hidden");
   elements.authGate?.classList.remove("is-hidden");
   elements.authDeviceLoader?.classList.toggle("is-hidden", canRetry);
@@ -2443,9 +2443,34 @@ async function connectDeviceAccount() {
   setAuthBusy(true);
   accountSetupPromise = (async () => {
     try {
-      const authUser = await collaborationService.initializeUser?.();
-      if (!isDeviceAuthUser(authUser)) throw new Error("Keine Gerätekennung erhalten");
-      return await activateAccount(authUser, { force: true });
+      if (pendingDevicePairing?.invalid) {
+        showDeviceSetup("Der QR-Code ist ungültig. Öffne einen neuen Gerätelink.", true);
+        return false;
+      }
+      const pairing = pendingDevicePairing;
+      const result = await MartAccountLogic.runActivationSequence({
+        pairing,
+        authenticate: connectDeviceIdentity,
+        requestPairing: (pending) => requestPendingDevicePairing(pending),
+        waitForApproval: (pending) => finishPendingDevicePairing(pending),
+        bootstrap: (authUser) => resolveAndLoadAccount(authUser, { force: true, clearForeignCaches: Boolean(pairing) }),
+        pull: () => pullRemoteLists("account-boot"),
+        enableWrites: enableAccountWrites
+      });
+      if (!result.ok) {
+        if (result.status === "account_in_use" && await activateAccount(result.authUser, { force: true })) {
+          window.alert("Dieses Gerät hat bereits einen eigenen Account. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.");
+          showMore();
+          return true;
+        }
+        const message = result.status === "account_in_use"
+          ? "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest."
+          : (result.status === "initial_load_failed" ? "Der aktuelle Serverstand konnte nicht geladen werden." : accountFlowError({ error: result.status }));
+        showDeviceSetup(message, true);
+        return false;
+      }
+      await startReadyAccountFeatures();
+      return true;
     } catch (error) {
       showDeviceSetup(authErrorMessage(error), true);
       return false;
@@ -2458,7 +2483,7 @@ async function connectDeviceAccount() {
 }
 
 function handleRealtimeMessage(message) {
-  if (!isAuthenticatedAccount()) return;
+  if (!isActivationReady()) return;
   if (message.type === "lists") {
     markSyncSuccess();
     mergeRemoteLists(message.lists);
@@ -2499,35 +2524,42 @@ function stopAccountActivity() {
 }
 
 function startAccountActivity() {
+  if (!isActivationReady()) return;
   stopAccountActivity();
   realtimeSubscription = collaborationService.subscribe(handleRealtimeMessage);
   presenceTimer = window.setInterval(updatePresence, 15000);
   refreshTimer = window.setInterval(() => refreshRealtimeNow("interval"), 12000);
   collaborationService.touchDevice?.(null, devicePlatform());
   deviceHeartbeatTimer = window.setInterval(() => {
-    collaborationService.touchDevice?.(null, devicePlatform());
+    if (isActivationReady()) collaborationService.touchDevice?.(null, devicePlatform());
   }, 60000);
 }
 
-async function activateAccount(authUser, options = {}) {
+async function connectDeviceIdentity() {
+  const authUser = await collaborationService.initializeUser?.();
+  if (!isDeviceAuthUser(authUser)) throw new Error("Keine Gerätekennung erhalten");
+  return authUser;
+}
+
+async function resolveAndLoadAccount(authUser, options = {}) {
   if (!isDeviceAuthUser(authUser)) {
     showDeviceSetup("Der Geräte-Account konnte nicht verbunden werden.", true);
-    return false;
+    return null;
   }
-  if (!options.force && authState.accountReady && currentUser.authUserId === authUser.id) return true;
-  if (authState.status === "loading-account" && authState.activatingUserId === authUser.id) return false;
+  if (authState.status === "loading-account" && authState.activatingUserId === authUser.id) return null;
 
+  outboundSyncEnabled = false;
   authState = { ...authState, status: "loading-account", activatingUserId: authUser.id };
   let account;
   try {
     account = await collaborationService.bootstrapAccount?.(defaultDeviceLabel(), devicePlatform());
   } catch (error) {
     showDeviceSetup(authErrorMessage(error), true);
-    return false;
+    return null;
   }
   if (!account?.id) {
     showDeviceSetup("Der Account konnte nicht vorbereitet werden.", true);
-    return false;
+    return null;
   }
 
   if (currentUser.userId !== account.id) {
@@ -2542,37 +2574,61 @@ async function activateAccount(authUser, options = {}) {
   currentUser = accountUserFromAuth(authUser, account);
   authState = {
     ...authState,
-    status: "signed-in",
+    status: "loading-remote",
     displayName: currentUser.displayName,
     activatingUserId: "",
-    accountReady: true
+    accountReady: false
   };
-  lists = loadAccountLists(currentUser.userId);
-  activeListId = loadAccountActiveListId(currentUser.userId, lists);
+  if (pendingDataEpochReset || options.clearForeignCaches) {
+    MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, currentUser.userId);
+  }
+  completeDataEpochReset(currentUser.userId);
+  lists = [];
+  activeListId = "";
   localMutationVersion = 0;
-  syncState.pendingWrites = syncQueueLength();
-  saveCurrentUser();
+  syncState.pendingWrites = 0;
+  return account;
+}
 
+async function enableAccountWrites() {
+  authState = { ...authState, status: "signed-in", accountReady: true };
+  saveCurrentUser();
+  save({ broadcast: false, source: "remote" });
+  outboundSyncEnabled = true;
+  if (elements.addListButton) elements.addListButton.disabled = false;
   elements.authGate?.classList.add("is-hidden");
   elements.appShell?.classList.remove("is-hidden");
   setAuthBusy(false);
   closeModal();
   startAccountActivity();
   render();
+}
+
+async function startReadyAccountFeatures() {
   await pullRemoteLists("account-boot");
   await importSharedListFromUrl();
   await refreshPricesIfStale();
   scheduleSyncFlush(900);
   updatePresence();
   render();
-  if (pendingDevicePairing && options.handlePairing !== false) {
-    window.setTimeout(() => requestPendingDevicePairing(), 0);
+}
+
+async function activateAccount(authUser, options = {}) {
+  if (!options.force && isActivationReady() && currentUser.authUserId === authUser.id) return true;
+  const account = await resolveAndLoadAccount(authUser, options);
+  if (!account) return false;
+  if (!(await pullRemoteLists("account-boot"))) {
+    showDeviceSetup("Der aktuelle Serverstand konnte nicht geladen werden.", true);
+    return false;
   }
+  await enableAccountWrites();
+  await startReadyAccountFeatures();
   return true;
 }
 
 async function deactivateAccount(message = "") {
   stopAccountActivity();
+  outboundSyncEnabled = false;
   authState = { status: "signed-out", displayName: "", activatingUserId: "", accountReady: false };
   currentAuthUser = null;
   currentUser = signedOutUser();
@@ -2620,6 +2676,7 @@ function memberRole(listData, userId = currentUser.userId) {
 }
 
 function canPerform(listData, action, userId = currentUser.userId) {
+  if (!isActivationReady()) return false;
   const role = memberRole(listData, userId);
   const permissions = normalizePermissions(listData.permissions);
   return permissions[role]?.includes(action) ?? false;
@@ -2904,6 +2961,7 @@ function syncSnapshot(sourceLists = lists) {
 }
 
 function queueSyncWrite(sourceLists = lists, reason = "save", error = "") {
+  if (!isActivationReady()) return;
   const payload = syncSnapshot(sourceLists);
   const signature = JSON.stringify(payload.map((listData) => [listData.listId, listData.updatedAt, listData.items?.length ?? 0]));
   const queue = syncQueue().filter((operation) => operation.signature !== signature);
@@ -2927,7 +2985,7 @@ function listsFromSyncOperation(operation) {
 }
 
 async function publishListSnapshot(sourceLists = lists, reason = "save", options = {}) {
-  if (!isAuthenticatedAccount()) return false;
+  if (!isActivationReady()) return false;
   activeWriteCount += 1;
   markSyncAttempt();
   try {
@@ -2951,6 +3009,7 @@ async function publishListSnapshot(sourceLists = lists, reason = "save", options
 }
 
 function scheduleSyncFlush(delay = 1200) {
+  if (!isActivationReady()) return;
   if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
   syncFlushTimer = window.setTimeout(() => {
     syncFlushTimer = 0;
@@ -2959,7 +3018,7 @@ function scheduleSyncFlush(delay = 1200) {
 }
 
 async function flushSyncQueue() {
-  if (isFlushingSyncQueue || !navigator.onLine) return false;
+  if (!isActivationReady() || isFlushingSyncQueue || !navigator.onLine) return false;
   let queue = syncQueue();
   if (!queue.length) {
     storeSyncQueue([]);
@@ -3009,7 +3068,7 @@ function save(options = {}) {
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
-  if (isAuthenticatedAccount() && options.broadcast !== false) {
+  if (isActivationReady() && options.broadcast !== false) {
     publishListSnapshot(lists, options.reason || "save");
   }
 }
@@ -3240,6 +3299,7 @@ async function refreshPricesIfStale() {
 }
 
 function addMarketToPersonalList(marketId) {
+  if (!isActivationReady()) return null;
   const sourceMarket = marketById(marketId);
   if (!sourceMarket) return null;
   const index = markets.findIndex((market) => market.id === marketId);
@@ -3695,8 +3755,9 @@ async function pullRemoteLists(reason = "auto") {
 }
 
 function pullRemoteListsSoon(reason = "auto", delay = 450) {
+  if (!isActivationReady()) return;
   window.setTimeout(() => {
-    pullRemoteLists(reason);
+    if (isActivationReady()) pullRemoteLists(reason);
   }, delay);
 }
 
@@ -3735,7 +3796,7 @@ async function importSharedListFromUrl() {
   const url = new URL(window.location.href);
   const payload = url.searchParams.get("invite") ?? url.searchParams.get("zettel");
   if (!payload) return;
-  if (!isAuthenticatedAccount()) return;
+  if (!isActivationReady()) return;
 
   try {
     const decoded = decodeShareValue(payload);
@@ -3990,6 +4051,7 @@ function showMembers(listId = activeListId) {
 }
 
 async function leaveSharedList(listData, index) {
+  if (!isActivationReady()) return;
   if (listData.ownerId === currentUser.userId) {
     window.alert("Als Owner kannst du diesen geteilten Zettel nicht verlassen. Entferne zuerst die anderen Nutzer.");
     return;
@@ -4389,6 +4451,7 @@ function showProfile() {
 }
 
 async function saveProfile() {
+  if (!isActivationReady()) return;
   const nameInput = elements.modalContent.querySelector("#profileNameInput");
   const avatarInput = elements.modalContent.querySelector("#profileAvatarInput");
   if (!nameInput) return;
@@ -4430,6 +4493,7 @@ function accountFlowError(error) {
     invalid_pairing: "Dieser QR-Code ist ungültig oder abgelaufen.",
     pairing_in_use: "Dieser QR-Code wird bereits von einem anderen Gerät verwendet.",
     already_connected: "Dieses Gerät gehört bereits zum Account.",
+    account_in_use: "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.",
     pairing_not_ready: "Das neue Gerät wartet noch nicht auf Freigabe.",
     pending_account_not_empty: "Das neue Gerät enthält bereits eigene Zettel.",
     pairing_not_found: "Die Geräteverbindung wurde nicht gefunden.",
@@ -4495,6 +4559,7 @@ function showRenameDevice(deviceId, label) {
 }
 
 async function saveDeviceName() {
+  if (!isActivationReady()) return;
   const form = elements.modalContent.querySelector("[data-device-id]");
   const input = elements.modalContent.querySelector("#deviceNameInput");
   if (!form || !input) return;
@@ -4512,6 +4577,7 @@ async function saveDeviceName() {
 }
 
 async function removeAccountDevice(deviceId) {
+  if (!isActivationReady()) return;
   if (!window.confirm("Dieses Gerät wirklich vom Account entfernen?")) return;
   const result = await collaborationService.removeDevice?.(deviceId);
   if (result?.ok === false) {
@@ -4536,6 +4602,7 @@ function showRecoveryCodeResult(code, title = "Account gesichert") {
 }
 
 async function createRecoveryCode() {
+  if (!isActivationReady()) return;
   const result = await collaborationService.rotateRecoveryCode?.();
   if (!result?.ok || !result.recoveryCode) {
     window.alert(accountFlowError(result));
@@ -4575,6 +4642,7 @@ function showAccountRecovery() {
 }
 
 async function restoreAccountFromCode() {
+  if (!isActivationReady()) return;
   const input = elements.modalContent.querySelector("#recoveryCodeInput");
   const status = elements.modalContent.querySelector("#recoveryStatus");
   const code = input?.value.trim() ?? "";
@@ -4592,19 +4660,20 @@ async function restoreAccountFromCode() {
 }
 
 function pairingPayloadFromUrl() {
-  const url = new URL(window.location.href);
-  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
-  const pairingId = hashParams.get("pair") ?? url.searchParams.get("pair") ?? "";
-  const pairingToken = hashParams.get("pairToken") ?? url.searchParams.get("pairToken") ?? "";
-  if (!pairingId && !pairingToken) return null;
-  hashParams.delete("pair");
-  hashParams.delete("pairToken");
-  url.searchParams.delete("pair");
-  url.searchParams.delete("pairToken");
-  url.hash = hashParams.toString();
-  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-  if (!isUuid(pairingId) || !/^[a-f0-9]{48}$/i.test(pairingToken)) return { invalid: true };
-  return { pairingId, pairingToken };
+  try {
+    return MartAccountLogic.capturePendingDevicePairing(
+      window.location.href,
+      window.sessionStorage,
+      (cleanUrl) => window.history.replaceState({}, "", cleanUrl)
+    );
+  } catch (error) {
+    return { invalid: true, error };
+  }
+}
+
+function clearPendingDevicePairing() {
+  MartAccountLogic.clearPendingDevicePairing(window.sessionStorage);
+  pendingDevicePairing = null;
 }
 
 function devicePairingUrl(pairing) {
@@ -4629,6 +4698,7 @@ function qrSvgMarkup(value) {
 }
 
 async function startDevicePairing() {
+  if (!isActivationReady()) return;
   const result = await collaborationService.createDevicePairing?.();
   if (!result?.ok) {
     window.alert(accountFlowError(result));
@@ -4704,6 +4774,7 @@ async function pollOwnerPairing(pairingId) {
 }
 
 async function approveDevicePairing(pairingId) {
+  if (!isActivationReady()) return;
   const result = await collaborationService.approveDevicePairing?.(pairingId);
   if (!result?.ok) {
     window.alert(accountFlowError(result));
@@ -4713,17 +4784,15 @@ async function approveDevicePairing(pairingId) {
 }
 
 async function cancelDevicePairing(pairingId) {
+  if (!isActivationReady()) return;
   await collaborationService.cancelDevicePairing?.(pairingId);
   showDevices();
 }
 
-async function requestPendingDevicePairing() {
-  const pairing = pendingDevicePairing;
-  if (!pairing) return;
+async function requestPendingDevicePairing(pairing = pendingDevicePairing) {
+  if (!pairing) return { ok: false, error: "pairing_not_found" };
   if (pairing.invalid) {
-    pendingDevicePairing = null;
-    window.alert("Der QR-Code ist ungültig.");
-    return;
+    return { ok: false, error: "invalid_pairing" };
   }
   const result = await collaborationService.requestDevicePairing?.(
     pairing.pairingId,
@@ -4732,9 +4801,7 @@ async function requestPendingDevicePairing() {
     devicePlatform()
   );
   if (!result?.ok) {
-    pendingDevicePairing = null;
-    window.alert(accountFlowError(result));
-    return;
+    return result ?? { ok: false, error: "pairing_not_found" };
   }
   pendingDevicePairing = { ...pairing, requested: true };
   openModal(`
@@ -4743,38 +4810,40 @@ async function requestPendingDevicePairing() {
       <p>Bestätige auf dem bereits verbundenen Gerät denselben Vergleichscode:</p>
       <strong>${escapeText(result.confirmationCode)}</strong>
       <span data-pending-pairing-status>Warte auf Bestätigung …</span>
+      <div class="modal-actions"><button type="button" class="is-muted" data-cancel-pending-device-pairing>Abbrechen</button></div>
     </div>
   `);
-  pollPendingPairing(pairing.pairingId);
+  return result;
 }
 
-async function pollPendingPairing(pairingId) {
-  const panel = elements.modalContent.querySelector(`[data-pending-device-pairing="${pairingId}"]`);
-  if (!panel) return;
-  const statusElement = panel.querySelector("[data-pending-pairing-status]");
-  const result = await collaborationService.devicePairingStatus?.(pairingId);
-  if (!result?.ok) {
-    if (statusElement) statusElement.textContent = accountFlowError(result);
-    return;
+async function finishPendingDevicePairing(pairing = pendingDevicePairing) {
+  if (!pairing) return { ok: false, error: "pairing_not_found" };
+  while (pendingDevicePairing?.pairingId === pairing.pairingId) {
+    const panel = elements.modalContent.querySelector(`[data-pending-device-pairing="${pairing.pairingId}"]`);
+    const statusElement = panel?.querySelector("[data-pending-pairing-status]");
+    const result = await collaborationService.devicePairingStatus?.(pairing.pairingId);
+    if (!result?.ok) {
+      if (statusElement) statusElement.textContent = accountFlowError(result);
+      return result ?? { ok: false, error: "pairing_not_found" };
+    }
+    if (result.status === "approved") {
+      clearPendingDevicePairing();
+      return result;
+    }
+    if (result.status === "expired" || result.status === "cancelled") {
+      clearPendingDevicePairing();
+      if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Die Verbindung wurde abgebrochen.";
+      return result;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1600));
   }
-  if (result.status === "approved") {
-    const previousAccountId = currentUser.userId;
-    pendingDevicePairing = null;
-    clearLocalAccountCache(previousAccountId);
-    await activateAccount(currentAuthUser, { force: true, handlePairing: false });
-    openModal(`
-      <h2 id="modalTitle">Gerät verbunden</h2>
-      <div class="modal-copy"><p>Dieser Account ist jetzt auch auf diesem Gerät verfügbar.</p></div>
-      <div class="modal-actions"><button type="button" data-open-devices>Geräte anzeigen</button></div>
-    `);
-    return;
-  }
-  if (result.status === "expired" || result.status === "cancelled") {
-    pendingDevicePairing = null;
-    if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Die Verbindung wurde abgebrochen.";
-    return;
-  }
-  schedulePairingPoll(() => pollPendingPairing(pairingId));
+  return { ok: false, error: "pairing_cancelled" };
+}
+
+function cancelPendingDevicePairing() {
+  clearPendingDevicePairing();
+  closeModal();
+  showDeviceSetup("Die Geräteverbindung wurde abgebrochen.", true);
 }
 
 async function copyBugReport() {
@@ -4965,6 +5034,7 @@ function moveManualSuggestionSelection(input, delta) {
 }
 
 function toggleFavorite(product) {
+  if (!isActivationReady()) return;
   if (favorites.includes(product.id)) {
     favorites = favorites.filter((id) => id !== product.id);
   } else {
@@ -5097,7 +5167,7 @@ function renderProductGrid(container, products) {
           <p class="product-price ${bestPriceForProduct(product.id) ? "" : "is-empty"}">${escapeText(priceSummary)}</p>
         </div>
         <div class="product-actions">
-          <button class="favorite-button ${isFavorite ? "is-active" : ""}" type="button" title="Favorit" aria-label="Favorit" data-favorite="${escapeText(product.id)}">
+          <button class="favorite-button ${isFavorite ? "is-active" : ""}" type="button" ${isActivationReady() ? "" : "disabled"} title="Favorit" aria-label="Favorit" data-favorite="${escapeText(product.id)}">
             ${icon("sparkle")}
           </button>
           <button class="add-button" type="button" ${canAdd ? "" : "disabled"} title="Auf den Zettel" aria-label="Auf den Zettel" data-add="${escapeText(product.id)}">
@@ -5160,6 +5230,7 @@ function exitShelfReorderMode() {
 }
 
 function reorderShelf(draggedId, targetId) {
+  if (!isActivationReady()) return;
   if (!draggedId || !targetId || draggedId === targetId) return;
   const order = marketShelves().map((shelf) => shelf.id);
   const draggedIndex = order.indexOf(draggedId);
@@ -5246,7 +5317,7 @@ function nextListTitle() {
 }
 
 function addList() {
-  if (!isAuthenticatedAccount()) return;
+  if (!isActivationReady()) return;
   const newList = createList(nextListTitle());
   lists.push(newList);
   activeListId = MartLogic.chooseActiveListId(
@@ -5259,6 +5330,7 @@ function addList() {
 }
 
 function activateList(id) {
+  if (!isActivationReady()) return;
   if (!lists.some((listData) => listData.id === id)) return;
   if (activeListId === id) return;
   activeListId = id;
@@ -5278,6 +5350,7 @@ function removeLocalList(id, index = lists.findIndex((listData) => listData.id =
 }
 
 async function deleteList(id) {
+  if (!isActivationReady()) return;
   const index = lists.findIndex((listData) => listData.id === id);
   if (index === -1) return;
 
@@ -5644,6 +5717,9 @@ function noteMarkup(listData) {
     ?? (listData.ownerId === currentUser.userId ? createMember(currentUser, collaborationRoles.owner, listData.createdAt) : null);
   const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
   const canAdd = Boolean(member) && canPerform(listData, "add");
+  const canEdit = canPerform(listData, "edit");
+  const canInvite = canPerform(listData, "invite");
+  const canRemoveList = isActivationReady();
   const sharedClass = isSharedList(listData) ? "is-shared" : "";
   const manualDraft = manualDrafts[listData.id] ?? "";
   const isActive = listData.id === activeListId;
@@ -5657,13 +5733,13 @@ function noteMarkup(listData) {
         <h2 class="list-title">
           <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
           <span>${escapeText(listData.title)}</span>
-          <button class="edit-note-button" type="button" title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
+          <button class="edit-note-button" type="button" ${canEdit ? "" : "disabled"} title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
             ${icon("pencil")}
           </button>
         </h2>
         <div class="list-tools">
           <span>${count} Artikel</span>
-          <button class="share-button" type="button" data-share-list="${escapeText(listData.id)}">Teilen</button>
+          <button class="share-button" type="button" ${canInvite ? "" : "disabled"} data-share-list="${escapeText(listData.id)}">Teilen</button>
         </div>
       </div>
       <div class="collab-row">
@@ -5689,7 +5765,7 @@ function noteMarkup(listData) {
         <div class="manual-suggestions" id="${escapeText(suggestionListId)}" role="listbox" data-manual-suggestions hidden></div>
       </div>
       <footer class="note-footer">
-        <button class="note-delete-button" type="button" data-delete-list="${escapeText(listData.id)}">
+        <button class="note-delete-button" type="button" ${canRemoveList ? "" : "disabled"} data-delete-list="${escapeText(listData.id)}">
           ${icon(listData.ownerId === currentUser.userId ? "trash" : "logout")}
           <span>${listData.ownerId === currentUser.userId ? "Zettel löschen" : "Zettel verlassen"}</span>
         </button>
@@ -5701,7 +5777,7 @@ function noteMarkup(listData) {
 function emptyNotesMarkup() {
   return `
     <div class="empty-notes-state">
-      <button class="add-note-button add-note-button-large" type="button" data-empty-add-list>
+      <button class="add-note-button add-note-button-large" type="button" ${isActivationReady() ? "" : "disabled"} data-empty-add-list>
         ${icon("plus")}
         Neuer Zettel
       </button>
@@ -5986,6 +6062,10 @@ elements.modalContent.addEventListener("click", (event) => {
     approveDevicePairing(approvePairingButton.dataset.approveDevicePairing);
     return;
   }
+  if (event.target.closest("[data-cancel-pending-device-pairing]")) {
+    cancelPendingDevicePairing();
+    return;
+  }
   if (event.target.closest("[data-copy-bug]")) {
     copyBugReport();
     return;
@@ -6067,6 +6147,7 @@ elements.modalContent.addEventListener("keydown", (event) => {
 });
 
 function updatePresence() {
+  if (!isActivationReady()) return;
   const listData = activeList();
   if (!listData) return;
   const member = memberFor(listData, currentUser.userId);
@@ -6075,6 +6156,7 @@ function updatePresence() {
 }
 
 async function refreshRealtimeNow(reason) {
+  if (!isActivationReady()) return false;
   await flushSyncQueue();
   return pullRemoteLists(reason);
 }
@@ -6095,15 +6177,15 @@ async function bootApp() {
   }) ?? null;
 
   window.addEventListener("online", () => {
-    if (isAuthenticatedAccount()) refreshRealtimeNow("online");
+    if (isActivationReady()) refreshRealtimeNow("online");
   });
   window.addEventListener("offline", () => markSyncError("offline"));
   window.addEventListener("focus", () => {
-    if (isAuthenticatedAccount()) refreshRealtimeNow("focus");
+    if (isActivationReady()) refreshRealtimeNow("focus");
   });
   document.addEventListener("focusout", () => flushPendingNotesRender(220));
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && isAuthenticatedAccount()) refreshRealtimeNow("visible");
+    if (!document.hidden && isActivationReady()) refreshRealtimeNow("visible");
   });
 }
 

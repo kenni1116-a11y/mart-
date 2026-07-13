@@ -5,6 +5,7 @@
 })(typeof globalThis === "object" ? globalThis : this, () => {
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const TOKEN = /^[a-f0-9]{48}$/i;
+  const pendingDevicePairingStorageKey = "shopping-list-app.pending-device-pairing";
 
   function parsePairingUrl(value) {
     const url = new URL(value);
@@ -45,7 +46,7 @@
     Array.from({ length: storage.length }, (_, index) => storage.key(index))
       .filter(Boolean)
       .forEach((key) => {
-        const prefix = prefixes.find((candidate) => key.startsWith(`${candidate}:`));
+        const prefix = prefixes.find((candidate) => key === candidate || key.startsWith(`${candidate}:`));
         if (!prefix || key === `${prefix}:${keepAccountId}`) return;
         storage.removeItem(key);
         removed.push(key);
@@ -53,5 +54,126 @@
     return removed;
   }
 
-  return { parsePairingUrl, nextActivationState, accountStorageKey, removeForeignAccountCaches };
+  function pairingFromValue(value) {
+    if (!value || typeof value !== "object") return null;
+    const pairingId = typeof value.pairingId === "string" ? value.pairingId : "";
+    const pairingToken = typeof value.pairingToken === "string" ? value.pairingToken : "";
+    if (!UUID.test(pairingId) || !TOKEN.test(pairingToken)) return null;
+    return { pairingId, pairingToken };
+  }
+
+  function restorePendingDevicePairing(storage) {
+    const stored = storage.getItem(pendingDevicePairingStorageKey);
+    if (!stored) return null;
+    try {
+      const pairing = pairingFromValue(JSON.parse(stored));
+      if (pairing) return pairing;
+    } catch {
+      // Invalid persisted data is terminal and must not start activation.
+    }
+    storage.removeItem(pendingDevicePairingStorageKey);
+    return { invalid: true };
+  }
+
+  function capturePendingDevicePairing(url, storage, cleanUrl) {
+    const parsed = parsePairingUrl(url);
+    if (!parsed) return restorePendingDevicePairing(storage);
+    if (parsed.invalid) return { invalid: true };
+    const pairing = pairingFromValue(parsed);
+    storage.setItem(pendingDevicePairingStorageKey, JSON.stringify(pairing));
+    cleanUrl(parsed.cleanUrl);
+    return pairing;
+  }
+
+  function clearPendingDevicePairing(storage) {
+    storage.removeItem(pendingDevicePairingStorageKey);
+  }
+
+  function isInvalidRefreshTokenError(error) {
+    const message = typeof error === "string" ? error : (error?.message ?? "");
+    return /invalid refresh token|refresh token not found|refresh_token_not_found/i.test(message);
+  }
+
+  async function authenticateDeviceIdentity(options) {
+    const session = await options.getSession();
+    const sessionError = session?.error ?? null;
+    let authUser = session && Object.prototype.hasOwnProperty.call(session, "user") ? session.user : (session ?? null);
+    let invalidSession = false;
+
+    if (sessionError) {
+      if (!isInvalidRefreshTokenError(sessionError)) throw sessionError;
+      await options.signOutLocal();
+      options.clearInvalidSessionData?.();
+      authUser = null;
+      invalidSession = true;
+    }
+
+    if (authUser) {
+      const verification = await options.getUser();
+      if (!verification?.error && verification?.user?.id === authUser.id) {
+        authUser = verification.user;
+      } else if (isInvalidRefreshTokenError(verification?.error)) {
+        await options.signOutLocal();
+        options.clearInvalidSessionData?.();
+        authUser = null;
+        invalidSession = true;
+      } else if (verification?.error) {
+        throw verification.error;
+      } else {
+        await options.signOutLocal();
+        authUser = null;
+      }
+    }
+
+    if (authUser && !options.isDeviceAuthUser(authUser)) {
+      await options.signOutLocal();
+      authUser = null;
+    }
+    if (!authUser) authUser = await options.signInAnonymously();
+    if (!options.isDeviceAuthUser(authUser)) throw new Error("Keine Gerätekennung erhalten");
+    return { user: authUser, invalidSession };
+  }
+
+  async function runActivationSequence({
+    authenticate,
+    pairing = null,
+    requestPairing,
+    waitForApproval,
+    bootstrap,
+    pull,
+    enableWrites
+  }) {
+    const authUser = await authenticate();
+    if (pairing) {
+      const pairingResult = await requestPairing(pairing, authUser);
+      if (!pairingResult?.ok) {
+        return { ok: false, status: pairingResult?.error || pairingResult?.status || "pairing_failed", pairingResult };
+      }
+      const approvalResult = await waitForApproval(pairing, authUser);
+      if (!approvalResult?.ok || approvalResult.status !== "approved") {
+        return { ok: false, status: approvalResult?.error || approvalResult?.status || "pairing_failed", pairingResult: approvalResult };
+      }
+    }
+
+    const account = await bootstrap(authUser);
+    if (!account?.id) return { ok: false, status: "account_unavailable" };
+    const pullResult = await pull(account, authUser);
+    if (pullResult === false) return { ok: false, status: "initial_load_failed" };
+    await enableWrites(account, authUser);
+    return { ok: true, status: "ready", account, authUser };
+  }
+
+  return {
+    parsePairingUrl,
+    nextActivationState,
+    accountStorageKey,
+    removeForeignAccountCaches,
+    pendingDevicePairingStorageKey,
+    restorePendingDevicePairing,
+    capturePendingDevicePairing,
+    clearPendingDevicePairing,
+    isInvalidRefreshTokenError,
+    authenticateDeviceIdentity,
+    runActivationSequence
+  };
 });
