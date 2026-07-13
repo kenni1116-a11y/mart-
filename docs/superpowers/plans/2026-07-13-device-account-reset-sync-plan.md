@@ -199,7 +199,7 @@ git commit -m "test: define account activation contract"
 
 - [ ] **Step 1: Write the transactional SQL test**
 
-Create a `begin; ... rollback;` test that inserts two anonymous `auth.users`, uses `set_config('request.jwt.claim.sub', auth_user_id::text, true)`, bootstraps only the owner, creates a pairing, requests it as the second auth user without calling `bootstrap_account`, approves it as owner, and raises an exception unless both auth users resolve to the same account. Include a second case proving a non-empty existing account returns `account_in_use` and remains unchanged.
+Create a `begin; ... rollback;` test that inserts two anonymous `auth.users`, uses `set_config('request.jwt.claim.sub', auth_user_id::text, true)`, bootstraps only the owner, creates a pairing, requests it as the second auth user without calling `bootstrap_account`, approves it as owner, and raises an exception unless both auth users resolve to the same account. Include cases proving that requesting never mutates an existing account, approval atomically removes a truly empty one-device transition account, and a non-empty existing account returns `account_in_use` unchanged.
 
 The core assertions are:
 
@@ -211,7 +211,7 @@ if private.current_account_id() <> owner_account_id then
   raise exception 'new device was not attached to owner account';
 end if;
 if exists (select 1 from public.accounts where id = temporary_account_id) then
-  raise exception 'empty temporary account still exists';
+  raise exception 'empty temporary account still exists after approval';
 end if;
 ```
 
@@ -227,7 +227,7 @@ Expected: FAIL because `request_device_pairing_v3` does not exist. The final `ro
 
 - [ ] **Step 3: Implement the non-destructive migration**
 
-The migration must not drop tables or users. It creates new v3 functions alongside current RPCs. `request_device_pairing_v3` must:
+The migration must not drop tables or users. It creates new v3 functions alongside current RPCs. `request_device_pairing_v3` must authenticate the caller, validate and lock the pairing, reject `already_connected`, and record only the pending identity and cleaned device metadata. It must never delete, detach, reassign, or otherwise mutate the requesting identity's current account or device.
 
 ```sql
 create function public.request_device_pairing_v3(
@@ -240,7 +240,6 @@ language plpgsql security definer set search_path = '' as $$
 declare
   request_user_id uuid := auth.uid();
   current_account_id uuid := private.current_account_id();
-  current_device_id uuid := private.current_device_id();
   pairing_row public.device_pairings%rowtype;
 begin
   if request_user_id is null then return jsonb_build_object('ok', false, 'error', 'authentication_required'); end if;
@@ -250,15 +249,6 @@ begin
     return jsonb_build_object('ok', false, 'error', 'invalid_pairing');
   end if;
   if current_account_id = pairing_row.account_id then return jsonb_build_object('ok', false, 'error', 'already_connected'); end if;
-  if current_account_id is not null and private.account_has_data(current_account_id) then
-    return jsonb_build_object('ok', false, 'error', 'account_in_use');
-  end if;
-  if current_device_id is not null then
-    delete from public.account_devices where id = current_device_id;
-    delete from public.accounts a where a.id = current_account_id and not exists (
-      select 1 from public.account_devices d where d.account_id = a.id
-    ) and not private.account_has_data(a.id);
-  end if;
   update public.device_pairings set
     pending_auth_user_id = request_user_id,
     pending_device_label = private.clean_device_label(device_label),
@@ -271,11 +261,11 @@ end;
 $$;
 ```
 
-`approve_device_pairing_v3` must lock the pairing, require the owner account and a pending auth user, reject an auth user still attached to another account, insert or update exactly one `account_devices` row on the target account, mark the pairing approved, and return `status = approved`. Revoke execution from `public` and `anon`; grant only to `authenticated`.
+`approve_device_pairing_v3` is the only finalization point. It must lock the pairing, require the owner account and a pending auth user, serialize approvals for that identity, and re-read its current device/account after acquiring the lock. If there is no current account, attach the identity directly to the target account. If there is a current account, lock it and its device rows and treat it as in use when it has more than one device, any recovery credential, any owned shopping list including soft-deleted rows, or any list membership including removed rows. In that case return `account_in_use` without changing the existing account, device, or pairing approval state. Otherwise reassign the single empty transition device to the target account and remove the now-orphaned transition account within the same transaction. Only after the final mapping is verified may the function mark the pairing approved and return `status = approved`. Revoke execution from `public` and `anon`; grant only to `authenticated`.
 
 - [ ] **Step 4: Inspect security and test the migration**
 
-Run Supabase database advisors, inspect every v3 function for explicit `auth.uid()` authorization, then execute `tests/sql/device_pairing_v3.test.sql`.
+Run Supabase database advisors, inspect every v3 function for explicit `auth.uid()` authorization, then execute `tests/sql/device_pairing_v3.test.sql`. The test must cover a two-device account, recovery credential, soft-deleted owned list, removed membership, competing approvals, and complete before/after snapshots for every `account_in_use` case.
 
 Expected: no security advisor error introduced by the migration; SQL test completes and rolls back.
 

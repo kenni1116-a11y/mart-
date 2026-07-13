@@ -76,7 +76,9 @@ If no lists exist after activation, the app displays only the centered `Neuer Ze
 4. The app requests pairing without bootstrapping a permanent account and without loading or publishing local lists.
 5. The existing device displays the new device label and comparison code.
 6. The owner approves the request.
-7. The server creates the new `account_devices` row directly on the target account, or safely reassigns an existing empty temporary device row.
+7. The pairing request records only the pending request and never deletes, detaches, or reassigns account data.
+8. The owner's approval is the single atomic finalization point. It locks the pairing and pending identity, rechecks the complete current-account state, and only then either attaches an unbootstrapped identity, reassigns a truly empty one-device transition account, or returns `account_in_use` without changing that account.
+9. An account is not empty when it has another device, a recovery credential, any owned list including soft-deleted history, or any membership including removed history.
 8. The new device activates the target account, clears data belonging to any previous account, loads the server state, and only then enables editing and publishing.
 
 ### Previously used device
@@ -86,6 +88,7 @@ If no lists exist after activation, the app displays only the centered `Neuer Ze
 - Existing non-empty accounts are neither deleted nor silently merged by device pairing.
 - If such an account is encountered, pairing stops and directs the user to the account settings. The user may keep the account or delete it there before starting pairing again.
 - Retrying an expired or interrupted pairing must not create another permanent account.
+- Requesting a pairing never mutates the requesting device's existing account. Empty-transition cleanup and attachment either complete together during approval or neither change is committed.
 
 ### Shared-list invitations
 
