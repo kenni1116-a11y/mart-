@@ -168,6 +168,7 @@ declare
   unbootstrapped_pairing jsonb;
   transition_pairing jsonb;
   two_device_pairing jsonb;
+  two_device_second_pairing jsonb;
   recovery_pairing jsonb;
   soft_deleted_list_pairing jsonb;
   removed_membership_pairing jsonb;
@@ -179,9 +180,15 @@ declare
   approval_result jsonb;
   account_state_before_request jsonb;
   account_state_after_request jsonb;
+  two_device_state_before jsonb;
+  two_device_state_after jsonb;
   competing_state_before jsonb;
   competing_state_after jsonb;
   approval_definition text;
+  initial_mapping_read text;
+  foreign_account_lock_position integer;
+  foreign_devices_lock_position integer;
+  foreign_mapping_reread_position integer;
   legacy_approval_definition text;
   request_definition text;
   durable_reference record;
@@ -301,6 +308,9 @@ begin
   -- More than one device makes the pending account durable.
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
   two_device_pairing := public.create_device_pairing();
+  perform set_config('request.jwt.claim.sub', competing_owner_auth_user_id::text, true);
+  competing_owner_account_id := (public.bootstrap_account('Competing owner', 'test')->>'id')::uuid;
+  two_device_second_pairing := public.create_device_pairing();
   insert into public.accounts (id, username, display_name)
   values (
     two_device_account_id,
@@ -311,12 +321,87 @@ begin
   values
     (two_device_account_id, two_device_auth_user_id, 'Pending device', 'test'),
     (two_device_account_id, two_device_second_auth_user_id, 'Other device', 'test');
-  perform pg_temp.assert_pairing_account_in_use(
-    'two devices', owner_auth_user_id, two_device_auth_user_id,
-    two_device_account_id, two_device_pairing
+
+  perform set_config('request.jwt.claim.sub', two_device_auth_user_id::text, true);
+  request_result := public.request_device_pairing_v3(
+    (two_device_pairing->>'pairingId')::uuid,
+    two_device_pairing->>'pairingToken',
+    'First pending device',
+    'test'
+  );
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception 'expected first two-device request pending, got %', request_result;
+  end if;
+
+  perform set_config('request.jwt.claim.sub', two_device_second_auth_user_id::text, true);
+  request_result := public.request_device_pairing_v3(
+    (two_device_second_pairing->>'pairingId')::uuid,
+    two_device_second_pairing->>'pairingToken',
+    'Second pending device',
+    'test'
+  );
+  if request_result->>'status' is distinct from 'pending' then
+    raise exception 'expected second two-device request pending, got %', request_result;
+  end if;
+
+  two_device_state_before := jsonb_build_object(
+    'accountState', pg_temp.pairing_v3_account_state(two_device_account_id),
+    'pairings', (
+      select jsonb_agg(to_jsonb(pairings) order by pairings.id)
+      from public.device_pairings pairings
+      where pairings.id in (
+        (two_device_pairing->>'pairingId')::uuid,
+        (two_device_second_pairing->>'pairingId')::uuid
+      )
+    )
   );
 
+  perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
+  approval_result := public.approve_device_pairing_v3((two_device_pairing->>'pairingId')::uuid);
+  if approval_result->>'error' is distinct from 'account_in_use' then
+    raise exception 'expected first two-device approval account_in_use, got %', approval_result;
+  end if;
+
+  two_device_state_after := jsonb_build_object(
+    'accountState', pg_temp.pairing_v3_account_state(two_device_account_id),
+    'pairings', (
+      select jsonb_agg(to_jsonb(pairings) order by pairings.id)
+      from public.device_pairings pairings
+      where pairings.id in (
+        (two_device_pairing->>'pairingId')::uuid,
+        (two_device_second_pairing->>'pairingId')::uuid
+      )
+    )
+  );
+  if two_device_state_before is distinct from two_device_state_after then
+    raise exception 'first two-device rejection changed account, devices, or pairings';
+  end if;
+
+  perform set_config('request.jwt.claim.sub', competing_owner_auth_user_id::text, true);
+  approval_result := public.approve_device_pairing_v3(
+    (two_device_second_pairing->>'pairingId')::uuid
+  );
+  if approval_result->>'error' is distinct from 'account_in_use' then
+    raise exception 'expected second two-device approval account_in_use, got %', approval_result;
+  end if;
+
+  two_device_state_after := jsonb_build_object(
+    'accountState', pg_temp.pairing_v3_account_state(two_device_account_id),
+    'pairings', (
+      select jsonb_agg(to_jsonb(pairings) order by pairings.id)
+      from public.device_pairings pairings
+      where pairings.id in (
+        (two_device_pairing->>'pairingId')::uuid,
+        (two_device_second_pairing->>'pairingId')::uuid
+      )
+    )
+  );
+  if two_device_state_before is distinct from two_device_state_after then
+    raise exception 'second two-device rejection changed account, devices, or pairings';
+  end if;
+
   -- A recovery credential makes a one-device account durable.
+  perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
   recovery_pairing := public.create_device_pairing();
   insert into public.accounts (id, username, display_name)
   values (
@@ -492,7 +577,6 @@ begin
 
   -- Sequential competing approvals are the strongest single-session race evidence.
   perform set_config('request.jwt.claim.sub', competing_owner_auth_user_id::text, true);
-  competing_owner_account_id := (public.bootstrap_account('Competing owner', 'test')->>'id')::uuid;
   first_owner_pairing := public.create_device_pairing();
   perform set_config('request.jwt.claim.sub', owner_auth_user_id::text, true);
   second_owner_pairing := public.create_device_pairing();
@@ -559,7 +643,12 @@ begin
     raise exception 'competing approval moved the contested identity';
   end if;
 
-  approval_definition := pg_get_functiondef('public.approve_device_pairing_v3(uuid)'::regprocedure);
+  approval_definition := lower(regexp_replace(
+    pg_get_functiondef('public.approve_device_pairing_v3(uuid)'::regprocedure),
+    '[[:space:]]+',
+    ' ',
+    'g'
+  ));
   legacy_approval_definition := pg_get_functiondef(
     'public.approve_device_pairing(uuid)'::regprocedure
   );
@@ -576,6 +665,42 @@ begin
   if position('pg_advisory_xact_lock' in approval_definition)
     > position('from public.account_devices' in approval_definition) then
     raise exception 'approve_device_pairing_v3 locks the mapping before serializing the identity';
+  end if;
+  initial_mapping_read := 'select devices.account_id, devices.id '
+    || 'into pending_account_id, paired_device_id '
+    || 'from public.account_devices devices '
+    || 'where devices.auth_user_id = pairing_row.pending_auth_user_id';
+  if cardinality(string_to_array(approval_definition, initial_mapping_read)) - 1 <> 2 then
+    raise exception 'approve_device_pairing_v3 must have two unlocked initial mapping reads';
+  end if;
+  if position(initial_mapping_read || ' for update' in approval_definition) > 0 then
+    raise exception 'approve_device_pairing_v3 takes a device lock during an initial mapping read';
+  end if;
+
+  foreign_account_lock_position := position(
+    'from public.accounts accounts '
+    || 'where accounts.id = expected_pending_account_id for update'
+    in approval_definition
+  );
+  foreign_devices_lock_position := position(
+    'from public.account_devices devices '
+    || 'where devices.account_id = expected_pending_account_id '
+    || 'order by devices.id for update'
+    in approval_definition
+  );
+  foreign_mapping_reread_position := position(
+    'select devices.account_id, devices.id '
+    || 'into locked_pending_account_id, locked_paired_device_id '
+    || 'from public.account_devices devices '
+    || 'where devices.auth_user_id = pairing_row.pending_auth_user_id'
+    in approval_definition
+  );
+  if foreign_account_lock_position = 0
+    or foreign_devices_lock_position = 0
+    or foreign_mapping_reread_position = 0
+    or foreign_account_lock_position >= foreign_devices_lock_position
+    or foreign_devices_lock_position >= foreign_mapping_reread_position then
+    raise exception 'approve_device_pairing_v3 does not lock foreign account then devices before re-read';
   end if;
   if position('delete from public.account_devices' in request_definition) > 0
     or position('delete from public.accounts' in request_definition) > 0

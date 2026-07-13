@@ -70,6 +70,10 @@ declare
   pairing_row public.device_pairings%rowtype;
   pending_account_id uuid;
   paired_device_id uuid;
+  expected_pending_account_id uuid;
+  expected_paired_device_id uuid;
+  locked_pending_account_id uuid;
+  locked_paired_device_id uuid;
   pending_device_count integer;
   removed_account_id uuid;
 begin
@@ -101,8 +105,7 @@ begin
   select devices.account_id, devices.id
   into pending_account_id, paired_device_id
   from public.account_devices devices
-  where devices.auth_user_id = pairing_row.pending_auth_user_id
-  for update;
+  where devices.auth_user_id = pairing_row.pending_auth_user_id;
 
   if paired_device_id is null then
     insert into public.account_devices (account_id, auth_user_id, label, platform)
@@ -121,16 +124,18 @@ begin
       select devices.account_id, devices.id
       into pending_account_id, paired_device_id
       from public.account_devices devices
-      where devices.auth_user_id = pairing_row.pending_auth_user_id
-      for update;
+      where devices.auth_user_id = pairing_row.pending_auth_user_id;
     end if;
   end if;
 
   if pending_account_id is not null
     and pending_account_id <> pairing_row.account_id then
+    expected_pending_account_id := pending_account_id;
+    expected_paired_device_id := paired_device_id;
+
     perform accounts.id
     from public.accounts accounts
-    where accounts.id = pending_account_id
+    where accounts.id = expected_pending_account_id
     for update;
 
     if not found then
@@ -139,55 +144,60 @@ begin
 
     perform devices.id
     from public.account_devices devices
-    where devices.account_id = pending_account_id
+    where devices.account_id = expected_pending_account_id
     order by devices.id
     for update;
 
     select devices.account_id, devices.id
-    into pending_account_id, paired_device_id
+    into locked_pending_account_id, locked_paired_device_id
     from public.account_devices devices
-    where devices.auth_user_id = pairing_row.pending_auth_user_id
-    for update;
+    where devices.auth_user_id = pairing_row.pending_auth_user_id;
+
+    if locked_pending_account_id is distinct from expected_pending_account_id
+      or locked_paired_device_id is distinct from expected_paired_device_id then
+      return jsonb_build_object('ok', false, 'error', 'account_in_use');
+    end if;
+
+    pending_account_id := locked_pending_account_id;
+    paired_device_id := locked_paired_device_id;
 
     select count(*)::integer
     into pending_device_count
     from public.account_devices devices
-    where devices.account_id = pending_account_id;
+    where devices.account_id = expected_pending_account_id;
 
-    if pending_account_id is null
-      or pending_account_id = pairing_row.account_id
-      or pending_device_count <> 1
+    if pending_device_count <> 1
       or exists (
         select 1
         from public.account_recovery_credentials recovery
-        where recovery.account_id = pending_account_id
+        where recovery.account_id = expected_pending_account_id
       )
       or exists (
         select 1
         from public.device_pairings pairings
-        where pairings.account_id = pending_account_id
+        where pairings.account_id = expected_pending_account_id
       )
       or exists (
         select 1
         from public.shopping_lists lists
-        where lists.owner_user_id = pending_account_id
-          or lists.updated_by_user_id = pending_account_id
-          or lists.deleted_by_user_id = pending_account_id
+        where lists.owner_user_id = expected_pending_account_id
+          or lists.updated_by_user_id = expected_pending_account_id
+          or lists.deleted_by_user_id = expected_pending_account_id
       )
       or exists (
         select 1
         from public.list_members members
-        where members.user_id = pending_account_id
-          or members.invited_by_user_id = pending_account_id
-          or members.removed_by_user_id = pending_account_id
+        where members.user_id = expected_pending_account_id
+          or members.invited_by_user_id = expected_pending_account_id
+          or members.removed_by_user_id = expected_pending_account_id
       )
       or exists (
         select 1
         from public.list_items items
-        where items.added_by_user_id = pending_account_id
-          or items.checked_by_user_id = pending_account_id
-          or items.updated_by_user_id = pending_account_id
-          or items.deleted_by_user_id = pending_account_id
+        where items.added_by_user_id = expected_pending_account_id
+          or items.checked_by_user_id = expected_pending_account_id
+          or items.updated_by_user_id = expected_pending_account_id
+          or items.deleted_by_user_id = expected_pending_account_id
       ) then
       return jsonb_build_object('ok', false, 'error', 'account_in_use');
     end if;
@@ -198,7 +208,7 @@ begin
         platform = private.clean_platform(pairing_row.pending_device_platform),
         last_seen_at = now()
     where devices.id = paired_device_id
-      and devices.account_id = pending_account_id
+      and devices.account_id = expected_pending_account_id
       and devices.auth_user_id = pairing_row.pending_auth_user_id
     returning devices.id into paired_device_id;
 
@@ -207,7 +217,7 @@ begin
     end if;
 
     delete from public.accounts accounts
-    where accounts.id = pending_account_id
+    where accounts.id = expected_pending_account_id
       and not exists (
         select 1
         from public.account_devices devices
