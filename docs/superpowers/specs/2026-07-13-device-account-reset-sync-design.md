@@ -83,8 +83,8 @@ If no lists exist after activation, the app displays only the centered `Neuer Ze
 
 - Account-scoped caches that do not belong to the approved account are quarantined and removed.
 - A verified valid authentication session is never removed merely because the local data epoch changed.
-- Existing non-empty temporary accounts are not silently merged.
-- If such an account is encountered outside the controlled reset, the user receives a clear choice to cancel or discard that temporary account before pairing.
+- Existing non-empty accounts are neither deleted nor silently merged by device pairing.
+- If such an account is encountered, pairing stops and directs the user to the account settings. The user may keep the account or delete it there before starting pairing again.
 - Retrying an expired or interrupted pairing must not create another permanent account.
 
 ### Shared-list invitations
@@ -160,6 +160,16 @@ Realtime events trigger refreshes but are not the sole source of correctness. Th
 - Remote tombstones always outrank cached entities and queued stale snapshots.
 - Deleted lists are pruned from local storage after refresh and cannot be republished.
 - With zero accessible lists, the centered `Neuer Zettel` action is displayed and no replacement list is generated automatically.
+
+### Account deletion
+
+- `Mehr` -> `Account` contains a visually destructive `Account löschen` button.
+- Pressing it opens a simple confirmation with `Ja` and `Abbrechen`.
+- `Abbrechen` changes nothing.
+- `Ja` permanently removes the current account, its owned lists and items, its memberships, recovery credentials, devices, and authentication sessions.
+- Every device attached to the deleted account is signed out and returns to clean device setup.
+- Device pairing never invokes account deletion. Account deletion is always a separate user action.
+- A network or server failure keeps the account and local session intact and presents a retryable error.
 
 ## Error Handling
 

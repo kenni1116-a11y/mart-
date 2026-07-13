@@ -32,6 +32,7 @@
 - Modify `supabase-config.js`: introduce the next data epoch only during the controlled-reset task.
 - Create `supabase/device_pairing_v3.sql`: non-destructive pairing RPC upgrade.
 - Create `supabase/list_mutations_v3.sql`: idempotent item/list mutation RPC and receipt table.
+- Create `supabase/account_deletion_v3.sql`: current-account-only destructive RPC with session cleanup.
 - Create `supabase/admin/reset_except_maike.sql`: guarded cleanup transaction; never run automatically.
 - Create `tests/account-logic.test.js`: account and pairing unit tests.
 - Create `tests/sync-logic.test.js`: mutation queue unit tests.
@@ -193,12 +194,12 @@ git commit -m "test: define account activation contract"
 - Create: `tests/sql/device_pairing_v3.test.sql`
 
 **Interfaces:**
-- Consumes: an authenticated anonymous user, pairing ID, 48-character token, device label, platform, and explicit `discard_current_account` boolean.
-- Produces: `public.request_device_pairing_v3(uuid,text,text,text,boolean)` and `public.approve_device_pairing_v3(uuid)` returning JSON objects with `ok`, `status`, and stable error codes.
+- Consumes: an authenticated anonymous user, pairing ID, 48-character token, device label, and platform.
+- Produces: `public.request_device_pairing_v3(uuid,text,text,text)` and `public.approve_device_pairing_v3(uuid)` returning JSON objects with `ok`, `status`, and stable error codes.
 
 - [ ] **Step 1: Write the transactional SQL test**
 
-Create a `begin; ... rollback;` test that inserts two anonymous `auth.users`, uses `set_config('request.jwt.claim.sub', auth_user_id::text, true)`, bootstraps only the owner, creates a pairing, requests it as the second auth user without calling `bootstrap_account`, approves it as owner, and raises an exception unless both auth users resolve to the same account. Include a second case proving `discard_current_account = false` returns `confirmation_required` for a non-empty existing account.
+Create a `begin; ... rollback;` test that inserts two anonymous `auth.users`, uses `set_config('request.jwt.claim.sub', auth_user_id::text, true)`, bootstraps only the owner, creates a pairing, requests it as the second auth user without calling `bootstrap_account`, approves it as owner, and raises an exception unless both auth users resolve to the same account. Include a second case proving a non-empty existing account returns `account_in_use` and remains unchanged.
 
 The core assertions are:
 
@@ -210,7 +211,7 @@ if private.current_account_id() <> owner_account_id then
   raise exception 'new device was not attached to owner account';
 end if;
 if exists (select 1 from public.accounts where id = temporary_account_id) then
-  raise exception 'discarded temporary account still exists';
+  raise exception 'empty temporary account still exists';
 end if;
 ```
 
@@ -233,8 +234,7 @@ create function public.request_device_pairing_v3(
   target_pairing_id uuid,
   pairing_token text,
   device_label text default 'Dieses Gerät',
-  device_platform text default '',
-  discard_current_account boolean default false
+  device_platform text default ''
 ) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -242,7 +242,6 @@ declare
   current_account_id uuid := private.current_account_id();
   current_device_id uuid := private.current_device_id();
   pairing_row public.device_pairings%rowtype;
-  current_device_count integer := 0;
 begin
   if request_user_id is null then return jsonb_build_object('ok', false, 'error', 'authentication_required'); end if;
   select * into pairing_row from public.device_pairings p
@@ -251,15 +250,10 @@ begin
     return jsonb_build_object('ok', false, 'error', 'invalid_pairing');
   end if;
   if current_account_id = pairing_row.account_id then return jsonb_build_object('ok', false, 'error', 'already_connected'); end if;
-  if current_account_id is not null and private.account_has_data(current_account_id) and not discard_current_account then
-    return jsonb_build_object('ok', false, 'error', 'confirmation_required');
+  if current_account_id is not null and private.account_has_data(current_account_id) then
+    return jsonb_build_object('ok', false, 'error', 'account_in_use');
   end if;
-  if current_account_id is not null and discard_current_account then
-    select count(*) into current_device_count from public.account_devices where account_id = current_account_id;
-    if current_device_count = 1 then delete from public.accounts where id = current_account_id;
-    else delete from public.account_devices where id = current_device_id;
-    end if;
-  elsif current_device_id is not null then
+  if current_device_id is not null then
     delete from public.account_devices where id = current_device_id;
     delete from public.accounts a where a.id = current_account_id and not exists (
       select 1 from public.account_devices d where d.account_id = a.id
@@ -338,7 +332,7 @@ Store validated payload in `sessionStorage` under `shopping-list-app.pending-dev
 
 - [ ] **Step 5: Split activation into the required order**
 
-Set `outboundSyncEnabled = false` before authentication. If a pairing payload exists, call `request_device_pairing_v3` before `bootstrap_account`. If it returns `confirmation_required`, show an explicit cancel/discard confirmation and retry once with `discard_current_account = true` only after confirmation. After approval, bootstrap the target account, clear foreign caches, pull remote lists with pruning enabled, then set `outboundSyncEnabled = true` and start timers/realtime.
+Set `outboundSyncEnabled = false` before authentication. If a pairing payload exists, call `request_device_pairing_v3` before `bootstrap_account`. If it returns `account_in_use`, stop pairing and direct the user to `Mehr` -> `Account`; never delete or detach the non-empty account from the pairing flow. After approval, bootstrap the target account, clear foreign caches, pull remote lists with pruning enabled, then set `outboundSyncEnabled = true` and start timers/realtime.
 
 - [ ] **Step 6: Guard every write entry point**
 
@@ -355,11 +349,52 @@ git add app.js tests/account-logic.test.js
 git commit -m "fix: activate paired account before loading lists"
 ```
 
+### Task 4: Add Explicit Account Deletion
+
+**Files:**
+- Create: `supabase/account_deletion_v3.sql`
+- Create: `tests/sql/account_deletion_v3.test.sql`
+- Modify: `app.js`
+- Modify: `tests/account-logic.test.js`
+
+**Interfaces:**
+- Consumes: the current authenticated device and a user-confirmed `Ja` action.
+- Produces: `public.delete_current_account_v3()` plus the `Account löschen` settings action.
+
+- [ ] **Step 1: Write failing SQL and UI tests**
+
+The SQL test creates an account with two auth devices, one owned list, one item, one membership, and recovery credentials. It calls `delete_current_account_v3()` as one device and asserts that the account data, both auth sessions, and both auth users are gone before rolling back. A second fixture calls the RPC without an account mapping and expects `account_required`.
+
+The browser/unit test asserts `Abbrechen` makes no service call and `Ja` calls account deletion exactly once. A failed RPC keeps local authentication and displays a retryable error.
+
+- [ ] **Step 2: Run tests and confirm missing behavior**
+
+Expected: SQL fails because `delete_current_account_v3` is absent; UI test fails because the settings action is absent.
+
+- [ ] **Step 3: Implement the current-account-only RPC**
+
+Create a `security definer` function with `set search_path = ''`. Capture `auth.uid()`, resolve `private.current_account_id()`, collect every `account_devices.auth_user_id` for that account, and reject a missing mapping. Delete the account row so owned lists, items, memberships, recovery credentials, and devices cascade. Then delete `auth.sessions` and `auth.users` only for the captured IDs. Return `{ok: true, deletedAccountId}`. Revoke execution from `public` and `anon`; grant only to `authenticated`.
+
+- [ ] **Step 4: Add the settings action and confirmation**
+
+Add a destructive `Account löschen` button at the bottom of `Mehr` -> `Account`. On click use a `Ja`/`Abbrechen` confirmation. `Abbrechen` closes without changes. On `Ja`, call the RPC; only after success clear this account's local caches, queues, and auth session, then return to clean device setup. On failure leave all local state intact and show a retryable error.
+
+- [ ] **Step 5: Run advisors, SQL rollback tests, unit tests, and syntax checks**
+
+Expected: a user can delete only the account linked to their own auth device; no administrative credential is exposed; all tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add supabase/account_deletion_v3.sql tests/sql/account_deletion_v3.test.sql app.js tests/account-logic.test.js
+git commit -m "feat: add confirmed account deletion"
+```
+
 ---
 
 ## Phase 2: Item-Level Synchronization and Deletion
 
-### Task 4: Define the Client Mutation Queue
+### Task 5: Define the Client Mutation Queue
 
 **Files:**
 - Create: `sync-logic.js`
@@ -412,7 +447,7 @@ git add sync-logic.js index.html sw.js tests/sync-logic.test.js tests/startup-wi
 git commit -m "test: define idempotent sync queue"
 ```
 
-### Task 5: Add Idempotent Server Mutations
+### Task 6: Add Idempotent Server Mutations
 
 **Files:**
 - Create: `supabase/list_mutations_v3.sql`
@@ -487,7 +522,7 @@ git add supabase/list_mutations_v3.sql tests/sql/list_mutations_v3.test.sql
 git commit -m "feat: apply list changes as idempotent mutations"
 ```
 
-### Task 6: Replace Snapshot Publishing in the Browser
+### Task 7: Replace Snapshot Publishing in the Browser
 
 **Files:**
 - Modify: `app.js:1700-1815`
@@ -551,7 +586,7 @@ git add app.js tests/sync-logic.test.js
 git commit -m "fix: sync lists with item-level mutations"
 ```
 
-### Task 7: Finalize Deletion and Empty-State Behavior
+### Task 8: Finalize Deletion and Empty-State Behavior
 
 **Files:**
 - Modify: `app.js:5240-5305`
@@ -598,7 +633,7 @@ git commit -m "fix: keep deleted lists deleted"
 
 ## Phase 3: Verification, Deployment, and Protected Reset
 
-### Task 8: Create One Release Verification Command
+### Task 9: Create One Release Verification Command
 
 **Files:**
 - Create: `package.json`
@@ -657,7 +692,7 @@ git add package.json pnpm-lock.yaml scripts .gitignore tests/startup-wiring.test
 git commit -m "ci: add release verification gate"
 ```
 
-### Task 9: Gate GitHub Pages Deployment
+### Task 10: Gate GitHub Pages Deployment
 
 **Files:**
 - Create: `.github/workflows/verify-and-deploy.yml`
@@ -693,7 +728,7 @@ git add .github/workflows/verify-and-deploy.yml
 git commit -m "ci: deploy only verified releases"
 ```
 
-### Task 10: Back Up and Reset All Accounts Except Maike
+### Task 11: Back Up and Reset All Accounts Except Maike
 
 **Files:**
 - Create: `supabase/admin/reset_except_maike.sql`
@@ -761,7 +796,7 @@ git add supabase/admin/reset_except_maike.sql supabase-config.js index.html sw.j
 git commit -m "ops: complete protected account reset"
 ```
 
-### Task 11: Final Verification and Production Handoff
+### Task 12: Final Verification and Production Handoff
 
 **Files:**
 - Modify: `README.md`
