@@ -227,7 +227,7 @@ Expected: FAIL because `request_device_pairing_v3` does not exist. The final `ro
 
 - [ ] **Step 3: Implement the non-destructive migration**
 
-The migration must not drop tables or users. It creates new v3 functions alongside current RPCs. `request_device_pairing_v3` must authenticate the caller, validate and lock the pairing, reject `already_connected`, and record only the pending identity and cleaned device metadata. It must never delete, detach, reassign, or otherwise mutate the requesting identity's current account or device.
+The migration must not drop tables or users. It creates new v3 functions alongside current RPCs. `request_device_pairing_v3` must authenticate the caller, validate and lock the pairing, reject `already_connected`, perform a read-only complete durable-account preflight that can return `account_in_use`, and otherwise record only the pending identity and cleaned device metadata. It must never delete, detach, reassign, or otherwise mutate the requesting identity's current account or device. Add `get_device_pairing_status_v3(uuid)`, preserving the existing authorization rules while repeating the read-only durable-account check for the pending identity so an approval-time race becomes visible to the requesting device.
 
 ```sql
 create function public.request_device_pairing_v3(
@@ -318,11 +318,11 @@ If `getUser()` returns an invalid-refresh-token error, sign out locally, remove 
 
 - [ ] **Step 4: Persist pairing payload until terminal status**
 
-Store validated payload in `sessionStorage` under `shopping-list-app.pending-device-pairing`. Clean the visible URL only after storage succeeds. Clear that key only for `approved`, `cancelled`, `expired`, or explicit user cancellation.
+Store validated payload in `sessionStorage` under `shopping-list-app.pending-device-pairing`. Clean the visible URL only after storage succeeds. Clear that key only for `approved`, `cancelled`, `expired`, terminal `invalid_pairing`, or explicit user cancellation. Retain it for transient network failures and `account_in_use` until the existing account has been opened and the user reaches `Mehr` -> `Account`.
 
 - [ ] **Step 5: Split activation into the required order**
 
-Set `outboundSyncEnabled = false` before authentication. If a pairing payload exists, call `request_device_pairing_v3` before `bootstrap_account`. If it returns `account_in_use`, stop pairing and direct the user to `Mehr` -> `Account`; never delete or detach the non-empty account from the pairing flow. After approval, bootstrap the target account, clear foreign caches, pull remote lists with pruning enabled, then set `outboundSyncEnabled = true` and start timers/realtime.
+Set `outboundSyncEnabled = false` before authentication. If a pairing payload exists, call `request_device_pairing_v3` before `bootstrap_account` and poll `get_device_pairing_status_v3`. If either returns `account_in_use`, stop pairing and direct the user to `Mehr` -> `Account`; never delete or detach the non-empty account from the pairing flow. After approval, bootstrap the target account, clear foreign caches plus the target account's stale snapshot queue/outbox, pull remote lists with pruning enabled, then set `outboundSyncEnabled = true` and start timers/realtime. Preserve the current account queue only on ordinary no-pairing startup.
 
 - [ ] **Step 6: Guard every write entry point**
 

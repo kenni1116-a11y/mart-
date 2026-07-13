@@ -76,7 +76,7 @@ If no lists exist after activation, the app displays only the centered `Neuer Ze
 4. The app requests pairing without bootstrapping a permanent account and without loading or publishing local lists.
 5. The existing device displays the new device label and comparison code.
 6. The owner approves the request.
-7. The pairing request records only the pending request and never deletes, detaches, or reassigns account data.
+7. The pairing request performs a read-only safety preflight. It returns `account_in_use` immediately for a known non-empty requester account; otherwise it records only the pending request and never deletes, detaches, or reassigns account data.
 8. The owner's approval is the single atomic finalization point. It locks the pairing and pending identity, rechecks the complete current-account state, and only then either attaches an unbootstrapped identity, reassigns a truly empty one-device transition account, or returns `account_in_use` without changing that account.
 9. An account is not empty when it has another device, a recovery credential, any owned list including soft-deleted history, or any membership including removed history.
 10. The new device activates the target account, clears data belonging to any previous account, loads the server state, and only then enables editing and publishing.
@@ -90,6 +90,7 @@ If no lists exist after activation, the app displays only the centered `Neuer Ze
 - Retrying an expired or interrupted pairing must not create another permanent account.
 - Requesting a pairing never mutates the requesting device's existing account. Empty-transition cleanup and attachment either complete together during approval or neither change is committed.
 - The legacy `approve_device_pairing(uuid)` entry point remains available for cached clients but delegates to the v3 finalizer, so mixed old/new app versions cannot bypass the atomic safety checks.
+- A v3 pairing-status endpoint repeats the same read-only safety check for the pending identity, so data created between request and approval is reported to the requesting device as `account_in_use` instead of leaving it waiting until expiry.
 
 ### Shared-list invitations
 
@@ -150,6 +151,7 @@ The client no longer uploads a complete local list snapshot after every edit. Th
 - Replaying the same operation ID is idempotent and cannot duplicate an item or apply a quantity change twice.
 - Replay stops on an authorization or deletion conflict and refreshes the server state before continuing.
 - Queues from a different or obsolete account are never replayed after account activation or pairing.
+- During device pairing or a data-epoch transition, snapshot queues and outboxes for the resolved target account are also discarded before the authoritative pull; ordinary no-pairing startup keeps the current account's queue.
 
 ### Realtime fallback
 
