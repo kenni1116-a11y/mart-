@@ -72,7 +72,41 @@ begin
   );
 
   perform set_config('request.jwt.claim.sub', deleted_auth_user_id_1::text, true);
-  result := public.delete_current_account_v3();
+  update public.account_devices
+  set account_id = foreign_account_id
+  where id = deleted_device_id_1;
+
+  begin
+    perform public.delete_current_account_v3(deleted_account_id);
+    raise exception 'changed account mapping did not raise account_changed';
+  exception
+    when others then
+      if sqlerrm <> 'account_changed' then
+        raise;
+      end if;
+  end;
+
+  if not exists (select 1 from public.accounts where id = foreign_account_id) then
+    raise exception 'changed account mapping deleted account B';
+  end if;
+  if not exists (select 1 from public.account_devices where id = foreign_device_id) then
+    raise exception 'changed account mapping deleted account B device';
+  end if;
+  if not exists (select 1 from public.shopping_lists where id = foreign_list_id) then
+    raise exception 'changed account mapping deleted account B list';
+  end if;
+  if not exists (select 1 from auth.sessions where user_id = foreign_auth_user_id) then
+    raise exception 'changed account mapping deleted account B session';
+  end if;
+  if not exists (select 1 from auth.users where id = foreign_auth_user_id) then
+    raise exception 'changed account mapping deleted account B auth user';
+  end if;
+
+  update public.account_devices
+  set account_id = deleted_account_id
+  where id = deleted_device_id_1;
+
+  result := public.delete_current_account_v3(deleted_account_id);
 
   if result is distinct from jsonb_build_object('ok', true, 'deletedAccountId', deleted_account_id) then
     raise exception 'unexpected delete result: %', result;
@@ -126,7 +160,7 @@ begin
 
   perform set_config('request.jwt.claim.sub', unmapped_auth_user_id::text, true);
   begin
-    perform public.delete_current_account_v3();
+    perform public.delete_current_account_v3(deleted_account_id);
     raise exception 'missing account mapping did not raise account_required';
   exception
     when others then
@@ -141,16 +175,27 @@ begin
     join pg_namespace schemas on schemas.oid = functions.pronamespace
     where schemas.nspname = 'public'
       and functions.proname = 'delete_current_account_v3'
-      and functions.pronargs = 0
+      and functions.pronargs = 1
+      and functions.proargtypes[0] = 'uuid'::regtype
       and functions.prosecdef
-      and functions.proconfig @> array['search_path=']
+      and functions.proconfig @> array['search_path=""']
   ) then
     raise exception 'delete_current_account_v3 must be security definer with empty search_path';
   end if;
-  if has_function_privilege('anon', 'public.delete_current_account_v3()', 'EXECUTE') then
+  if exists (
+    select 1
+    from pg_proc functions
+    join pg_namespace schemas on schemas.oid = functions.pronamespace
+    where schemas.nspname = 'public'
+      and functions.proname = 'delete_current_account_v3'
+      and functions.pronargs = 0
+  ) then
+    raise exception 'unsafe zero-argument delete_current_account_v3 remains';
+  end if;
+  if has_function_privilege('anon', 'public.delete_current_account_v3(uuid)', 'EXECUTE') then
     raise exception 'anon can execute delete_current_account_v3';
   end if;
-  if not has_function_privilege('authenticated', 'public.delete_current_account_v3()', 'EXECUTE') then
+  if not has_function_privilege('authenticated', 'public.delete_current_account_v3(uuid)', 'EXECUTE') then
     raise exception 'authenticated cannot execute delete_current_account_v3';
   end if;
 end;

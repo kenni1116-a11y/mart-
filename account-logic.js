@@ -232,18 +232,30 @@
 
   function createAccountDeletionFlow({ deleteAccount, completeDeletion }) {
     let inProgress = false;
+    let committedResult = null;
     return {
       async choose(action) {
-        if (action !== "confirm") return { ok: false, status: "cancelled" };
+        if (action !== "confirm") {
+          return committedResult
+            ? { ok: false, status: "deletion_committed", committed: true, deletionCommitted: true }
+            : { ok: false, status: "cancelled" };
+        }
         if (inProgress) return { ok: false, status: "in_progress" };
         inProgress = true;
         try {
-          const result = await deleteAccount();
-          if (!result?.ok) return { ok: false, error: result?.error || "account_deletion_failed" };
-          await completeDeletion(result);
-          return result;
+          if (!committedResult) {
+            const result = await deleteAccount();
+            if (!result?.ok) return { ok: false, error: result?.error || "account_deletion_failed" };
+            committedResult = result;
+          }
+          await completeDeletion(committedResult);
+          return { ...committedResult, committed: true, deletionCommitted: true };
         } catch (error) {
-          return { ok: false, error: error?.message || "account_deletion_failed" };
+          return {
+            ok: false,
+            error: error?.message || "account_deletion_failed",
+            ...(committedResult ? { committed: true, deletionCommitted: true } : {})
+          };
         } finally {
           inProgress = false;
         }

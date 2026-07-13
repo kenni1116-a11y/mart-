@@ -102,8 +102,12 @@ test("account deletion is confirmed, retryable, and isolated from pairing", () =
   assert.match(confirmationBody, /data-account-deletion-status/);
   assert.match(confirmationBody, /data-retry-account-deletion/);
   assert.match(deletionBody, /createAccountDeletionFlow/);
+  assert.match(confirmationBody, /currentUser\.userId/);
+  assert.match(deletionBody, /accountDeletionExpectedAccountId/);
   assert.match(deletionBody, /clearPendingDevicePairing/);
   assert.match(deletionBody, /collaborationService\.signOut/);
+  assert.match(app, /async deleteCurrentAccount\(expectedAccountId\)/);
+  assert.match(app, /rpc\("delete_current_account_v3", \{\s*expected_account_id: expectedAccountId\s*\}\)/);
   assert.equal((app.match(/rpc\("delete_current_account_v3"/g) ?? []).length, 1);
   assert.doesNotMatch(pairingBody, /delete_current_account_v3|deleteCurrentAccount|data-delete-account/);
 });

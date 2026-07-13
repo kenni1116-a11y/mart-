@@ -1463,9 +1463,11 @@ class SupabaseRealtimeService {
     return error ? { ok: false, error: error.message } : data;
   }
 
-  async deleteCurrentAccount() {
+  async deleteCurrentAccount(expectedAccountId) {
     if (!this.client) return { ok: false, error: "account_unavailable" };
-    const { data, error } = await this.client.rpc("delete_current_account_v3");
+    const { data, error } = await this.client.rpc("delete_current_account_v3", {
+      expected_account_id: expectedAccountId
+    });
     if (error) return { ok: false, error: error.message || "account_deletion_failed" };
     return data;
   }
@@ -2109,6 +2111,7 @@ let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
 let accountDeletionFlow = null;
+let accountDeletionExpectedAccountId = "";
 let accountSessionVersion = 0;
 let outboundSyncEnabled = false;
 let authState = {
@@ -4540,7 +4543,11 @@ async function saveProfile() {
   render();
 }
 
-function showAccountDeletionConfirmation(error = "") {
+function showAccountDeletionConfirmation(error = "", deletionCommitted = false) {
+  if (!error) {
+    accountDeletionExpectedAccountId = currentUser.userId;
+    accountDeletionFlow = null;
+  }
   openModal(`
     <h2 id="modalTitle">Account löschen</h2>
     <div class="account-deletion-confirmation">
@@ -4550,7 +4557,7 @@ function showAccountDeletionConfirmation(error = "") {
         ${error
           ? '<button type="button" class="is-danger" data-retry-account-deletion>Erneut versuchen</button>'
           : '<button type="button" class="is-danger" data-confirm-account-deletion>Ja</button>'}
-        <button type="button" class="is-muted" data-cancel-account-deletion>Abbrechen</button>
+        ${deletionCommitted ? "" : '<button type="button" class="is-muted" data-cancel-account-deletion>Abbrechen</button>'}
       </div>
     </div>
   `);
@@ -4566,12 +4573,12 @@ async function deleteCurrentAccount() {
   if (status) status.textContent = "Account wird gelöscht …";
 
   accountDeletionFlow ??= MartAccountLogic.createAccountDeletionFlow({
-    deleteAccount: () => collaborationService.deleteCurrentAccount(),
+    deleteAccount: () => collaborationService.deleteCurrentAccount(accountDeletionExpectedAccountId),
     completeDeletion: completeCurrentAccountDeletion
   });
   const result = await accountDeletionFlow.choose("confirm");
   if (result.ok || result.status === "in_progress") return;
-  showAccountDeletionConfirmation(accountFlowError(result));
+  showAccountDeletionConfirmation(accountFlowError(result), result.deletionCommitted === true);
 }
 
 async function completeCurrentAccountDeletion() {
@@ -4583,8 +4590,10 @@ async function completeCurrentAccountDeletion() {
   syncFlushTimer = 0;
   MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, "");
   clearPendingDevicePairing();
-  await collaborationService.signOut();
+  const signOutResult = await collaborationService.signOut();
+  if (!signOutResult?.ok) throw new Error(signOutResult?.error || "sign_out_failed");
   accountDeletionFlow = null;
+  accountDeletionExpectedAccountId = "";
   await deactivateAccount("Account gelöscht. Dieses Gerät wird neu eingerichtet.");
 }
 
@@ -4607,6 +4616,9 @@ function accountFlowError(error) {
     pairing_not_found: "Die Geräteverbindung wurde nicht gefunden.",
     device_required: "Der Geräte-Account ist nicht verbunden.",
     account_required: "Der Geräte-Account ist nicht verbunden.",
+    account_changed: "Der angezeigte Account hat sich geändert. Bitte prüfe den aktuellen Account.",
+    deletion_committed: "Der Account wurde bereits gelöscht. Die lokale Abmeldung muss noch abgeschlossen werden.",
+    sign_out_failed: "Der Account wurde gelöscht, aber die lokale Abmeldung ist fehlgeschlagen.",
     account_deletion_failed: "Der Account konnte nicht gelöscht werden."
   };
   return messages[value] ?? authErrorMessage(value);
@@ -6152,8 +6164,14 @@ elements.modalContent.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("[data-cancel-account-deletion]")) {
-    accountDeletionFlow?.choose("cancel");
-    showProfile();
+    const cancellation = accountDeletionFlow?.choose("cancel");
+    if (cancellation) {
+      cancellation.then((result) => {
+        if (!result?.deletionCommitted) showProfile();
+      });
+    } else {
+      showProfile();
+    }
     return;
   }
   const renameDeviceButton = event.target.closest("[data-rename-account-device]");

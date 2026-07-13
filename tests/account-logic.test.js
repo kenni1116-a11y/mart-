@@ -425,3 +425,48 @@ test("failed account deletion preserves local state and remains retryable", asyn
   assert.equal(retried.ok, true);
   assert.deepEqual(calls, ["delete", "delete", "cleanup"]);
 });
+
+test("a committed deletion retries only cleanup after local cleanup fails", async () => {
+  const calls = [];
+  let cleanupAttempt = 0;
+  const deletion = AccountLogic.createAccountDeletionFlow({
+    deleteAccount: async () => {
+      calls.push("delete");
+      return { ok: true, deletedAccountId: "d4e10000-0000-4000-8000-000000000010" };
+    },
+    completeDeletion: async () => {
+      calls.push("cleanup");
+      cleanupAttempt += 1;
+      if (cleanupAttempt === 1) throw new Error("sign_out_failed");
+    }
+  });
+
+  const firstAttempt = await deletion.choose("confirm");
+
+  assert.deepEqual(firstAttempt, {
+    ok: false,
+    error: "sign_out_failed",
+    committed: true,
+    deletionCommitted: true
+  });
+  assert.deepEqual(calls, ["delete", "cleanup"]);
+
+  const cancelledAfterCommit = await deletion.choose("cancel");
+
+  assert.deepEqual(cancelledAfterCommit, {
+    ok: false,
+    status: "deletion_committed",
+    committed: true,
+    deletionCommitted: true
+  });
+
+  const retried = await deletion.choose("confirm");
+
+  assert.deepEqual(retried, {
+    ok: true,
+    deletedAccountId: "d4e10000-0000-4000-8000-000000000010",
+    committed: true,
+    deletionCommitted: true
+  });
+  assert.deepEqual(calls, ["delete", "cleanup", "cleanup"]);
+});

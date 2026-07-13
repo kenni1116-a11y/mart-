@@ -1,4 +1,6 @@
-create or replace function public.delete_current_account_v3()
+drop function if exists public.delete_current_account_v3();
+
+create or replace function public.delete_current_account_v3(expected_account_id uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -6,11 +8,23 @@ set search_path = ''
 as $$
 declare
   request_user_id uuid := auth.uid();
-  deleted_account_id uuid := private.current_account_id();
+  deleted_account_id uuid;
   account_auth_user_ids uuid[];
 begin
-  if request_user_id is null or deleted_account_id is null then
+  if request_user_id is null then
     raise exception 'account_required';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(request_user_id::text, 0)
+  );
+
+  deleted_account_id := private.current_account_id();
+  if deleted_account_id is null then
+    raise exception 'account_required';
+  end if;
+  if expected_account_id is null or deleted_account_id <> expected_account_id then
+    raise exception 'account_changed';
   end if;
 
   perform 1
@@ -47,5 +61,5 @@ begin
 end;
 $$;
 
-revoke all on function public.delete_current_account_v3() from public, anon;
-grant execute on function public.delete_current_account_v3() to authenticated;
+revoke all on function public.delete_current_account_v3(uuid) from public, anon, authenticated;
+grant execute on function public.delete_current_account_v3(uuid) to authenticated;
