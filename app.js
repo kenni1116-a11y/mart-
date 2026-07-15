@@ -829,6 +829,7 @@ const storageKeys = {
   presence: "shopping-list-app.mock-presence",
   outbox: "shopping-list-app.sync-outbox",
   syncQueue: "shopping-list-app.sync-write-queue",
+  syncMutations: "shopping-list-app.sync-mutations",
   markets: "shopping-list-app.markets",
   productPrices: "shopping-list-app.product-prices",
   priceSync: "shopping-list-app.price-sync"
@@ -843,7 +844,8 @@ const accountStoragePrefixes = [
   storageKeys.realtime,
   storageKeys.presence,
   storageKeys.outbox,
-  storageKeys.syncQueue
+  storageKeys.syncQueue,
+  storageKeys.syncMutations
 ];
 let pendingDataEpochReset = false;
 let targetDataEpoch = "1";
@@ -1169,6 +1171,10 @@ class MockRealtimeService {
     return [];
   }
 
+  async applyMutation() {
+    return { ok: false, error: "network_error", offline: true };
+  }
+
   async leaveSharedList(listData) {
     await this.publishLists([listData]);
     return exportCollaborativeList(listData);
@@ -1306,6 +1312,52 @@ class SupabaseRealtimeService {
       this.queueOffline({ type: "auth", createdAt: isoNow(), error: error?.message ?? "Supabase Auth nicht erreichbar" });
       return null;
     }
+  }
+
+  async applyMutation(mutation) {
+    if (!this.client) return { ok: false, error: "network_error", offline: true };
+    const authUser = await this.ensureAuthenticated();
+    if (!authUser) return { ok: false, error: "authentication_required" };
+    return MartSyncLogic.applyMutationWithClient(this.client, mutation);
+  }
+
+  async updateInviteCode(listId, inviteCode) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client
+      .from(this.listTable)
+      .update({ invite_code: inviteCode })
+      .eq("id", listId)
+      .select("invite_code")
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data?.invite_code) return { ok: false, error: "forbidden" };
+    return { ok: true, inviteCode: data.invite_code };
+  }
+
+  async removeListMember(listId, userId) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client
+      .from(this.memberTable)
+      .update({ removed_at: isoNow(), removed_by_user_id: currentUser.userId })
+      .eq("list_id", listId)
+      .eq("user_id", userId)
+      .select("user_id")
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    return data?.user_id ? { ok: true } : { ok: false, error: "forbidden" };
+  }
+
+  async updateListMemberRole(listId, userId, role) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client
+      .from(this.memberTable)
+      .update({ role: normalizeRole(role) })
+      .eq("list_id", listId)
+      .eq("user_id", userId)
+      .select("user_id")
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    return data?.user_id ? { ok: true } : { ok: false, error: "forbidden" };
   }
 
   async bootstrapAccount(label = defaultDeviceLabel(), platform = devicePlatform()) {
@@ -1698,77 +1750,6 @@ class SupabaseRealtimeService {
     });
   }
 
-  async persistOwnedListRow(row) {
-    const updateRow = async () => this.client
-      .from(this.listTable)
-      .update(row)
-      .eq("id", row.id)
-      .select("id");
-
-    const initialUpdate = await updateRow();
-    if (initialUpdate.error) {
-      return { ok: false, error: initialUpdate.error.message, rawError: initialUpdate.error };
-    }
-    if (initialUpdate.data?.length) return { ok: true, created: false };
-
-    const { error: insertError } = await this.client.from(this.listTable).insert(row);
-    if (!insertError) return { ok: true, created: true };
-    if (insertError.code !== "23505") {
-      return { ok: false, error: insertError.message, rawError: insertError };
-    }
-
-    // A second device may have created the same local list after our first check.
-    const retryUpdate = await updateRow();
-    if (retryUpdate.error || !retryUpdate.data?.length) {
-      const retryError = retryUpdate.error ?? insertError;
-      return { ok: false, error: retryError.message, rawError: retryError };
-    }
-    return { ok: true, created: false };
-  }
-
-  async publishRelationalLists(nextLists, user = currentUser) {
-    const profileResult = await this.upsertProfile(user);
-    if (profileResult.ok === false) return profileResult;
-    const normalizedLists = nextLists.map(normalizeListData);
-    const listRows = normalizedLists.map((listData) => this.listRowFromList(listData));
-    const ownedListRows = listRows.filter((row) => row.owner_user_id === user.userId);
-    const joinedListRows = listRows.filter((row) => row.owner_user_id !== user.userId);
-    const memberRows = normalizedLists.flatMap((listData) => {
-      const rows = this.memberRowsFromList(listData);
-      return listData.ownerId === user.userId ? rows : [];
-    });
-    const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
-
-    const listResults = await MartLogic.mapWithConcurrency(
-      ownedListRows,
-      3,
-      (row) => this.persistOwnedListRow(row)
-    );
-    const failedListResult = listResults.find((result) => !result.ok);
-    if (failedListResult) return failedListResult;
-    for (const row of joinedListRows) {
-      const { error } = await this.client
-        .from(this.listTable)
-        .update({
-          name: row.name,
-          updated_at: row.updated_at,
-          updated_by_user_id: this.userIdValue(user.userId),
-          revision: row.revision
-        })
-        .eq("id", row.id);
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
-    if (memberRows.length) {
-      const { error } = await this.client.from(this.memberTable).upsert(memberRows, { onConflict: "list_id,user_id" });
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
-    if (itemRows.length) {
-      const { error } = await this.client.from(this.itemTable).upsert(itemRows, { onConflict: "list_id,item_id" });
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
-    return { ok: true, relational: true };
-  }
-
   async fetchRelationalLists(user) {
     const { data: listRows, error: listError } = await this.client
       .from(this.listTable)
@@ -1790,17 +1771,6 @@ class SupabaseRealtimeService {
       ok: true,
       lists: listRows.map((listRow) => this.listFromRelationalRows(listRow, memberRows ?? [], itemRows ?? []))
     };
-  }
-
-  async publishLists(nextLists, options = {}) {
-    if (!this.client) {
-      if (options.queueOnFail !== false) {
-        this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
-      }
-      return Promise.resolve({ ok: false, offline: true });
-    }
-
-    return this.publishRelationalLists(nextLists, currentUser);
   }
 
   async fetchSharedLists(user) {
@@ -2574,7 +2544,9 @@ function startAccountActivity() {
   stopAccountActivity();
   realtimeSubscription = collaborationService.subscribe(handleRealtimeMessage);
   presenceTimer = window.setInterval(updatePresence, 15000);
-  refreshTimer = window.setInterval(() => refreshRealtimeNow("interval"), 12000);
+  refreshTimer = window.setInterval(() => {
+    if (!document.hidden) refreshRealtimeNow("interval");
+  }, 30000);
   collaborationService.touchDevice?.(null, devicePlatform());
   deviceHeartbeatTimer = window.setInterval(() => {
     if (isActivationReady()) collaborationService.touchDevice?.(null, devicePlatform());
@@ -2629,7 +2601,7 @@ async function resolveAndLoadAccount(authUser, options = {}) {
   MartAccountLogic.prepareAccountActivationStorage(localStorage, {
     accountId: currentUser.userId,
     prefixes: accountStoragePrefixes,
-    queueKeys: [storageKeys.syncQueue, storageKeys.outbox],
+    queueKeys: [storageKeys.syncQueue, storageKeys.syncMutations, storageKeys.outbox],
     discardStaleQueues
   });
   completeDataEpochReset();
@@ -2966,7 +2938,7 @@ function flushPendingNotesRender(delay = 180) {
 function setSyncState(status, details = {}) {
   syncState = {
     ...syncState,
-    pendingWrites: syncQueueLength(),
+    pendingWrites: mutationQueueLength(),
     status,
     ...details
   };
@@ -2995,73 +2967,79 @@ function markSyncError(error) {
   });
 }
 
-function syncQueue() {
+function mutationQueue() {
   if (!isAuthenticatedAccount()) return [];
-  const queue = load(accountStorageKey(storageKeys.syncQueue), []);
-  return Array.isArray(queue) ? queue.filter((operation) => operation?.type === "lists" && Array.isArray(operation.lists)) : [];
+  const queue = load(accountStorageKey(storageKeys.syncMutations), []);
+  return Array.isArray(queue)
+    ? queue.filter((operation) => operation?.accountId === currentUser.userId && operation?.operationId && operation?.listId)
+    : [];
 }
 
-function syncQueueLength() {
-  return syncQueue().length;
+function mutationQueueLength() {
+  return mutationQueue().length;
 }
 
-function storeSyncQueue(queue) {
-  if (!isAuthenticatedAccount()) return;
-  const nextQueue = queue.slice(-30);
-  localStorage.setItem(accountStorageKey(storageKeys.syncQueue), JSON.stringify(nextQueue));
-  syncState.pendingWrites = nextQueue.length;
-}
-
-function syncSnapshot(sourceLists = lists) {
-  return sourceLists.map(exportCollaborativeList);
-}
-
-function queueSyncWrite(sourceLists = lists, reason = "save", error = "") {
-  if (!isActivationReady()) return;
-  const payload = syncSnapshot(sourceLists);
-  const signature = JSON.stringify(payload.map((listData) => [listData.listId, listData.updatedAt, listData.items?.length ?? 0]));
-  const queue = syncQueue().filter((operation) => operation.signature !== signature);
-  queue.push({
-    id: `sync:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-    type: "lists",
-    reason,
-    signature,
-    createdAt: isoNow(),
-    lastAttemptAt: "",
-    attempts: 0,
-    error: typeof error === "string" ? error : (error?.message ?? ""),
-    lists: payload
-  });
-  storeSyncQueue(queue);
-  scheduleSyncFlush(2500);
-}
-
-function listsFromSyncOperation(operation) {
-  return operation.lists.map(importedListFromValue).filter(Boolean);
-}
-
-async function publishListSnapshot(sourceLists = lists, reason = "save", options = {}) {
-  if (!isActivationReady()) return false;
-  activeWriteCount += 1;
-  markSyncAttempt();
+function storeMutationQueue(queue) {
+  if (!isAuthenticatedAccount()) return false;
+  const nextQueue = queue
+    .filter((operation) => operation?.accountId === currentUser.userId)
+    .slice(-100);
   try {
-    const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
-    if (result?.ok === false) {
-      if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, result.error || "Änderungen warten auf Verbindung");
-      markSyncError(result.error || "Änderungen warten auf Verbindung");
-      return false;
-    }
-    markSyncSuccess();
-    if (syncQueueLength()) scheduleSyncFlush(400);
-    pullRemoteListsSoon("after-write", 900);
+    localStorage.setItem(accountStorageKey(storageKeys.syncMutations), JSON.stringify(nextQueue));
+    syncState.pendingWrites = nextQueue.length;
     return true;
   } catch (error) {
-    if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, error);
     markSyncError(error);
     return false;
-  } finally {
-    activeWriteCount = Math.max(0, activeWriteCount - 1);
   }
+}
+
+function operationUuid() {
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else bytes.forEach((_, index) => { bytes[index] = Math.floor(Math.random() * 256); });
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function createListMutation(type, listId, payload = {}, itemId = "", operationId = operationUuid()) {
+  return MartSyncLogic.createMutation({
+    operationId,
+    accountId: currentUser.userId,
+    type,
+    listId,
+    itemId,
+    payload,
+    createdAt: isoNow()
+  });
+}
+
+function itemMutationPayload(item) {
+  return {
+    itemId: item.id,
+    productId: item.id.startsWith("manual:") ? "" : item.id,
+    name: item.name,
+    shelfId: item.shelfId ?? "",
+    shelfTitle: item.shelfTitle ?? "",
+    shelfIcon: item.shelfIcon ?? "",
+    quantity: item.quantity,
+    done: Boolean(item.done),
+    note: item.note ?? ""
+  };
+}
+
+function queueMutation(mutation) {
+  if (!isActivationReady() || mutation.accountId !== currentUser.userId) return false;
+  return storeMutationQueue(MartSyncLogic.compactQueue(mutationQueue(), mutation));
+}
+
+function commitMutation(mutation) {
+  if (!queueMutation(mutation)) return false;
+  scheduleSyncFlush(0);
+  return true;
 }
 
 function scheduleSyncFlush(delay = 1200) {
@@ -3069,42 +3047,60 @@ function scheduleSyncFlush(delay = 1200) {
   if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
   syncFlushTimer = window.setTimeout(() => {
     syncFlushTimer = 0;
-    flushSyncQueue();
+    flushMutationQueue();
   }, delay);
 }
 
-async function flushSyncQueue() {
+async function flushMutationQueue() {
   if (!isActivationReady() || isFlushingSyncQueue || !navigator.onLine) return false;
-  let queue = syncQueue();
-  if (!queue.length) {
-    storeSyncQueue([]);
-    return true;
-  }
+  if (!mutationQueueLength()) return true;
   isFlushingSyncQueue = true;
   markSyncAttempt();
   try {
-    for (let index = 0; index < queue.length; index += 1) {
-      const operation = queue[index];
-      const sourceLists = listsFromSyncOperation(operation);
-      if (!sourceLists.length) continue;
-      const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
-      if (result?.ok === false) {
-        const failedOperation = {
-          ...operation,
-          attempts: Number(operation.attempts || 0) + 1,
-          lastAttemptAt: isoNow(),
-          error: result.error || "Sync wartet auf Verbindung"
-        };
-        storeSyncQueue([failedOperation, ...queue.slice(index + 1)].slice(-30));
-        markSyncError(failedOperation.error);
-        scheduleSyncFlush(8000);
+    while (isActivationReady() && navigator.onLine) {
+      const queue = mutationQueue();
+      const operation = queue[0];
+      if (!operation) {
+        markSyncSuccess();
+        return true;
+      }
+      const accountIdAtStart = currentUser.userId;
+      storeMutationQueue(queue.map((entry) => entry.operationId === operation.operationId
+        ? { ...entry, attemptedAt: isoNow() }
+        : entry));
+      activeWriteCount += 1;
+      let result;
+      try {
+        result = await collaborationService.applyMutation(operation);
+      } catch (error) {
+        result = { ok: false, error: "network_error", message: error?.message ?? "" };
+      } finally {
+        activeWriteCount = Math.max(0, activeWriteCount - 1);
+      }
+      if (accountIdAtStart !== currentUser.userId || !isActivationReady()) return false;
+      const replay = MartSyncLogic.resolveReplay(mutationQueue(), operation, result, isoNow());
+      storeMutationQueue(replay.queue);
+      if (replay.action === "applied") {
+        markSyncSuccess();
+        await pullRemoteLists("after-write");
+        continue;
+      }
+      if (replay.action === "refresh") {
+        if (["membership_removed", "list_deleted", "forbidden"].includes(result?.error)) {
+          removeLocalList(operation.listId);
+          save({ source: "remote" });
+          renderNotes({ background: true });
+        }
+        await pullRemoteLists("mutation-rejected");
+        markSyncError(result?.error || "Änderung abgelehnt");
         return false;
       }
+      const attempts = Number(replay.queue.find((entry) => entry.operationId === operation.operationId)?.attempts || 1);
+      markSyncError(result?.error || "Sync nicht erreichbar");
+      scheduleSyncFlush(Math.min(30000, 2000 * (2 ** Math.min(attempts, 4))));
+      return false;
     }
-    storeSyncQueue([]);
-    markSyncSuccess();
-    pullRemoteListsSoon("outbox-flushed", 900);
-    return true;
+    return false;
   } catch (error) {
     markSyncError(error);
     scheduleSyncFlush(8000);
@@ -3124,9 +3120,6 @@ function save(options = {}) {
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
-  if (isActivationReady() && options.broadcast !== false) {
-    publishListSnapshot(lists, options.reason || "save");
-  }
 }
 
 function applyBackgroundTheme() {
@@ -3760,7 +3753,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
       didChange = true;
     }
   });
-  const canPrune = options.pruneMissing && activeWriteCount === 0 && syncQueueLength() === 0;
+  const canPrune = options.pruneMissing && activeWriteCount === 0 && mutationQueueLength() === 0;
   if (canPrune) {
     const retainedLists = lists.filter((listData) => accessibleRemoteIds.has(listData.id));
     if (retainedLists.length !== lists.length) {
@@ -3964,14 +3957,19 @@ function openShareListModal(listData) {
 async function shareList(listId = activeListId) {
   const listData = lists.find((item) => item.id === listId) ?? activeList();
   if (!listData || !canPerform(listData, "invite")) return;
-  listData.inviteCode = listData.inviteCode || generateInviteCode();
-  touchList(listData);
-  save({ broadcast: false });
-  const published = await publishListSnapshot([listData], "share", { queueOnFail: false });
-  if (!published) {
+  const flushed = await flushMutationQueue();
+  if (!flushed || mutationQueue().some((operation) => operation.listId === listData.id)) {
     window.alert("Der Zettel konnte noch nicht online gespeichert werden. Es wurde kein Einladungslink erstellt. Bitte prüfe die Verbindung und versuche es erneut.");
     return;
   }
+  const remoteLists = await collaborationService.fetchSharedLists?.(currentUser);
+  const remoteList = remoteLists?.find((entry) => (entry.listId ?? entry.id) === listData.id);
+  if (!remoteList?.inviteCode) {
+    window.alert("Der Einladungslink konnte gerade nicht geladen werden. Bitte versuche es erneut.");
+    return;
+  }
+  listData.inviteCode = remoteList.inviteCode;
+  save({ source: "remote" });
   openShareListModal(listData);
 }
 
@@ -4005,26 +4003,38 @@ async function copyInviteLink() {
   }
 }
 
-function removeMember(listId, userId) {
+async function removeMember(listId, userId) {
   const listData = listById(listId);
   if (!listData) return;
   if (!canPerform(listData, "remove") || userId === listData.ownerId) return;
+  const result = await collaborationService.removeListMember?.(listId, userId);
+  if (!result?.ok) {
+    window.alert("Der Nutzer konnte gerade nicht entfernt werden.");
+    return;
+  }
   markMemberRemoved(listData, userId);
   touchList(listData);
-  save();
+  save({ source: "remote" });
   renderNotes();
+  pullRemoteListsSoon("member-removed", 250);
 }
 
-function setMemberRole(listId, userId, role) {
+async function setMemberRole(listId, userId, role) {
   const listData = listById(listId);
   if (!listData) return;
   if (!canManageMembers(listData) || userId === listData.ownerId) return;
   const member = memberFor(listData, userId);
   if (!member) return;
+  const result = await collaborationService.updateListMemberRole?.(listId, userId, role);
+  if (!result?.ok) {
+    window.alert("Die Rolle konnte gerade nicht geändert werden.");
+    return;
+  }
   member.role = normalizeRole(role);
   touchList(listData);
-  save();
+  save({ source: "remote" });
   showMembers(listId);
+  pullRemoteListsSoon("member-role", 250);
 }
 
 function transferOwnership(listId, userId) {
@@ -4053,10 +4063,9 @@ async function regenerateInvite(listId) {
     nextCode: generateInviteCode(),
     mutate(target, nextCode) {
       target.inviteCode = nextCode;
-      touchList(target);
       save({ broadcast: false });
     },
-    persist: () => publishListSnapshot([listData], "share", { queueOnFail: false }),
+    persist: async () => (await collaborationService.updateInviteCode?.(listData.id, listData.inviteCode))?.ok === true,
     rollback: () => save({ broadcast: false })
   });
   if (!published) {
@@ -4112,8 +4121,8 @@ async function leaveSharedList(listData, index) {
     window.alert("Als Owner kannst du diesen geteilten Zettel nicht verlassen. Entferne zuerst die anderen Nutzer.");
     return;
   }
-  const remotePayload = await collaborationService.leaveSharedList?.(listData, currentUser);
-  if (!remotePayload) {
+  const mutation = createListMutation("leave_list", listData.id, {}, "", operationUuid());
+  if (!commitMutation(mutation)) {
     window.alert("Der geteilte Zettel konnte gerade nicht verlassen werden.");
     return;
   }
@@ -4626,7 +4635,7 @@ function accountFlowError(error) {
 
 function clearLocalAccountCache(accountId) {
   if (!accountId) return;
-  [storageKeys.currentUser, storageKeys.lists, storageKeys.activeList, storageKeys.outbox, storageKeys.syncQueue]
+  [storageKeys.currentUser, storageKeys.lists, storageKeys.activeList, storageKeys.outbox, storageKeys.syncQueue, storageKeys.syncMutations]
     .forEach((key) => localStorage.removeItem(accountStorageKey(key, accountId)));
 }
 
@@ -5029,12 +5038,15 @@ function addToList(product, listId = activeListId) {
   const currentList = lists.find((listData) => listData.id === listId) ?? activeList();
   if (!currentList) return false;
   if (!canPerform(currentList, "add")) return false;
+  const operationId = operationUuid();
   triggerHapticFeedback();
   const items = currentList.items;
   const existing = items.find((item) => item.id === product.id);
+  let changedItem;
   if (existing) {
     existing.quantity += 1;
     touchItem(existing, currentList);
+    changedItem = existing;
   } else {
     const item = normalizeShoppingItem({
       ...product,
@@ -5048,8 +5060,16 @@ function addToList(product, listId = activeListId) {
     });
     items.push(item);
     touchList(currentList);
+    changedItem = item;
   }
   save();
+  commitMutation(createListMutation(
+    "upsert_item",
+    currentList.id,
+    itemMutationPayload(changedItem),
+    changedItem.id,
+    operationId
+  ));
   renderNotes();
   return true;
 }
@@ -5177,6 +5197,9 @@ function updateQuantity(id, delta, listId = activeListId) {
   const currentList = listById(listId);
   if (!currentList) return;
   if (!canPerform(currentList, "edit")) return;
+  const existingItem = currentList.items.find((item) => item.id === id);
+  if (!existingItem) return;
+  const operationId = operationUuid();
   const removedItems = [];
   currentList.items = currentList.items
     .map((item) => {
@@ -5193,6 +5216,10 @@ function updateQuantity(id, delta, listId = activeListId) {
     currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, removedItems);
   }
   save();
+  const changedItem = currentList.items.find((item) => item.id === id);
+  commitMutation(changedItem
+    ? createListMutation("upsert_item", currentList.id, itemMutationPayload(changedItem), id, operationId)
+    : createListMutation("delete_item", currentList.id, { itemId: id }, id, operationId));
   renderNotes();
 }
 
@@ -5200,6 +5227,8 @@ function toggleDone(id, listId = activeListId) {
   const currentList = listById(listId);
   if (!currentList) return;
   if (!canPerform(currentList, "check")) return;
+  if (!currentList.items.some((item) => item.id === id)) return;
+  const operationId = operationUuid();
   currentList.items = currentList.items.map((item) => {
     if (item.id !== id) return item;
     const done = !item.done;
@@ -5213,6 +5242,8 @@ function toggleDone(id, listId = activeListId) {
     return nextItem;
   });
   save();
+  const changedItem = currentList.items.find((item) => item.id === id);
+  commitMutation(createListMutation("upsert_item", currentList.id, itemMutationPayload(changedItem), id, operationId));
   renderNotes();
 }
 
@@ -5220,6 +5251,8 @@ function removeItem(id, listId = activeListId) {
   const currentList = listById(listId);
   if (!currentList) return;
   if (!canPerform(currentList, "delete")) return;
+  if (!currentList.items.some((item) => item.id === id)) return;
+  const operationId = operationUuid();
   currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, [{
     id,
     deletedByUserId: currentUser.userId,
@@ -5228,6 +5261,7 @@ function removeItem(id, listId = activeListId) {
   currentList.items = currentList.items.filter((item) => item.id !== id);
   touchList(currentList);
   save();
+  commitMutation(createListMutation("delete_item", currentList.id, { itemId: id }, id, operationId));
   renderNotes();
 }
 
@@ -5236,13 +5270,16 @@ function clearDone(listId = activeListId) {
   if (!currentList) return;
   if (!canPerform(currentList, "delete")) return;
   const now = isoNow();
-  const deletedItems = currentList.items
-    .filter((item) => item.done)
-    .map((item) => ({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: now }));
+  const doneItems = currentList.items.filter((item) => item.done);
+  const operations = doneItems.map((item) => ({ id: item.id, operationId: operationUuid() }));
+  const deletedItems = doneItems.map((item) => ({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: now }));
   currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, deletedItems);
   currentList.items = currentList.items.filter((item) => !item.done);
   touchList(currentList);
   save();
+  operations.forEach(({ id, operationId }) => {
+    commitMutation(createListMutation("delete_item", currentList.id, { itemId: id }, id, operationId));
+  });
   renderNotes();
 }
 
@@ -5443,6 +5480,7 @@ function nextListTitle() {
 
 function addList() {
   if (!isActivationReady()) return;
+  const operationId = operationUuid();
   const newList = createList(nextListTitle());
   lists.push(newList);
   activeListId = MartLogic.chooseActiveListId(
@@ -5451,6 +5489,7 @@ function addList() {
     newList.id
   );
   save();
+  commitMutation(createListMutation("create_list", newList.id, { name: newList.title }, "", operationId));
   renderNotes();
 }
 
@@ -5486,8 +5525,8 @@ async function deleteList(id) {
   }
 
   if (!window.confirm(`"${listToDelete.title}" wirklich vollständig löschen?`)) return;
-  const remoteResult = await collaborationService.deleteSharedList?.(listToDelete, currentUser);
-  if (!remoteResult) {
+  const mutation = createListMutation("delete_list", listToDelete.id, {}, "", operationUuid());
+  if (!commitMutation(mutation)) {
     window.alert("Der Zettel konnte gerade nicht gelöscht werden. Bitte prüfe deine Verbindung.");
     return;
   }
@@ -5526,11 +5565,13 @@ function saveRenamedList() {
   const nextTitle = input.value;
   const cleanTitle = nextTitle.trim().slice(0, 24);
   if (!cleanTitle) return;
+  const operationId = operationUuid();
   listData.title = cleanTitle;
   listData.listName = cleanTitle;
   touchList(listData);
   pendingRenameListId = null;
   save();
+  commitMutation(createListMutation("rename_list", listData.id, { name: cleanTitle }, "", operationId));
   closeModal();
   renderNotes();
 }
@@ -5569,6 +5610,7 @@ function saveItemNote() {
   if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
+  const operationId = operationUuid();
   const cleanNote = input.value.trim().slice(0, 48);
   if (cleanNote) {
     item.note = cleanNote;
@@ -5578,6 +5620,7 @@ function saveItemNote() {
   touchItem(item, listData);
   pendingItemNoteEdit = null;
   save();
+  commitMutation(createListMutation("upsert_item", listData.id, itemMutationPayload(item), item.id, operationId));
   closeModal();
   renderNotes();
 }
@@ -5589,10 +5632,12 @@ function clearItemNote() {
   if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
+  const operationId = operationUuid();
   delete item.note;
   touchItem(item, listData);
   pendingItemNoteEdit = null;
   save();
+  commitMutation(createListMutation("upsert_item", listData.id, itemMutationPayload(item), item.id, operationId));
   closeModal();
   renderNotes();
 }
@@ -6306,7 +6351,7 @@ function updatePresence() {
 
 async function refreshRealtimeNow(reason) {
   if (!isActivationReady()) return false;
-  await flushSyncQueue();
+  await flushMutationQueue();
   return pullRemoteLists(reason);
 }
 

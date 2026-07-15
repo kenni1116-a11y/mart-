@@ -115,9 +115,93 @@
     return !nonRetryableErrors.has(code);
   }
 
+  async function applyMutationWithClient(client, mutation) {
+    if (!client?.rpc) return { ok: false, error: "network_error", offline: true };
+    try {
+      const { data, error } = await client.rpc("apply_list_mutation_v3", {
+        operation_id: mutation.operationId,
+        target_list_id: mutation.listId,
+        mutation_type: mutation.type,
+        payload: mutation.payload
+      });
+      if (error) {
+        return {
+          ok: false,
+          error: typeof error.code === "string" && error.code ? error.code : "server_error",
+          message: typeof error.message === "string" ? error.message : ""
+        };
+      }
+      if (data && typeof data === "object" && !Array.isArray(data)) return data;
+      return { ok: true, data };
+    } catch (error) {
+      return {
+        ok: false,
+        error: "network_error",
+        message: typeof error?.message === "string" ? error.message : ""
+      };
+    }
+  }
+
+  function resolveReplay(queue, operation, result, attemptedAt = new Date().toISOString()) {
+    const currentQueue = Array.isArray(queue) ? queue : [];
+    const response = result && typeof result === "object"
+      ? result
+      : { ok: false, error: "network_error" };
+    if (!operation?.operationId) return { action: "idle", queue: currentQueue, result: response };
+    if (response.ok === true) {
+      return {
+        action: "applied",
+        queue: currentQueue.filter((entry) => entry?.operationId !== operation.operationId),
+        operation,
+        result: response
+      };
+    }
+    if (!shouldRetry(response.error)) {
+      return {
+        action: "refresh",
+        queue: currentQueue.filter((entry) => entry?.listId !== operation.listId),
+        operation,
+        result: response
+      };
+    }
+    return {
+      action: "retry",
+      queue: currentQueue.map((entry) => entry?.operationId === operation.operationId
+        ? {
+            ...entry,
+            attempts: Number(entry.attempts || 0) + 1,
+            attemptedAt,
+            lastError: response.error || "server_error"
+          }
+        : entry),
+      operation,
+      result: response
+    };
+  }
+
+  async function replayNext(queue, applyMutation, attemptedAt = new Date().toISOString()) {
+    const currentQueue = Array.isArray(queue) ? queue : [];
+    const operation = currentQueue[0];
+    if (!operation) return { action: "idle", queue: currentQueue, result: null };
+    let result;
+    try {
+      result = await applyMutation(operation);
+    } catch (error) {
+      result = {
+        ok: false,
+        error: "network_error",
+        message: typeof error?.message === "string" ? error.message : ""
+      };
+    }
+    return resolveReplay(currentQueue, operation, result, attemptedAt);
+  }
+
   return {
     createMutation,
     compactQueue,
-    shouldRetry
+    shouldRetry,
+    applyMutationWithClient,
+    resolveReplay,
+    replayNext
   };
 });

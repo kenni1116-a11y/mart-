@@ -56,7 +56,7 @@ test("activation storage cleanup is wired before the authoritative first pull", 
 test("the first relational pull is read-only and profile sync starts after writes are enabled", () => {
   const app = read("app.js");
   const fetchStart = app.indexOf("async fetchRelationalLists");
-  const fetchEnd = app.indexOf("async publishLists", fetchStart);
+  const fetchEnd = app.indexOf("async fetchSharedLists", fetchStart);
   const fetchBody = app.slice(fetchStart, fetchEnd);
   const enableStart = app.indexOf("async function enableAccountWrites");
   const enableEnd = app.indexOf("async function startReadyAccountFeatures", enableStart);
@@ -65,6 +65,36 @@ test("the first relational pull is read-only and profile sync starts after write
   assert.doesNotMatch(fetchBody, /upsertProfile|update_account_profile/);
   assert.match(enableBody, /collaborationService\.upsertProfile/);
   assert.ok(enableBody.indexOf("outboundSyncEnabled = true") < enableBody.indexOf("collaborationService.upsertProfile"));
+});
+
+test("browser writes use account-bound item mutations instead of list snapshots", () => {
+  const app = read("app.js");
+  const saveStart = app.indexOf("function save(options = {})");
+  const saveEnd = app.indexOf("function applyBackgroundTheme", saveStart);
+  const saveBody = app.slice(saveStart, saveEnd);
+  const actionNames = [
+    "addToList",
+    "updateQuantity",
+    "toggleDone",
+    "removeItem",
+    "clearDone",
+    "addList",
+    "saveRenamedList",
+    "saveItemNote",
+    "clearItemNote"
+  ];
+
+  assert.match(app, /syncMutations: "shopping-list-app\.sync-mutations"/);
+  assert.match(app, /async applyMutation\(mutation\)/);
+  assert.match(app, /collaborationService\.applyMutation\(operation\)/);
+  assert.doesNotMatch(app, /persistOwnedListRow|publishRelationalLists|publishListSnapshot/);
+  assert.doesNotMatch(saveBody, /publishLists|applyMutation|queueMutation|commitMutation/);
+  actionNames.forEach((name) => {
+    const start = app.indexOf(`function ${name}`);
+    const end = app.indexOf("\nfunction ", start + 10);
+    assert.notEqual(start, -1, `${name} must exist`);
+    assert.match(app.slice(start, end), /commitMutation/, `${name} must commit a mutation`);
+  });
 });
 
 test("retained pairing failures expose retry and cancel and clear only after Account opens", () => {

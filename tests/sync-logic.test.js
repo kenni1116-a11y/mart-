@@ -6,6 +6,7 @@ const SyncLogic = require("../sync-logic.js");
 const ACCOUNT_ID = "10000000-0000-4000-8000-000000000001";
 const OPERATION_ID_1 = "20000000-0000-4000-8000-000000000001";
 const OPERATION_ID_2 = "20000000-0000-4000-8000-000000000002";
+const OPERATION_ID_3 = "20000000-0000-4000-8000-000000000003";
 const CREATED_AT = "2026-07-15T08:00:00.000Z";
 
 function itemMutation(overrides = {}) {
@@ -92,4 +93,90 @@ test("authorization and deletion conflicts stop replay while transient failures 
   ["network_error", "timeout", "server_error"].forEach((code) => {
     assert.equal(SyncLogic.shouldRetry(code), true, code);
   });
+});
+
+test("one mutation calls only the idempotent Supabase RPC", async () => {
+  const calls = [];
+  const client = {
+    rpc: async (name, parameters) => {
+      calls.push({ name, parameters });
+      return { data: { ok: true, operationId: OPERATION_ID_1 }, error: null };
+    }
+  };
+  const mutation = itemMutation();
+
+  const result = await SyncLogic.applyMutationWithClient(client, mutation);
+
+  assert.deepEqual(result, { ok: true, operationId: OPERATION_ID_1 });
+  assert.deepEqual(calls, [{
+    name: "apply_list_mutation_v3",
+    parameters: {
+      operation_id: OPERATION_ID_1,
+      target_list_id: "list-1",
+      mutation_type: "upsert_item",
+      payload: { quantity: 2, done: false }
+    }
+  }]);
+});
+
+test("successful replay removes only the accepted operation", async () => {
+  const first = itemMutation();
+  const second = itemMutation({
+    operationId: OPERATION_ID_2,
+    listId: "list-2",
+    itemId: "bread"
+  });
+
+  const replay = await SyncLogic.replayNext([first, second], async () => ({ ok: true }));
+
+  assert.equal(replay.action, "applied");
+  assert.deepEqual(replay.queue, [second]);
+});
+
+test("deleted-list replay discards only operations for that inaccessible list", async () => {
+  const first = itemMutation();
+  const sameList = itemMutation({
+    operationId: OPERATION_ID_2,
+    itemId: "bread"
+  });
+  const otherList = itemMutation({
+    operationId: OPERATION_ID_3,
+    listId: "list-2",
+    itemId: "water"
+  });
+
+  const replay = await SyncLogic.replayNext(
+    [first, sameList, otherList],
+    async () => ({ ok: false, error: "list_deleted" }),
+    "2026-07-15T08:05:00.000Z"
+  );
+
+  assert.equal(replay.action, "refresh");
+  assert.deepEqual(replay.queue, [otherList]);
+});
+
+test("transient replay failure retains the operation with one more attempt", async () => {
+  const mutation = itemMutation();
+
+  const replay = await SyncLogic.replayNext(
+    [mutation],
+    async () => ({ ok: false, error: "network_error" }),
+    "2026-07-15T08:06:00.000Z"
+  );
+
+  assert.equal(replay.action, "retry");
+  assert.equal(replay.queue[0].attempts, 1);
+  assert.equal(replay.queue[0].attemptedAt, "2026-07-15T08:06:00.000Z");
+  assert.equal(replay.queue[0].lastError, "network_error");
+  assert.equal(replay.queue[0].operationId, OPERATION_ID_1);
+});
+
+test("a missing service response never removes a queued mutation", async () => {
+  const mutation = itemMutation();
+
+  const replay = await SyncLogic.replayNext([mutation], async () => undefined, "2026-07-15T08:07:00.000Z");
+
+  assert.equal(replay.action, "retry");
+  assert.equal(replay.queue[0].operationId, OPERATION_ID_1);
+  assert.equal(replay.queue[0].attempts, 1);
 });
