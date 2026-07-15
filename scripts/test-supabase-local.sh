@@ -26,6 +26,11 @@ for file in "${SCHEMA_FILES[@]}"; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$ROOT/$file"
 done
 
+psql "$DB_URL" -v ON_ERROR_STOP=1 \
+  -f "$ROOT/tests/sql/fixtures/supabase_integrity_v4_legacy.sql"
+psql "$DB_URL" -v ON_ERROR_STOP=1 \
+  -f "$ROOT/supabase/supabase_integrity_v4.sql"
+
 for file in "$ROOT"/tests/sql/*.test.sql; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file"
 done

@@ -77,6 +77,30 @@
   git commit -m "fix: enforce Supabase list integrity"
   ```
 
+### Task 2a: Continuously enforce the owner invariant
+
+**Files:**
+- Create: `supabase/supabase_integrity_v4.sql`
+- Create: `tests/sql/fixtures/supabase_integrity_v4_legacy.sql`
+- Modify: `tests/sql/supabase_integrity_v3.test.sql`
+- Modify: `scripts/test-supabase-local.sh`
+
+- [x] **Step 1: Prove the v3 trigger does not guard later member changes**
+
+  Extend the transactional integrity test to require a deferred member trigger and to count every active owner row, not only the row matching `owner_user_id`.
+
+- [x] **Step 2: Add a deferred cross-table invariant**
+
+  Require every active list to finish each transaction with exactly one active owner membership belonging to `owner_user_id`. Preserve the existing atomic ownership-transfer RPC by allowing temporary changes inside its transaction.
+
+- [x] **Step 3: Exercise the backfill in CI**
+
+  Insert one deliberately inconsistent legacy fixture before v4 is applied locally, then require the migration to demote a stale owner and restore the canonical owner.
+
+- [x] **Step 4: Preserve the client RPC contract**
+
+  Assert that every RPC currently used by `app.js` and `sync-logic.js` remains executable by `authenticated` while `anon` and `PUBLIC` remain revoked.
+
 ### Task 3: Move release SQL tests off production
 
 **Files:**
