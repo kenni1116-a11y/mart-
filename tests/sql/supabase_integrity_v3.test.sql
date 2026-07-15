@@ -4,7 +4,10 @@ do $$
 declare
   realtime_tables text[];
   required_rpc text;
-  owner_guard_rejected boolean := false;
+  second_owner_rejected boolean := false;
+  owner_demotion_rejected boolean := false;
+  owner_removal_rejected boolean := false;
+  owner_delete_rejected boolean := false;
   owner_account_id constant uuid := 'e9100000-0000-4000-8000-000000000001';
   member_account_id constant uuid := 'e9100000-0000-4000-8000-000000000002';
   invariant_list_id constant text := 'integrity-v4-constraint-fixture';
@@ -67,34 +70,28 @@ begin
   end if;
 
   foreach required_rpc in array array[
-    'apply_list_mutation_v3',
-    'approve_device_pairing_v3',
-    'bootstrap_account',
-    'cancel_device_pairing',
-    'create_device_pairing',
-    'delete_current_account_v3',
-    'delete_shopping_list',
-    'get_device_pairing_status_v3',
-    'join_shopping_list',
-    'leave_shopping_list',
-    'list_account_devices',
-    'recover_account',
-    'remove_account_device',
-    'rename_account_device',
-    'request_device_pairing_v3',
-    'rotate_recovery_code',
-    'touch_current_device',
-    'transfer_list_ownership_v3',
-    'update_account_profile'
+    'public.apply_list_mutation_v3(uuid,text,text,jsonb)',
+    'public.approve_device_pairing_v3(uuid)',
+    'public.bootstrap_account(text,text)',
+    'public.cancel_device_pairing(uuid)',
+    'public.create_device_pairing()',
+    'public.delete_current_account_v3(uuid)',
+    'public.delete_shopping_list(text)',
+    'public.get_device_pairing_status_v3(uuid)',
+    'public.join_shopping_list(text,text,text,text)',
+    'public.leave_shopping_list(text)',
+    'public.list_account_devices()',
+    'public.recover_account(text,text,text)',
+    'public.remove_account_device(uuid)',
+    'public.rename_account_device(uuid,text)',
+    'public.request_device_pairing_v3(uuid,text,text,text)',
+    'public.rotate_recovery_code()',
+    'public.touch_current_device(text,text)',
+    'public.transfer_list_ownership_v3(text,uuid)',
+    'public.update_account_profile(text,text)'
   ] loop
-    if not exists (
-      select 1
-      from pg_proc functions
-      join pg_namespace schemas on schemas.oid = functions.pronamespace
-      where schemas.nspname = 'public'
-        and functions.proname = required_rpc
-        and has_function_privilege('authenticated', functions.oid, 'EXECUTE')
-    ) then
+    if to_regprocedure(required_rpc) is null
+      or not has_function_privilege('authenticated', required_rpc, 'EXECUTE') then
       raise exception 'client RPC is missing or not executable by authenticated: %', required_rpc;
     end if;
   end loop;
@@ -152,6 +149,21 @@ begin
     raise exception 'an active shopping list does not have exactly one active owner membership';
   end if;
 
+  if exists (
+    select 1
+    from public.shopping_lists lists
+    where lists.id = 'integrity-v4-backfill-fixture'
+  ) and not exists (
+    select 1
+    from public.list_members members
+    where members.list_id = 'integrity-v4-backfill-fixture'
+      and members.user_id = 'e9000000-0000-4000-8000-000000000002'
+      and members.role = 'editor'
+      and members.removed_at is null
+  ) then
+    raise exception 'legacy owner membership was deleted instead of preserved and demoted';
+  end if;
+
   insert into public.accounts (id, username, display_name)
   values
     (owner_account_id, 'user-E910001', 'Invariant Owner'),
@@ -163,6 +175,9 @@ begin
   insert into public.list_members (list_id, user_id, display_name, role)
   values (invariant_list_id, member_account_id, 'Invariant Member', 'editor');
 
+  set constraints all immediate;
+  set constraints all deferred;
+
   begin
     update public.list_members
     set role = 'owner'
@@ -171,12 +186,59 @@ begin
     set constraints list_members_validate_owner_membership immediate;
   exception
     when check_violation then
-      owner_guard_rejected := true;
+      second_owner_rejected := true;
   end;
   set constraints all deferred;
 
-  if not owner_guard_rejected then
+  if not second_owner_rejected then
     raise exception 'a second active owner membership was accepted';
+  end if;
+
+  begin
+    update public.list_members
+    set role = 'editor'
+    where list_id = invariant_list_id
+      and user_id = owner_account_id;
+    set constraints list_members_validate_owner_membership immediate;
+  exception
+    when check_violation then
+      owner_demotion_rejected := true;
+  end;
+  set constraints all deferred;
+
+  if not owner_demotion_rejected then
+    raise exception 'canonical owner demotion was accepted';
+  end if;
+
+  begin
+    update public.list_members
+    set removed_at = now()
+    where list_id = invariant_list_id
+      and user_id = owner_account_id;
+    set constraints list_members_validate_owner_membership immediate;
+  exception
+    when check_violation then
+      owner_removal_rejected := true;
+  end;
+  set constraints all deferred;
+
+  if not owner_removal_rejected then
+    raise exception 'canonical owner removal was accepted';
+  end if;
+
+  begin
+    delete from public.list_members
+    where list_id = invariant_list_id
+      and user_id = owner_account_id;
+    set constraints list_members_validate_owner_membership immediate;
+  exception
+    when check_violation then
+      owner_delete_rejected := true;
+  end;
+  set constraints all deferred;
+
+  if not owner_delete_rejected then
+    raise exception 'canonical owner deletion was accepted';
   end if;
 
   if exists (
