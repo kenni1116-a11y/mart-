@@ -12,13 +12,16 @@ function read(file) {
 test("tested app logic loads before the browser entrypoint", () => {
   const html = read("index.html");
   const accountIndex = html.indexOf("./account-logic.js?v=61");
+  const syncIndex = html.indexOf("./sync-logic.js?v=61");
   const helperIndex = html.indexOf("./app-logic.js?v=61");
   const appIndex = html.indexOf("./app.js?v=61");
 
   assert.notEqual(accountIndex, -1, "index.html must load account-logic.js");
+  assert.notEqual(syncIndex, -1, "index.html must load sync-logic.js");
   assert.notEqual(helperIndex, -1, "index.html must load app-logic.js");
   assert.notEqual(appIndex, -1, "index.html must load the current app.js release");
-  assert.ok(accountIndex < helperIndex, "account-logic.js must load before app-logic.js");
+  assert.ok(accountIndex < syncIndex, "account-logic.js must load before sync-logic.js");
+  assert.ok(syncIndex < helperIndex, "sync-logic.js must load before app-logic.js");
   assert.ok(helperIndex < appIndex, "app-logic.js must load before app.js");
 });
 
@@ -27,6 +30,7 @@ test("the service worker keeps the tested helper available offline", () => {
 
   assert.match(serviceWorker, /const CACHE_NAME = "einkaufszettel-v61"/);
   assert.match(serviceWorker, /"\.\/account-logic\.js"/);
+  assert.match(serviceWorker, /"\.\/sync-logic\.js"/);
   assert.match(serviceWorker, /"\.\/app-logic\.js"/);
 });
 

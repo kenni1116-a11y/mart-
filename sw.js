@@ -6,6 +6,7 @@ const ASSETS = [
   "./styles.css",
   "./supabase-config.js",
   "./account-logic.js",
+  "./sync-logic.js",
   "./app-logic.js",
   "./app.js",
   "./manifest.json",
