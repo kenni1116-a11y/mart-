@@ -46,9 +46,7 @@ begin
   values (list_id, 'Mutation fixture', owner_account_id);
 
   insert into public.list_members (list_id, user_id, display_name, role)
-  values
-    (list_id, owner_account_id, 'Mutation Owner', 'owner'),
-    (list_id, editor_account_id, 'Mutation Editor', 'editor');
+  values (list_id, editor_account_id, 'Mutation Editor', 'editor');
 
   perform set_config('request.jwt.claim.sub', owner_auth_id::text, true);
 

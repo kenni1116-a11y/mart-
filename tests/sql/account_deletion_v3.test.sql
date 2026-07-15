@@ -49,10 +49,7 @@ begin
     (foreign_list_id, 'Foreign fixture', foreign_account_id);
 
   insert into public.list_members (list_id, user_id, display_name, role)
-  values
-    (owned_list_id, deleted_account_id, 'Owner fixture', 'owner'),
-    (foreign_list_id, deleted_account_id, 'Member fixture', 'editor'),
-    (foreign_list_id, foreign_account_id, 'Foreign owner', 'owner');
+  values (foreign_list_id, deleted_account_id, 'Member fixture', 'editor');
 
   insert into public.list_items (list_id, item_id, name, added_by_user_id)
   values (owned_list_id, 'owned-item', 'Owned item fixture', deleted_account_id);

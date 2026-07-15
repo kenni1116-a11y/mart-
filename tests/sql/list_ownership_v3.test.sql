@@ -34,9 +34,7 @@ begin
   values (list_id, 'Ownership fixture', owner_account_id);
 
   insert into public.list_members (list_id, user_id, display_name, role)
-  values
-    (list_id, owner_account_id, 'Ownership Owner', 'owner'),
-    (list_id, target_account_id, 'Ownership Target', 'editor');
+  values (list_id, target_account_id, 'Ownership Target', 'editor');
 
   perform set_config('request.jwt.claim.sub', outsider_auth_id::text, true);
   result := public.transfer_list_ownership_v3(list_id, target_account_id);
