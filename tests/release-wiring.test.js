@@ -25,11 +25,16 @@ test("one pinned release command verifies unit, syntax, cache, diff, and discove
 
 test("GitHub Pages deploys only after verification and retains a rollback path", () => {
   const workflow = read(".github/workflows/verify-and-deploy.yml");
+  const packageJson = JSON.parse(read("package.json"));
 
   assert.match(workflow, /pnpm\/action-setup@v4/);
   assert.match(workflow, /actions\/setup-node@v4/);
   assert.match(workflow, /pnpm verify/);
-  assert.match(workflow, /SUPABASE_DB_URL:[\s\S]*secrets\.SUPABASE_DB_URL/);
+  assert.match(workflow, /supabase\/setup-cli@v1/);
+  assert.match(workflow, /version: 2\.109\.1/);
+  assert.match(workflow, /pnpm test:sql:local/);
+  assert.doesNotMatch(workflow, /SUPABASE_DB_URL|secrets\.SUPABASE_DB_URL/);
+  assert.equal(packageJson.scripts["test:sql:local"], "bash scripts/test-supabase-local.sh");
   assert.match(workflow, /actions\/upload-pages-artifact@v3/);
   assert.match(workflow, /actions\/deploy-pages@v4/);
   assert.match(workflow, /pnpm smoke:production/);
