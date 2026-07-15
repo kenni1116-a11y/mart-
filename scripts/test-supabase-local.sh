@@ -29,4 +29,3 @@ done
 for file in "$ROOT"/tests/sql/*.test.sql; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file"
 done
-
