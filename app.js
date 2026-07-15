@@ -829,46 +829,42 @@ const storageKeys = {
   presence: "shopping-list-app.mock-presence",
   outbox: "shopping-list-app.sync-outbox",
   syncQueue: "shopping-list-app.sync-write-queue",
+  syncMutations: "shopping-list-app.sync-mutations",
   markets: "shopping-list-app.markets",
   productPrices: "shopping-list-app.product-prices",
   priceSync: "shopping-list-app.price-sync"
 };
 
+const accountStoragePrefixes = [
+  "shopping-list-app.items",
+  storageKeys.lists,
+  storageKeys.activeList,
+  storageKeys.currentUser,
+  "shopping-list-app.legacy-migration-complete",
+  storageKeys.realtime,
+  storageKeys.presence,
+  storageKeys.outbox,
+  storageKeys.syncQueue,
+  storageKeys.syncMutations
+];
+let pendingDataEpochReset = false;
+let targetDataEpoch = "1";
+
 function applyDataEpochReset() {
   const config = window.MART_SUPABASE_CONFIG ?? {};
-  const targetEpoch = String(config.dataEpoch || "1");
-  if (localStorage.getItem(storageKeys.dataEpoch) === targetEpoch) return false;
+  targetDataEpoch = String(config.dataEpoch || "1");
+  pendingDataEpochReset = localStorage.getItem(storageKeys.dataEpoch) !== targetDataEpoch;
+  return pendingDataEpochReset;
+}
 
-  const accountStoragePrefixes = [
-    "shopping-list-app.items",
-    storageKeys.lists,
-    storageKeys.activeList,
-    storageKeys.currentUser,
-    "shopping-list-app.legacy-migration-complete",
-    storageKeys.realtime,
-    storageKeys.presence,
-    storageKeys.outbox,
-    storageKeys.syncQueue
-  ];
-  Object.keys(localStorage).forEach((key) => {
-    if (accountStoragePrefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) {
-      localStorage.removeItem(key);
-    }
-  });
+function clearInvalidSessionAccountCaches() {
+  MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, "");
+}
 
-  try {
-    const projectRef = new URL(config.url).hostname.split(".")[0];
-    const authPrefix = projectRef ? `sb-${projectRef}-auth-token` : "";
-    if (authPrefix) {
-      Object.keys(localStorage).forEach((key) => {
-        if (key.startsWith(authPrefix)) localStorage.removeItem(key);
-      });
-    }
-  } catch {
-    // A missing project URL must not block the local reset.
-  }
-
-  localStorage.setItem(storageKeys.dataEpoch, targetEpoch);
+function completeDataEpochReset() {
+  if (!pendingDataEpochReset) return false;
+  localStorage.setItem(storageKeys.dataEpoch, targetDataEpoch);
+  pendingDataEpochReset = false;
   return true;
 }
 
@@ -1175,6 +1171,10 @@ class MockRealtimeService {
     return [];
   }
 
+  async applyMutation() {
+    return { ok: false, error: "network_error", offline: true };
+  }
+
   async leaveSharedList(listData) {
     await this.publishLists([listData]);
     return exportCollaborativeList(listData);
@@ -1266,34 +1266,32 @@ class SupabaseRealtimeService {
   async initializeUser() {
     if (!this.client) return null;
     try {
-      const { data: sessionData, error: sessionError } = await this.client.auth.getSession();
-      if (sessionError) throw sessionError;
-      let authUser = sessionData?.session?.user ?? null;
-      if (authUser) {
-        const { data: verifiedData, error: verificationError } = await this.client.auth.getUser();
-        if (!verificationError && verifiedData?.user?.id === authUser.id) {
-          authUser = verifiedData.user;
-        } else {
-          await this.client.auth.signOut({ scope: "local" });
-          authUser = null;
-        }
-      }
-      if (authUser && !isDeviceAuthUser(authUser)) {
-        await this.client.auth.signOut({ scope: "local" });
-        authUser = null;
-      }
-      if (!authUser) {
-        const { data: anonymousData, error: anonymousError } = await this.client.auth.signInAnonymously({
-          options: {
-            data: {
-              deviceLabel: defaultDeviceLabel(),
-              devicePlatform: devicePlatform()
+      const result = await MartAccountLogic.authenticateDeviceIdentity({
+        getSession: async () => {
+          const { data, error } = await this.client.auth.getSession();
+          return { user: data?.session?.user ?? null, error };
+        },
+        getUser: async () => {
+          const { data, error } = await this.client.auth.getUser();
+          return { user: data?.user ?? null, error };
+        },
+        signOutLocal: () => this.client.auth.signOut({ scope: "local" }),
+        clearInvalidSessionData: clearInvalidSessionAccountCaches,
+        signInAnonymously: async () => {
+          const { data, error } = await this.client.auth.signInAnonymously({
+            options: {
+              data: {
+                deviceLabel: defaultDeviceLabel(),
+                devicePlatform: devicePlatform()
+              }
             }
-          }
-        });
-        if (anonymousError) throw anonymousError;
-        authUser = anonymousData?.user ?? null;
-      }
+          });
+          if (error) throw error;
+          return data?.user ?? null;
+        },
+        isDeviceAuthUser
+      });
+      const authUser = result.user;
       this.authUserId = authUser?.id ?? "";
       return authUser;
     } catch (error) {
@@ -1314,6 +1312,62 @@ class SupabaseRealtimeService {
       this.queueOffline({ type: "auth", createdAt: isoNow(), error: error?.message ?? "Supabase Auth nicht erreichbar" });
       return null;
     }
+  }
+
+  async applyMutation(mutation) {
+    if (!this.client) return { ok: false, error: "network_error", offline: true };
+    const authUser = await this.ensureAuthenticated();
+    if (!authUser) return { ok: false, error: "authentication_required" };
+    return MartSyncLogic.applyMutationWithClient(this.client, mutation);
+  }
+
+  async updateInviteCode(listId, inviteCode) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client
+      .from(this.listTable)
+      .update({ invite_code: inviteCode })
+      .eq("id", listId)
+      .select("invite_code")
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data?.invite_code) return { ok: false, error: "forbidden" };
+    return { ok: true, inviteCode: data.invite_code };
+  }
+
+  async removeListMember(listId, userId) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client
+      .from(this.memberTable)
+      .update({ removed_at: isoNow(), removed_by_user_id: currentUser.userId })
+      .eq("list_id", listId)
+      .eq("user_id", userId)
+      .select("user_id")
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    return data?.user_id ? { ok: true } : { ok: false, error: "forbidden" };
+  }
+
+  async updateListMemberRole(listId, userId, role) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client
+      .from(this.memberTable)
+      .update({ role: normalizeRole(role) })
+      .eq("list_id", listId)
+      .eq("user_id", userId)
+      .select("user_id")
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    return data?.user_id ? { ok: true } : { ok: false, error: "forbidden" };
+  }
+
+  async transferListOwnership(listId, userId) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client.rpc("transfer_list_ownership_v3", {
+      target_list_id: listId,
+      target_user_id: userId
+    });
+    if (error) return { ok: false, error: error.message };
+    return data ?? { ok: false, error: "server_error" };
   }
 
   async bootstrapAccount(label = defaultDeviceLabel(), platform = devicePlatform()) {
@@ -1471,6 +1525,15 @@ class SupabaseRealtimeService {
     return error ? { ok: false, error: error.message } : data;
   }
 
+  async deleteCurrentAccount(expectedAccountId) {
+    if (!this.client) return { ok: false, error: "account_unavailable" };
+    const { data, error } = await this.client.rpc("delete_current_account_v3", {
+      expected_account_id: expectedAccountId
+    });
+    if (error) return { ok: false, error: error.message || "account_deletion_failed" };
+    return data;
+  }
+
   async rotateRecoveryCode() {
     const { data, error } = await this.client.rpc("rotate_recovery_code");
     return error ? { ok: false, error: error.message } : { ok: true, ...data };
@@ -1491,7 +1554,7 @@ class SupabaseRealtimeService {
   }
 
   async requestDevicePairing(pairingId, token, label = defaultDeviceLabel(), platform = devicePlatform()) {
-    const { data, error } = await this.client.rpc("request_device_pairing", {
+    const { data, error } = await this.client.rpc("request_device_pairing_v3", {
       target_pairing_id: pairingId,
       pairing_token: token,
       device_label: label,
@@ -1501,14 +1564,14 @@ class SupabaseRealtimeService {
   }
 
   async devicePairingStatus(pairingId) {
-    const { data, error } = await this.client.rpc("get_device_pairing_status", {
+    const { data, error } = await this.client.rpc("get_device_pairing_status_v3", {
       target_pairing_id: pairingId
     });
     return error ? { ok: false, error: error.message } : data;
   }
 
   async approveDevicePairing(pairingId) {
-    const { data, error } = await this.client.rpc("approve_device_pairing", {
+    const { data, error } = await this.client.rpc("approve_device_pairing_v3", {
       target_pairing_id: pairingId
     });
     return error ? { ok: false, error: error.message } : data;
@@ -1697,80 +1760,7 @@ class SupabaseRealtimeService {
     });
   }
 
-  async persistOwnedListRow(row) {
-    const updateRow = async () => this.client
-      .from(this.listTable)
-      .update(row)
-      .eq("id", row.id)
-      .select("id");
-
-    const initialUpdate = await updateRow();
-    if (initialUpdate.error) {
-      return { ok: false, error: initialUpdate.error.message, rawError: initialUpdate.error };
-    }
-    if (initialUpdate.data?.length) return { ok: true, created: false };
-
-    const { error: insertError } = await this.client.from(this.listTable).insert(row);
-    if (!insertError) return { ok: true, created: true };
-    if (insertError.code !== "23505") {
-      return { ok: false, error: insertError.message, rawError: insertError };
-    }
-
-    // A second device may have created the same local list after our first check.
-    const retryUpdate = await updateRow();
-    if (retryUpdate.error || !retryUpdate.data?.length) {
-      const retryError = retryUpdate.error ?? insertError;
-      return { ok: false, error: retryError.message, rawError: retryError };
-    }
-    return { ok: true, created: false };
-  }
-
-  async publishRelationalLists(nextLists, user = currentUser) {
-    const profileResult = await this.upsertProfile(user);
-    if (profileResult.ok === false) return profileResult;
-    const normalizedLists = nextLists.map(normalizeListData);
-    const listRows = normalizedLists.map((listData) => this.listRowFromList(listData));
-    const ownedListRows = listRows.filter((row) => row.owner_user_id === user.userId);
-    const joinedListRows = listRows.filter((row) => row.owner_user_id !== user.userId);
-    const memberRows = normalizedLists.flatMap((listData) => {
-      const rows = this.memberRowsFromList(listData);
-      return listData.ownerId === user.userId ? rows : [];
-    });
-    const itemRows = normalizedLists.flatMap((listData) => this.itemRowsFromList(listData));
-
-    const listResults = await MartLogic.mapWithConcurrency(
-      ownedListRows,
-      3,
-      (row) => this.persistOwnedListRow(row)
-    );
-    const failedListResult = listResults.find((result) => !result.ok);
-    if (failedListResult) return failedListResult;
-    for (const row of joinedListRows) {
-      const { error } = await this.client
-        .from(this.listTable)
-        .update({
-          name: row.name,
-          updated_at: row.updated_at,
-          updated_by_user_id: this.userIdValue(user.userId),
-          revision: row.revision
-        })
-        .eq("id", row.id);
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
-    if (memberRows.length) {
-      const { error } = await this.client.from(this.memberTable).upsert(memberRows, { onConflict: "list_id,user_id" });
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
-    if (itemRows.length) {
-      const { error } = await this.client.from(this.itemTable).upsert(itemRows, { onConflict: "list_id,item_id" });
-      if (error) return { ok: false, error: error.message, rawError: error };
-    }
-    return { ok: true, relational: true };
-  }
-
   async fetchRelationalLists(user) {
-    const profileResult = await this.upsertProfile(user);
-    if (profileResult.ok === false) return profileResult;
     const { data: listRows, error: listError } = await this.client
       .from(this.listTable)
       .select("*")
@@ -1791,17 +1781,6 @@ class SupabaseRealtimeService {
       ok: true,
       lists: listRows.map((listRow) => this.listFromRelationalRows(listRow, memberRows ?? [], itemRows ?? []))
     };
-  }
-
-  async publishLists(nextLists, options = {}) {
-    if (!this.client) {
-      if (options.queueOnFail !== false) {
-        this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
-      }
-      return Promise.resolve({ ok: false, offline: true });
-    }
-
-    return this.publishRelationalLists(nextLists, currentUser);
   }
 
   async fetchSharedLists(user) {
@@ -2111,7 +2090,10 @@ let devicePairingPollTimer = 0;
 let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
+let accountDeletionFlow = null;
+let accountDeletionExpectedAccountId = "";
 let accountSessionVersion = 0;
+let outboundSyncEnabled = false;
 let authState = {
   status: "loading",
   displayName: "",
@@ -2367,6 +2349,10 @@ function isAuthenticatedAccount() {
   return authState.accountReady && isUuid(currentUser.userId) && isUuid(currentUser.authUserId);
 }
 
+function isActivationReady() {
+  return outboundSyncEnabled && isAuthenticatedAccount();
+}
+
 function accountUserFromAuth(authUser, account) {
   const accountId = account?.id ?? "";
   const cachedUser = load(accountStorageKey(storageKeys.currentUser, accountId), null);
@@ -2427,8 +2413,10 @@ function setAuthBusy(isBusy) {
 }
 
 function showDeviceSetup(message = "Dein Geräte-Account wird vorbereitet.", canRetry = false) {
+  outboundSyncEnabled = false;
   authState.status = canRetry ? "error" : "loading";
   authState.accountReady = false;
+  if (elements.addListButton) elements.addListButton.disabled = true;
   elements.appShell?.classList.add("is-hidden");
   elements.authGate?.classList.remove("is-hidden");
   elements.authDeviceLoader?.classList.toggle("is-hidden", canRetry);
@@ -2437,17 +2425,80 @@ function showDeviceSetup(message = "Dein Geräte-Account wird vorbereitet.", can
   setAuthStatus(message);
 }
 
+async function openExistingAccountForPairing(authUser) {
+  if (!isDeviceAuthUser(authUser)) return false;
+  try {
+    if (!(await activateAccount(authUser, { force: true, handlePairing: false }))) return false;
+    window.alert("Dieses Gerät hat bereits einen eigenen Account. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.");
+    showMore();
+    showProfile();
+    const reachedAccount = elements.modalContent.querySelector("#modalTitle")?.textContent?.trim() === "Account";
+    if (!reachedAccount) return false;
+    clearPendingDevicePairing();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showRetainedPairingError(message) {
+  openModal(`
+    <h2 id="modalTitle">Gerät verbinden</h2>
+    <div class="device-pairing-wait">
+      <p class="form-status" role="status">${escapeText(message)}</p>
+      <div class="modal-actions">
+        <button type="button" data-retry-pending-device-pairing>Erneut versuchen</button>
+        <button type="button" class="is-muted" data-cancel-pending-device-pairing>Abbrechen</button>
+      </div>
+    </div>
+  `);
+}
+
 async function connectDeviceAccount() {
   if (accountSetupPromise) return accountSetupPromise;
   showDeviceSetup();
   setAuthBusy(true);
   accountSetupPromise = (async () => {
     try {
-      const authUser = await collaborationService.initializeUser?.();
-      if (!isDeviceAuthUser(authUser)) throw new Error("Keine Gerätekennung erhalten");
-      return await activateAccount(authUser, { force: true });
+      if (pendingDevicePairing?.invalid) {
+        clearPendingDevicePairing();
+        showDeviceSetup("Der QR-Code ist ungültig. Öffne einen neuen Gerätelink.", true);
+        return false;
+      }
+      const pairing = pendingDevicePairing;
+      const result = await MartAccountLogic.runActivationSequence({
+        pairing,
+        authenticate: connectDeviceIdentity,
+        requestPairing: (pending) => requestPendingDevicePairing(pending),
+        waitForApproval: (pending) => finishPendingDevicePairing(pending),
+        bootstrap: (authUser) => resolveAndLoadAccount(authUser, { force: true, clearForeignCaches: Boolean(pairing) }),
+        pull: () => pullRemoteLists("account-boot"),
+        enableWrites: enableAccountWrites
+      });
+      if (!result.ok) {
+        const retentionAction = pairing
+          ? MartAccountLogic.pairingRetentionAction(result)
+          : "retain";
+        if (retentionAction === "clear") clearPendingDevicePairing();
+        if (retentionAction === "open-account"
+          && await openExistingAccountForPairing(result.authUser)) {
+          return true;
+        }
+        const message = result.status === "account_in_use"
+          ? "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest."
+          : (result.status === "initial_load_failed" ? "Der aktuelle Serverstand konnte nicht geladen werden." : accountFlowError({ error: result.status }));
+        showDeviceSetup(message, true);
+        if (pendingDevicePairing && retentionAction !== "clear") {
+          showRetainedPairingError(message);
+        }
+        return false;
+      }
+      await startReadyAccountFeatures();
+      return true;
     } catch (error) {
-      showDeviceSetup(authErrorMessage(error), true);
+      const message = authErrorMessage(error);
+      showDeviceSetup(message, true);
+      if (pendingDevicePairing) showRetainedPairingError(message);
       return false;
     } finally {
       setAuthBusy(false);
@@ -2458,7 +2509,7 @@ async function connectDeviceAccount() {
 }
 
 function handleRealtimeMessage(message) {
-  if (!isAuthenticatedAccount()) return;
+  if (!isActivationReady()) return;
   if (message.type === "lists") {
     markSyncSuccess();
     mergeRemoteLists(message.lists);
@@ -2499,35 +2550,44 @@ function stopAccountActivity() {
 }
 
 function startAccountActivity() {
+  if (!isActivationReady()) return;
   stopAccountActivity();
   realtimeSubscription = collaborationService.subscribe(handleRealtimeMessage);
   presenceTimer = window.setInterval(updatePresence, 15000);
-  refreshTimer = window.setInterval(() => refreshRealtimeNow("interval"), 12000);
+  refreshTimer = window.setInterval(() => {
+    if (!document.hidden) refreshRealtimeNow("interval");
+  }, 30000);
   collaborationService.touchDevice?.(null, devicePlatform());
   deviceHeartbeatTimer = window.setInterval(() => {
-    collaborationService.touchDevice?.(null, devicePlatform());
+    if (isActivationReady()) collaborationService.touchDevice?.(null, devicePlatform());
   }, 60000);
 }
 
-async function activateAccount(authUser, options = {}) {
+async function connectDeviceIdentity() {
+  const authUser = await collaborationService.initializeUser?.();
+  if (!isDeviceAuthUser(authUser)) throw new Error("Keine Gerätekennung erhalten");
+  return authUser;
+}
+
+async function resolveAndLoadAccount(authUser, options = {}) {
   if (!isDeviceAuthUser(authUser)) {
     showDeviceSetup("Der Geräte-Account konnte nicht verbunden werden.", true);
-    return false;
+    return null;
   }
-  if (!options.force && authState.accountReady && currentUser.authUserId === authUser.id) return true;
-  if (authState.status === "loading-account" && authState.activatingUserId === authUser.id) return false;
+  if (authState.status === "loading-account" && authState.activatingUserId === authUser.id) return null;
 
+  outboundSyncEnabled = false;
   authState = { ...authState, status: "loading-account", activatingUserId: authUser.id };
   let account;
   try {
     account = await collaborationService.bootstrapAccount?.(defaultDeviceLabel(), devicePlatform());
   } catch (error) {
     showDeviceSetup(authErrorMessage(error), true);
-    return false;
+    return null;
   }
   if (!account?.id) {
     showDeviceSetup("Der Account konnte nicht vorbereitet werden.", true);
-    return false;
+    return null;
   }
 
   if (currentUser.userId !== account.id) {
@@ -2542,37 +2602,71 @@ async function activateAccount(authUser, options = {}) {
   currentUser = accountUserFromAuth(authUser, account);
   authState = {
     ...authState,
-    status: "signed-in",
+    status: "loading-remote",
     displayName: currentUser.displayName,
     activatingUserId: "",
-    accountReady: true
+    accountReady: false
   };
-  lists = loadAccountLists(currentUser.userId);
-  activeListId = loadAccountActiveListId(currentUser.userId, lists);
+  const discardStaleQueues = pendingDataEpochReset || Boolean(options.clearForeignCaches);
+  MartAccountLogic.prepareAccountActivationStorage(localStorage, {
+    accountId: currentUser.userId,
+    prefixes: accountStoragePrefixes,
+    queueKeys: [storageKeys.syncQueue, storageKeys.syncMutations, storageKeys.outbox],
+    discardStaleQueues
+  });
+  completeDataEpochReset();
+  lists = [];
+  activeListId = "";
   localMutationVersion = 0;
-  syncState.pendingWrites = syncQueueLength();
-  saveCurrentUser();
+  syncState.pendingWrites = 0;
+  return account;
+}
 
+async function enableAccountWrites() {
+  authState = { ...authState, status: "signed-in", accountReady: true };
+  saveCurrentUser();
+  save({ broadcast: false, source: "remote" });
+  outboundSyncEnabled = true;
+  try {
+    const profileResult = await collaborationService.upsertProfile?.(currentUser);
+    if (profileResult?.ok === false) markSyncError(profileResult.error || "Profil-Sync nicht erreichbar");
+  } catch (error) {
+    markSyncError(error);
+  }
+  if (elements.addListButton) elements.addListButton.disabled = false;
   elements.authGate?.classList.add("is-hidden");
   elements.appShell?.classList.remove("is-hidden");
   setAuthBusy(false);
   closeModal();
   startAccountActivity();
   render();
+}
+
+async function startReadyAccountFeatures() {
   await pullRemoteLists("account-boot");
   await importSharedListFromUrl();
   await refreshPricesIfStale();
   scheduleSyncFlush(900);
   updatePresence();
   render();
-  if (pendingDevicePairing && options.handlePairing !== false) {
-    window.setTimeout(() => requestPendingDevicePairing(), 0);
+}
+
+async function activateAccount(authUser, options = {}) {
+  if (!options.force && isActivationReady() && currentUser.authUserId === authUser.id) return true;
+  const account = await resolveAndLoadAccount(authUser, options);
+  if (!account) return false;
+  if (!(await pullRemoteLists("account-boot"))) {
+    showDeviceSetup("Der aktuelle Serverstand konnte nicht geladen werden.", true);
+    return false;
   }
+  await enableAccountWrites();
+  await startReadyAccountFeatures();
   return true;
 }
 
 async function deactivateAccount(message = "") {
   stopAccountActivity();
+  outboundSyncEnabled = false;
   authState = { status: "signed-out", displayName: "", activatingUserId: "", accountReady: false };
   currentAuthUser = null;
   currentUser = signedOutUser();
@@ -2620,6 +2714,7 @@ function memberRole(listData, userId = currentUser.userId) {
 }
 
 function canPerform(listData, action, userId = currentUser.userId) {
+  if (!isActivationReady()) return false;
   const role = memberRole(listData, userId);
   const permissions = normalizePermissions(listData.permissions);
   return permissions[role]?.includes(action) ?? false;
@@ -2853,7 +2948,7 @@ function flushPendingNotesRender(delay = 180) {
 function setSyncState(status, details = {}) {
   syncState = {
     ...syncState,
-    pendingWrites: syncQueueLength(),
+    pendingWrites: mutationQueueLength(),
     status,
     ...details
   };
@@ -2882,114 +2977,137 @@ function markSyncError(error) {
   });
 }
 
-function syncQueue() {
+function mutationQueue() {
   if (!isAuthenticatedAccount()) return [];
-  const queue = load(accountStorageKey(storageKeys.syncQueue), []);
-  return Array.isArray(queue) ? queue.filter((operation) => operation?.type === "lists" && Array.isArray(operation.lists)) : [];
+  const queue = load(accountStorageKey(storageKeys.syncMutations), []);
+  return Array.isArray(queue)
+    ? queue.filter((operation) => operation?.accountId === currentUser.userId && operation?.operationId && operation?.listId)
+    : [];
 }
 
-function syncQueueLength() {
-  return syncQueue().length;
+function mutationQueueLength() {
+  return mutationQueue().length;
 }
 
-function storeSyncQueue(queue) {
-  if (!isAuthenticatedAccount()) return;
-  const nextQueue = queue.slice(-30);
-  localStorage.setItem(accountStorageKey(storageKeys.syncQueue), JSON.stringify(nextQueue));
-  syncState.pendingWrites = nextQueue.length;
-}
-
-function syncSnapshot(sourceLists = lists) {
-  return sourceLists.map(exportCollaborativeList);
-}
-
-function queueSyncWrite(sourceLists = lists, reason = "save", error = "") {
-  const payload = syncSnapshot(sourceLists);
-  const signature = JSON.stringify(payload.map((listData) => [listData.listId, listData.updatedAt, listData.items?.length ?? 0]));
-  const queue = syncQueue().filter((operation) => operation.signature !== signature);
-  queue.push({
-    id: `sync:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-    type: "lists",
-    reason,
-    signature,
-    createdAt: isoNow(),
-    lastAttemptAt: "",
-    attempts: 0,
-    error: typeof error === "string" ? error : (error?.message ?? ""),
-    lists: payload
-  });
-  storeSyncQueue(queue);
-  scheduleSyncFlush(2500);
-}
-
-function listsFromSyncOperation(operation) {
-  return operation.lists.map(importedListFromValue).filter(Boolean);
-}
-
-async function publishListSnapshot(sourceLists = lists, reason = "save", options = {}) {
+function storeMutationQueue(queue) {
   if (!isAuthenticatedAccount()) return false;
-  activeWriteCount += 1;
-  markSyncAttempt();
+  const nextQueue = queue
+    .filter((operation) => operation?.accountId === currentUser.userId);
   try {
-    const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
-    if (result?.ok === false) {
-      if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, result.error || "Änderungen warten auf Verbindung");
-      markSyncError(result.error || "Änderungen warten auf Verbindung");
-      return false;
-    }
-    markSyncSuccess();
-    if (syncQueueLength()) scheduleSyncFlush(400);
-    pullRemoteListsSoon("after-write", 900);
+    localStorage.setItem(accountStorageKey(storageKeys.syncMutations), JSON.stringify(nextQueue));
+    syncState.pendingWrites = nextQueue.length;
     return true;
   } catch (error) {
-    if (options.queueOnFail !== false) queueSyncWrite(sourceLists, reason, error);
     markSyncError(error);
     return false;
-  } finally {
-    activeWriteCount = Math.max(0, activeWriteCount - 1);
   }
+}
+
+function discardMutationsForList(listId) {
+  const queue = mutationQueue();
+  const retained = queue.filter((operation) => operation.listId !== listId);
+  if (retained.length === queue.length) return false;
+  storeMutationQueue(retained);
+  return true;
+}
+
+function operationUuid() {
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (crypto?.getRandomValues) crypto.getRandomValues(bytes);
+  else bytes.forEach((_, index) => { bytes[index] = Math.floor(Math.random() * 256); });
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function createListMutation(type, listId, payload = {}, itemId = "", operationId = operationUuid()) {
+  return MartSyncLogic.createMutation({
+    operationId,
+    accountId: currentUser.userId,
+    type,
+    listId,
+    itemId,
+    payload,
+    createdAt: isoNow()
+  });
+}
+
+function itemMutationPayload(item) {
+  return MartSyncLogic.createItemPayload(item);
+}
+
+function queueMutation(mutation) {
+  if (!isActivationReady() || mutation.accountId !== currentUser.userId) return false;
+  return storeMutationQueue(MartSyncLogic.compactQueue(mutationQueue(), mutation));
+}
+
+function commitMutation(mutation) {
+  if (!queueMutation(mutation)) return false;
+  scheduleSyncFlush(0);
+  return true;
 }
 
 function scheduleSyncFlush(delay = 1200) {
+  if (!isActivationReady()) return;
   if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
   syncFlushTimer = window.setTimeout(() => {
     syncFlushTimer = 0;
-    flushSyncQueue();
+    flushMutationQueue();
   }, delay);
 }
 
-async function flushSyncQueue() {
-  if (isFlushingSyncQueue || !navigator.onLine) return false;
-  let queue = syncQueue();
-  if (!queue.length) {
-    storeSyncQueue([]);
-    return true;
-  }
+async function flushMutationQueue() {
+  if (!isActivationReady() || isFlushingSyncQueue || !navigator.onLine) return false;
+  if (!mutationQueueLength()) return true;
   isFlushingSyncQueue = true;
   markSyncAttempt();
   try {
-    for (let index = 0; index < queue.length; index += 1) {
-      const operation = queue[index];
-      const sourceLists = listsFromSyncOperation(operation);
-      if (!sourceLists.length) continue;
-      const result = await collaborationService.publishLists(sourceLists, { queueOnFail: false });
-      if (result?.ok === false) {
-        const failedOperation = {
-          ...operation,
-          attempts: Number(operation.attempts || 0) + 1,
-          lastAttemptAt: isoNow(),
-          error: result.error || "Sync wartet auf Verbindung"
-        };
-        storeSyncQueue([failedOperation, ...queue.slice(index + 1)].slice(-30));
-        markSyncError(failedOperation.error);
-        scheduleSyncFlush(8000);
+    while (isActivationReady() && navigator.onLine) {
+      const queue = mutationQueue();
+      const operation = queue[0];
+      if (!operation) {
+        markSyncSuccess();
+        return true;
+      }
+      const accountIdAtStart = currentUser.userId;
+      storeMutationQueue(queue.map((entry) => entry.operationId === operation.operationId
+        ? { ...entry, attemptedAt: isoNow() }
+        : entry));
+      activeWriteCount += 1;
+      let result;
+      try {
+        result = await collaborationService.applyMutation(operation);
+      } catch (error) {
+        result = { ok: false, error: "network_error", message: error?.message ?? "" };
+      } finally {
+        activeWriteCount = Math.max(0, activeWriteCount - 1);
+      }
+      if (accountIdAtStart !== currentUser.userId || !isActivationReady()) return false;
+      const replay = MartSyncLogic.resolveReplay(mutationQueue(), operation, result, isoNow());
+      storeMutationQueue(replay.queue);
+      if (replay.action === "applied") {
+        markSyncSuccess();
+        await pullRemoteLists("after-write");
+        continue;
+      }
+      if (replay.action === "refresh") {
+        if (["membership_removed", "list_deleted", "forbidden"].includes(result?.error)) {
+          removeLocalList(operation.listId);
+          save({ source: "remote" });
+          renderNotes({ background: true });
+        }
+        await pullRemoteLists("mutation-rejected");
+        markSyncError(result?.error || "Änderung abgelehnt");
         return false;
       }
+      const attempts = Number(replay.queue.find((entry) => entry.operationId === operation.operationId)?.attempts || 1);
+      markSyncError(result?.error || "Sync nicht erreichbar");
+      scheduleSyncFlush(Math.min(30000, 2000 * (2 ** Math.min(attempts, 4))));
+      return false;
     }
-    storeSyncQueue([]);
-    markSyncSuccess();
-    pullRemoteListsSoon("outbox-flushed", 900);
-    return true;
+    return false;
   } catch (error) {
     markSyncError(error);
     scheduleSyncFlush(8000);
@@ -3009,9 +3127,6 @@ function save(options = {}) {
   localStorage.setItem(storageKeys.favorites, JSON.stringify(favorites));
   localStorage.setItem(storageKeys.shelfOrder, JSON.stringify(shelfOrder));
   localStorage.setItem(storageKeys.background, backgroundTheme);
-  if (isAuthenticatedAccount() && options.broadcast !== false) {
-    publishListSnapshot(lists, options.reason || "save");
-  }
 }
 
 function applyBackgroundTheme() {
@@ -3240,6 +3355,7 @@ async function refreshPricesIfStale() {
 }
 
 function addMarketToPersonalList(marketId) {
+  if (!isActivationReady()) return null;
   const sourceMarket = marketById(marketId);
   if (!sourceMarket) return null;
   const index = markets.findIndex((market) => market.id === marketId);
@@ -3617,6 +3733,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
     if (!remoteList) return;
     const index = lists.findIndex((listData) => listData.id === remoteList.id);
     if (remoteList.deletedAt) {
+      didChange = discardMutationsForList(remoteList.id) || didChange;
       if (index !== -1) {
         removeLocalList(remoteList.id, index);
         didChange = true;
@@ -3626,6 +3743,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
     const hasAccess = remoteList.ownerId === currentUser.userId
       || (Boolean(memberFor(remoteList, currentUser.userId)) && !isMemberRemoved(remoteList, currentUser.userId));
     if (!hasAccess) {
+      didChange = discardMutationsForList(remoteList.id) || didChange;
       if (index !== -1) {
         removeLocalList(remoteList.id, index);
         didChange = true;
@@ -3644,9 +3762,19 @@ function mergeRemoteLists(remoteLists, options = {}) {
       didChange = true;
     }
   });
-  const canPrune = options.pruneMissing && activeWriteCount === 0 && syncQueueLength() === 0;
+  const queuedMutations = mutationQueue();
+  const canPrune = options.pruneMissing && activeWriteCount === 0;
   if (canPrune) {
-    const retainedLists = lists.filter((listData) => accessibleRemoteIds.has(listData.id));
+    lists
+      .filter((listData) => (
+        !accessibleRemoteIds.has(listData.id)
+        && !MartSyncLogic.shouldRetainMissingList(queuedMutations, listData.id)
+      ))
+      .forEach((listData) => discardMutationsForList(listData.id));
+    const retainedLists = lists.filter((listData) => (
+      accessibleRemoteIds.has(listData.id)
+      || MartSyncLogic.shouldRetainMissingList(queuedMutations, listData.id)
+    ));
     if (retainedLists.length !== lists.length) {
       lists = retainedLists;
       activeListId = lists.some((listData) => listData.id === activeListId) ? activeListId : (lists[0]?.id ?? "");
@@ -3695,8 +3823,9 @@ async function pullRemoteLists(reason = "auto") {
 }
 
 function pullRemoteListsSoon(reason = "auto", delay = 450) {
+  if (!isActivationReady()) return;
   window.setTimeout(() => {
-    pullRemoteLists(reason);
+    if (isActivationReady()) pullRemoteLists(reason);
   }, delay);
 }
 
@@ -3735,7 +3864,7 @@ async function importSharedListFromUrl() {
   const url = new URL(window.location.href);
   const payload = url.searchParams.get("invite") ?? url.searchParams.get("zettel");
   if (!payload) return;
-  if (!isAuthenticatedAccount()) return;
+  if (!isActivationReady()) return;
 
   try {
     const decoded = decodeShareValue(payload);
@@ -3847,14 +3976,19 @@ function openShareListModal(listData) {
 async function shareList(listId = activeListId) {
   const listData = lists.find((item) => item.id === listId) ?? activeList();
   if (!listData || !canPerform(listData, "invite")) return;
-  listData.inviteCode = listData.inviteCode || generateInviteCode();
-  touchList(listData);
-  save({ broadcast: false });
-  const published = await publishListSnapshot([listData], "share", { queueOnFail: false });
-  if (!published) {
+  const flushed = await flushMutationQueue();
+  if (!flushed || mutationQueue().some((operation) => operation.listId === listData.id)) {
     window.alert("Der Zettel konnte noch nicht online gespeichert werden. Es wurde kein Einladungslink erstellt. Bitte prüfe die Verbindung und versuche es erneut.");
     return;
   }
+  const remoteLists = await collaborationService.fetchSharedLists?.(currentUser);
+  const remoteList = remoteLists?.find((entry) => (entry.listId ?? entry.id) === listData.id);
+  if (!remoteList?.inviteCode) {
+    window.alert("Der Einladungslink konnte gerade nicht geladen werden. Bitte versuche es erneut.");
+    return;
+  }
+  listData.inviteCode = remoteList.inviteCode;
+  save({ source: "remote" });
   openShareListModal(listData);
 }
 
@@ -3888,43 +4022,62 @@ async function copyInviteLink() {
   }
 }
 
-function removeMember(listId, userId) {
+async function removeMember(listId, userId) {
   const listData = listById(listId);
   if (!listData) return;
   if (!canPerform(listData, "remove") || userId === listData.ownerId) return;
+  const result = await collaborationService.removeListMember?.(listId, userId);
+  if (!result?.ok) {
+    window.alert("Der Nutzer konnte gerade nicht entfernt werden.");
+    return;
+  }
   markMemberRemoved(listData, userId);
   touchList(listData);
-  save();
+  save({ source: "remote" });
   renderNotes();
+  pullRemoteListsSoon("member-removed", 250);
 }
 
-function setMemberRole(listId, userId, role) {
+async function setMemberRole(listId, userId, role) {
   const listData = listById(listId);
   if (!listData) return;
   if (!canManageMembers(listData) || userId === listData.ownerId) return;
   const member = memberFor(listData, userId);
   if (!member) return;
+  const result = await collaborationService.updateListMemberRole?.(listId, userId, role);
+  if (!result?.ok) {
+    window.alert("Die Rolle konnte gerade nicht geändert werden.");
+    return;
+  }
   member.role = normalizeRole(role);
   touchList(listData);
-  save();
+  save({ source: "remote" });
   showMembers(listId);
+  pullRemoteListsSoon("member-role", 250);
 }
 
-function transferOwnership(listId, userId) {
+async function transferOwnership(listId, userId) {
   const listData = listById(listId);
   if (!listData) return;
   if (listData.ownerId !== currentUser.userId || userId === listData.ownerId) return;
   const nextOwner = memberFor(listData, userId);
   if (!nextOwner) return;
   if (!window.confirm(`${cleanDisplayName(nextOwner.displayName, "Gast")} wirklich zum Owner machen?`)) return;
+  const result = await collaborationService.transferListOwnership(listId, userId);
+  if (!result?.ok) {
+    window.alert("Die Owner-Rolle konnte gerade nicht übertragen werden.");
+    pullRemoteListsSoon("owner-transfer-failed", 250);
+    return;
+  }
   listData.ownerId = nextOwner.userId;
   listData.members = listData.members.map((member) => ({
     ...member,
     role: member.userId === nextOwner.userId ? collaborationRoles.owner : (member.userId === currentUser.userId ? collaborationRoles.editor : normalizeRole(member.role))
   }));
   touchList(listData);
-  save();
+  save({ source: "remote" });
   showMembers(listId);
+  pullRemoteListsSoon("owner-transferred", 250);
 }
 
 async function regenerateInvite(listId) {
@@ -3936,10 +4089,9 @@ async function regenerateInvite(listId) {
     nextCode: generateInviteCode(),
     mutate(target, nextCode) {
       target.inviteCode = nextCode;
-      touchList(target);
       save({ broadcast: false });
     },
-    persist: () => publishListSnapshot([listData], "share", { queueOnFail: false }),
+    persist: async () => (await collaborationService.updateInviteCode?.(listData.id, listData.inviteCode))?.ok === true,
     rollback: () => save({ broadcast: false })
   });
   if (!published) {
@@ -3990,12 +4142,13 @@ function showMembers(listId = activeListId) {
 }
 
 async function leaveSharedList(listData, index) {
+  if (!isActivationReady()) return;
   if (listData.ownerId === currentUser.userId) {
     window.alert("Als Owner kannst du diesen geteilten Zettel nicht verlassen. Entferne zuerst die anderen Nutzer.");
     return;
   }
-  const remotePayload = await collaborationService.leaveSharedList?.(listData, currentUser);
-  if (!remotePayload) {
+  const mutation = createListMutation("leave_list", listData.id, {}, "", operationUuid());
+  if (!commitMutation(mutation)) {
     window.alert("Der geteilte Zettel konnte gerade nicht verlassen werden.");
     return;
   }
@@ -4384,11 +4537,15 @@ function showProfile() {
         <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
         <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
       </div>
+      <div class="modal-actions modal-actions-stack">
+        <button type="button" class="is-danger" data-delete-account>Account löschen</button>
+      </div>
     </div>
   `);
 }
 
 async function saveProfile() {
+  if (!isActivationReady()) return;
   const nameInput = elements.modalContent.querySelector("#profileNameInput");
   const avatarInput = elements.modalContent.querySelector("#profileAvatarInput");
   if (!nameInput) return;
@@ -4421,6 +4578,60 @@ async function saveProfile() {
   render();
 }
 
+function showAccountDeletionConfirmation(error = "", deletionCommitted = false) {
+  if (!error) {
+    accountDeletionExpectedAccountId = currentUser.userId;
+    accountDeletionFlow = null;
+  }
+  openModal(`
+    <h2 id="modalTitle">Account löschen</h2>
+    <div class="account-deletion-confirmation">
+      <p>Der Account und alle zugehörigen Zettel werden dauerhaft gelöscht.</p>
+      <p class="form-status" data-account-deletion-status role="status">${escapeText(error)}</p>
+      <div class="modal-actions">
+        ${error
+          ? '<button type="button" class="is-danger" data-retry-account-deletion>Erneut versuchen</button>'
+          : '<button type="button" class="is-danger" data-confirm-account-deletion>Ja</button>'}
+        ${deletionCommitted ? "" : '<button type="button" class="is-muted" data-cancel-account-deletion>Abbrechen</button>'}
+      </div>
+    </div>
+  `);
+}
+
+async function deleteCurrentAccount() {
+  if (!isActivationReady()) return;
+  const status = elements.modalContent.querySelector("[data-account-deletion-status]");
+  const actions = elements.modalContent.querySelectorAll("[data-confirm-account-deletion], [data-retry-account-deletion], [data-cancel-account-deletion]");
+  actions.forEach((button) => {
+    button.disabled = true;
+  });
+  if (status) status.textContent = "Account wird gelöscht …";
+
+  accountDeletionFlow ??= MartAccountLogic.createAccountDeletionFlow({
+    deleteAccount: () => collaborationService.deleteCurrentAccount(accountDeletionExpectedAccountId),
+    completeDeletion: completeCurrentAccountDeletion
+  });
+  const result = await accountDeletionFlow.choose("confirm");
+  if (result.ok || result.status === "in_progress") return;
+  showAccountDeletionConfirmation(accountFlowError(result), result.deletionCommitted === true);
+}
+
+async function completeCurrentAccountDeletion() {
+  stopAccountActivity();
+  outboundSyncEnabled = false;
+  accountSessionVersion += 1;
+  remoteSyncPromise = null;
+  if (syncFlushTimer) window.clearTimeout(syncFlushTimer);
+  syncFlushTimer = 0;
+  MartAccountLogic.removeForeignAccountCaches(localStorage, accountStoragePrefixes, "");
+  clearPendingDevicePairing();
+  const signOutResult = await collaborationService.signOut();
+  if (!signOutResult?.ok) throw new Error(signOutResult?.error || "sign_out_failed");
+  accountDeletionFlow = null;
+  accountDeletionExpectedAccountId = "";
+  await deactivateAccount("Account gelöscht. Dieses Gerät wird neu eingerichtet.");
+}
+
 function accountFlowError(error) {
   const value = typeof error === "string" ? error : (error?.error ?? error?.message ?? "");
   const messages = {
@@ -4430,17 +4641,27 @@ function accountFlowError(error) {
     invalid_pairing: "Dieser QR-Code ist ungültig oder abgelaufen.",
     pairing_in_use: "Dieser QR-Code wird bereits von einem anderen Gerät verwendet.",
     already_connected: "Dieses Gerät gehört bereits zum Account.",
+    account_in_use: "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.",
+    expired: "Der Gerätelink ist abgelaufen.",
+    cancelled: "Die Geräteverbindung wurde abgebrochen.",
+    pairing_failed: "Die Geräteverbindung konnte gerade nicht geprüft werden.",
+    account_unavailable: "Der Geräte-Account konnte nicht geöffnet werden.",
     pairing_not_ready: "Das neue Gerät wartet noch nicht auf Freigabe.",
     pending_account_not_empty: "Das neue Gerät enthält bereits eigene Zettel.",
     pairing_not_found: "Die Geräteverbindung wurde nicht gefunden.",
-    device_required: "Der Geräte-Account ist nicht verbunden."
+    device_required: "Der Geräte-Account ist nicht verbunden.",
+    account_required: "Der Geräte-Account ist nicht verbunden.",
+    account_changed: "Der angezeigte Account hat sich geändert. Bitte prüfe den aktuellen Account.",
+    deletion_committed: "Der Account wurde bereits gelöscht. Die lokale Abmeldung muss noch abgeschlossen werden.",
+    sign_out_failed: "Der Account wurde gelöscht, aber die lokale Abmeldung ist fehlgeschlagen.",
+    account_deletion_failed: "Der Account konnte nicht gelöscht werden."
   };
   return messages[value] ?? authErrorMessage(value);
 }
 
 function clearLocalAccountCache(accountId) {
   if (!accountId) return;
-  [storageKeys.currentUser, storageKeys.lists, storageKeys.activeList, storageKeys.outbox, storageKeys.syncQueue]
+  [storageKeys.currentUser, storageKeys.lists, storageKeys.activeList, storageKeys.outbox, storageKeys.syncQueue, storageKeys.syncMutations]
     .forEach((key) => localStorage.removeItem(accountStorageKey(key, accountId)));
 }
 
@@ -4495,6 +4716,7 @@ function showRenameDevice(deviceId, label) {
 }
 
 async function saveDeviceName() {
+  if (!isActivationReady()) return;
   const form = elements.modalContent.querySelector("[data-device-id]");
   const input = elements.modalContent.querySelector("#deviceNameInput");
   if (!form || !input) return;
@@ -4512,6 +4734,7 @@ async function saveDeviceName() {
 }
 
 async function removeAccountDevice(deviceId) {
+  if (!isActivationReady()) return;
   if (!window.confirm("Dieses Gerät wirklich vom Account entfernen?")) return;
   const result = await collaborationService.removeDevice?.(deviceId);
   if (result?.ok === false) {
@@ -4536,6 +4759,7 @@ function showRecoveryCodeResult(code, title = "Account gesichert") {
 }
 
 async function createRecoveryCode() {
+  if (!isActivationReady()) return;
   const result = await collaborationService.rotateRecoveryCode?.();
   if (!result?.ok || !result.recoveryCode) {
     window.alert(accountFlowError(result));
@@ -4575,6 +4799,7 @@ function showAccountRecovery() {
 }
 
 async function restoreAccountFromCode() {
+  if (!isActivationReady()) return;
   const input = elements.modalContent.querySelector("#recoveryCodeInput");
   const status = elements.modalContent.querySelector("#recoveryStatus");
   const code = input?.value.trim() ?? "";
@@ -4592,19 +4817,20 @@ async function restoreAccountFromCode() {
 }
 
 function pairingPayloadFromUrl() {
-  const url = new URL(window.location.href);
-  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
-  const pairingId = hashParams.get("pair") ?? url.searchParams.get("pair") ?? "";
-  const pairingToken = hashParams.get("pairToken") ?? url.searchParams.get("pairToken") ?? "";
-  if (!pairingId && !pairingToken) return null;
-  hashParams.delete("pair");
-  hashParams.delete("pairToken");
-  url.searchParams.delete("pair");
-  url.searchParams.delete("pairToken");
-  url.hash = hashParams.toString();
-  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-  if (!isUuid(pairingId) || !/^[a-f0-9]{48}$/i.test(pairingToken)) return { invalid: true };
-  return { pairingId, pairingToken };
+  try {
+    return MartAccountLogic.capturePendingDevicePairing(
+      window.location.href,
+      window.sessionStorage,
+      (cleanUrl) => window.history.replaceState({}, "", cleanUrl)
+    );
+  } catch (error) {
+    return { invalid: true, error };
+  }
+}
+
+function clearPendingDevicePairing() {
+  MartAccountLogic.clearPendingDevicePairing(window.sessionStorage);
+  pendingDevicePairing = null;
 }
 
 function devicePairingUrl(pairing) {
@@ -4629,6 +4855,7 @@ function qrSvgMarkup(value) {
 }
 
 async function startDevicePairing() {
+  if (!isActivationReady()) return;
   const result = await collaborationService.createDevicePairing?.();
   if (!result?.ok) {
     window.alert(accountFlowError(result));
@@ -4704,6 +4931,7 @@ async function pollOwnerPairing(pairingId) {
 }
 
 async function approveDevicePairing(pairingId) {
+  if (!isActivationReady()) return;
   const result = await collaborationService.approveDevicePairing?.(pairingId);
   if (!result?.ok) {
     window.alert(accountFlowError(result));
@@ -4713,17 +4941,15 @@ async function approveDevicePairing(pairingId) {
 }
 
 async function cancelDevicePairing(pairingId) {
+  if (!isActivationReady()) return;
   await collaborationService.cancelDevicePairing?.(pairingId);
   showDevices();
 }
 
-async function requestPendingDevicePairing() {
-  const pairing = pendingDevicePairing;
-  if (!pairing) return;
+async function requestPendingDevicePairing(pairing = pendingDevicePairing) {
+  if (!pairing) return { ok: false, error: "pairing_not_found" };
   if (pairing.invalid) {
-    pendingDevicePairing = null;
-    window.alert("Der QR-Code ist ungültig.");
-    return;
+    return { ok: false, error: "invalid_pairing" };
   }
   const result = await collaborationService.requestDevicePairing?.(
     pairing.pairingId,
@@ -4732,9 +4958,7 @@ async function requestPendingDevicePairing() {
     devicePlatform()
   );
   if (!result?.ok) {
-    pendingDevicePairing = null;
-    window.alert(accountFlowError(result));
-    return;
+    return result ?? { ok: false, error: "pairing_not_found" };
   }
   pendingDevicePairing = { ...pairing, requested: true };
   openModal(`
@@ -4743,38 +4967,43 @@ async function requestPendingDevicePairing() {
       <p>Bestätige auf dem bereits verbundenen Gerät denselben Vergleichscode:</p>
       <strong>${escapeText(result.confirmationCode)}</strong>
       <span data-pending-pairing-status>Warte auf Bestätigung …</span>
+      <div class="modal-actions"><button type="button" class="is-muted" data-cancel-pending-device-pairing>Abbrechen</button></div>
     </div>
   `);
-  pollPendingPairing(pairing.pairingId);
+  return result;
 }
 
-async function pollPendingPairing(pairingId) {
-  const panel = elements.modalContent.querySelector(`[data-pending-device-pairing="${pairingId}"]`);
-  if (!panel) return;
-  const statusElement = panel.querySelector("[data-pending-pairing-status]");
-  const result = await collaborationService.devicePairingStatus?.(pairingId);
-  if (!result?.ok) {
-    if (statusElement) statusElement.textContent = accountFlowError(result);
-    return;
+async function finishPendingDevicePairing(pairing = pendingDevicePairing) {
+  if (!pairing) return { ok: false, error: "pairing_not_found" };
+  while (pendingDevicePairing?.pairingId === pairing.pairingId) {
+    const panel = elements.modalContent.querySelector(`[data-pending-device-pairing="${pairing.pairingId}"]`);
+    const statusElement = panel?.querySelector("[data-pending-pairing-status]");
+    const result = await collaborationService.devicePairingStatus?.(pairing.pairingId);
+    if (!result?.ok) {
+      if (MartAccountLogic.pairingRetentionAction(result) === "clear") {
+        clearPendingDevicePairing();
+      }
+      if (statusElement) statusElement.textContent = accountFlowError(result);
+      return result ?? { ok: false, error: "pairing_not_found" };
+    }
+    if (result.status === "approved") {
+      clearPendingDevicePairing();
+      return result;
+    }
+    if (result.status === "expired" || result.status === "cancelled") {
+      clearPendingDevicePairing();
+      if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Die Verbindung wurde abgebrochen.";
+      return result;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1600));
   }
-  if (result.status === "approved") {
-    const previousAccountId = currentUser.userId;
-    pendingDevicePairing = null;
-    clearLocalAccountCache(previousAccountId);
-    await activateAccount(currentAuthUser, { force: true, handlePairing: false });
-    openModal(`
-      <h2 id="modalTitle">Gerät verbunden</h2>
-      <div class="modal-copy"><p>Dieser Account ist jetzt auch auf diesem Gerät verfügbar.</p></div>
-      <div class="modal-actions"><button type="button" data-open-devices>Geräte anzeigen</button></div>
-    `);
-    return;
-  }
-  if (result.status === "expired" || result.status === "cancelled") {
-    pendingDevicePairing = null;
-    if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Die Verbindung wurde abgebrochen.";
-    return;
-  }
-  schedulePairingPoll(() => pollPendingPairing(pairingId));
+  return { ok: false, error: "pairing_cancelled" };
+}
+
+function cancelPendingDevicePairing() {
+  clearPendingDevicePairing();
+  closeModal();
+  showDeviceSetup("Die Geräteverbindung wurde abgebrochen.", true);
 }
 
 async function copyBugReport() {
@@ -4835,12 +5064,15 @@ function addToList(product, listId = activeListId) {
   const currentList = lists.find((listData) => listData.id === listId) ?? activeList();
   if (!currentList) return false;
   if (!canPerform(currentList, "add")) return false;
+  const operationId = operationUuid();
   triggerHapticFeedback();
   const items = currentList.items;
   const existing = items.find((item) => item.id === product.id);
+  let changedItem;
   if (existing) {
-    existing.quantity += 1;
+    existing.quantity = Math.min(99, existing.quantity + 1);
     touchItem(existing, currentList);
+    changedItem = existing;
   } else {
     const item = normalizeShoppingItem({
       ...product,
@@ -4854,8 +5086,16 @@ function addToList(product, listId = activeListId) {
     });
     items.push(item);
     touchList(currentList);
+    changedItem = item;
   }
   save();
+  commitMutation(createListMutation(
+    "upsert_item",
+    currentList.id,
+    itemMutationPayload(changedItem),
+    changedItem.id,
+    operationId
+  ));
   renderNotes();
   return true;
 }
@@ -4965,6 +5205,7 @@ function moveManualSuggestionSelection(input, delta) {
 }
 
 function toggleFavorite(product) {
+  if (!isActivationReady()) return;
   if (favorites.includes(product.id)) {
     favorites = favorites.filter((id) => id !== product.id);
   } else {
@@ -4982,11 +5223,14 @@ function updateQuantity(id, delta, listId = activeListId) {
   const currentList = listById(listId);
   if (!currentList) return;
   if (!canPerform(currentList, "edit")) return;
+  const existingItem = currentList.items.find((item) => item.id === id);
+  if (!existingItem) return;
+  const operationId = operationUuid();
   const removedItems = [];
   currentList.items = currentList.items
     .map((item) => {
       if (item.id !== id) return item;
-      const nextItem = { ...item, quantity: item.quantity + delta };
+      const nextItem = { ...item, quantity: Math.min(99, item.quantity + delta) };
       touchItem(nextItem, currentList);
       if (nextItem.quantity <= 0) {
         removedItems.push({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: isoNow() });
@@ -4998,6 +5242,10 @@ function updateQuantity(id, delta, listId = activeListId) {
     currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, removedItems);
   }
   save();
+  const changedItem = currentList.items.find((item) => item.id === id);
+  commitMutation(changedItem
+    ? createListMutation("upsert_item", currentList.id, itemMutationPayload(changedItem), id, operationId)
+    : createListMutation("delete_item", currentList.id, { itemId: id }, id, operationId));
   renderNotes();
 }
 
@@ -5005,6 +5253,8 @@ function toggleDone(id, listId = activeListId) {
   const currentList = listById(listId);
   if (!currentList) return;
   if (!canPerform(currentList, "check")) return;
+  if (!currentList.items.some((item) => item.id === id)) return;
+  const operationId = operationUuid();
   currentList.items = currentList.items.map((item) => {
     if (item.id !== id) return item;
     const done = !item.done;
@@ -5018,6 +5268,8 @@ function toggleDone(id, listId = activeListId) {
     return nextItem;
   });
   save();
+  const changedItem = currentList.items.find((item) => item.id === id);
+  commitMutation(createListMutation("upsert_item", currentList.id, itemMutationPayload(changedItem), id, operationId));
   renderNotes();
 }
 
@@ -5025,6 +5277,8 @@ function removeItem(id, listId = activeListId) {
   const currentList = listById(listId);
   if (!currentList) return;
   if (!canPerform(currentList, "delete")) return;
+  if (!currentList.items.some((item) => item.id === id)) return;
+  const operationId = operationUuid();
   currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, [{
     id,
     deletedByUserId: currentUser.userId,
@@ -5033,6 +5287,7 @@ function removeItem(id, listId = activeListId) {
   currentList.items = currentList.items.filter((item) => item.id !== id);
   touchList(currentList);
   save();
+  commitMutation(createListMutation("delete_item", currentList.id, { itemId: id }, id, operationId));
   renderNotes();
 }
 
@@ -5041,13 +5296,16 @@ function clearDone(listId = activeListId) {
   if (!currentList) return;
   if (!canPerform(currentList, "delete")) return;
   const now = isoNow();
-  const deletedItems = currentList.items
-    .filter((item) => item.done)
-    .map((item) => ({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: now }));
+  const doneItems = currentList.items.filter((item) => item.done);
+  const operations = doneItems.map((item) => ({ id: item.id, operationId: operationUuid() }));
+  const deletedItems = doneItems.map((item) => ({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: now }));
   currentList.deletedItems = mergeDeletedItems(currentList.deletedItems, deletedItems);
   currentList.items = currentList.items.filter((item) => !item.done);
   touchList(currentList);
   save();
+  operations.forEach(({ id, operationId }) => {
+    commitMutation(createListMutation("delete_item", currentList.id, { itemId: id }, id, operationId));
+  });
   renderNotes();
 }
 
@@ -5097,7 +5355,7 @@ function renderProductGrid(container, products) {
           <p class="product-price ${bestPriceForProduct(product.id) ? "" : "is-empty"}">${escapeText(priceSummary)}</p>
         </div>
         <div class="product-actions">
-          <button class="favorite-button ${isFavorite ? "is-active" : ""}" type="button" title="Favorit" aria-label="Favorit" data-favorite="${escapeText(product.id)}">
+          <button class="favorite-button ${isFavorite ? "is-active" : ""}" type="button" ${isActivationReady() ? "" : "disabled"} title="Favorit" aria-label="Favorit" data-favorite="${escapeText(product.id)}">
             ${icon("sparkle")}
           </button>
           <button class="add-button" type="button" ${canAdd ? "" : "disabled"} title="Auf den Zettel" aria-label="Auf den Zettel" data-add="${escapeText(product.id)}">
@@ -5160,6 +5418,7 @@ function exitShelfReorderMode() {
 }
 
 function reorderShelf(draggedId, targetId) {
+  if (!isActivationReady()) return;
   if (!draggedId || !targetId || draggedId === targetId) return;
   const order = marketShelves().map((shelf) => shelf.id);
   const draggedIndex = order.indexOf(draggedId);
@@ -5246,7 +5505,8 @@ function nextListTitle() {
 }
 
 function addList() {
-  if (!isAuthenticatedAccount()) return;
+  if (!isActivationReady()) return;
+  const operationId = operationUuid();
   const newList = createList(nextListTitle());
   lists.push(newList);
   activeListId = MartLogic.chooseActiveListId(
@@ -5255,10 +5515,12 @@ function addList() {
     newList.id
   );
   save();
+  commitMutation(createListMutation("create_list", newList.id, { name: newList.title }, "", operationId));
   renderNotes();
 }
 
 function activateList(id) {
+  if (!isActivationReady()) return;
   if (!lists.some((listData) => listData.id === id)) return;
   if (activeListId === id) return;
   activeListId = id;
@@ -5278,6 +5540,7 @@ function removeLocalList(id, index = lists.findIndex((listData) => listData.id =
 }
 
 async function deleteList(id) {
+  if (!isActivationReady()) return;
   const index = lists.findIndex((listData) => listData.id === id);
   if (index === -1) return;
 
@@ -5288,8 +5551,8 @@ async function deleteList(id) {
   }
 
   if (!window.confirm(`"${listToDelete.title}" wirklich vollständig löschen?`)) return;
-  const remoteResult = await collaborationService.deleteSharedList?.(listToDelete, currentUser);
-  if (!remoteResult) {
+  const mutation = createListMutation("delete_list", listToDelete.id, {}, "", operationUuid());
+  if (!commitMutation(mutation)) {
     window.alert("Der Zettel konnte gerade nicht gelöscht werden. Bitte prüfe deine Verbindung.");
     return;
   }
@@ -5328,11 +5591,13 @@ function saveRenamedList() {
   const nextTitle = input.value;
   const cleanTitle = nextTitle.trim().slice(0, 24);
   if (!cleanTitle) return;
+  const operationId = operationUuid();
   listData.title = cleanTitle;
   listData.listName = cleanTitle;
   touchList(listData);
   pendingRenameListId = null;
   save();
+  commitMutation(createListMutation("rename_list", listData.id, { name: cleanTitle }, "", operationId));
   closeModal();
   renderNotes();
 }
@@ -5371,6 +5636,7 @@ function saveItemNote() {
   if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
+  const operationId = operationUuid();
   const cleanNote = input.value.trim().slice(0, 48);
   if (cleanNote) {
     item.note = cleanNote;
@@ -5380,6 +5646,7 @@ function saveItemNote() {
   touchItem(item, listData);
   pendingItemNoteEdit = null;
   save();
+  commitMutation(createListMutation("upsert_item", listData.id, itemMutationPayload(item), item.id, operationId));
   closeModal();
   renderNotes();
 }
@@ -5391,10 +5658,12 @@ function clearItemNote() {
   if (!canPerform(listData, "edit")) return;
   const item = itemById(pendingItemNoteEdit.listId, pendingItemNoteEdit.itemId);
   if (!item) return;
+  const operationId = operationUuid();
   delete item.note;
   touchItem(item, listData);
   pendingItemNoteEdit = null;
   save();
+  commitMutation(createListMutation("upsert_item", listData.id, itemMutationPayload(item), item.id, operationId));
   closeModal();
   renderNotes();
 }
@@ -5644,6 +5913,9 @@ function noteMarkup(listData) {
     ?? (listData.ownerId === currentUser.userId ? createMember(currentUser, collaborationRoles.owner, listData.createdAt) : null);
   const count = listData.items.reduce((sum, item) => sum + item.quantity, 0);
   const canAdd = Boolean(member) && canPerform(listData, "add");
+  const canEdit = canPerform(listData, "edit");
+  const canInvite = canPerform(listData, "invite");
+  const canRemoveList = isActivationReady();
   const sharedClass = isSharedList(listData) ? "is-shared" : "";
   const manualDraft = manualDrafts[listData.id] ?? "";
   const isActive = listData.id === activeListId;
@@ -5657,13 +5929,13 @@ function noteMarkup(listData) {
         <h2 class="list-title">
           <svg class="list-title-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7V3Zm8 0v5h4M10 12h6M10 16h5"/></svg>
           <span>${escapeText(listData.title)}</span>
-          <button class="edit-note-button" type="button" title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
+          <button class="edit-note-button" type="button" ${canEdit ? "" : "disabled"} title="Namen ändern" aria-label="Namen ändern" data-rename-list="${escapeText(listData.id)}">
             ${icon("pencil")}
           </button>
         </h2>
         <div class="list-tools">
           <span>${count} Artikel</span>
-          <button class="share-button" type="button" data-share-list="${escapeText(listData.id)}">Teilen</button>
+          <button class="share-button" type="button" ${canInvite ? "" : "disabled"} data-share-list="${escapeText(listData.id)}">Teilen</button>
         </div>
       </div>
       <div class="collab-row">
@@ -5689,7 +5961,7 @@ function noteMarkup(listData) {
         <div class="manual-suggestions" id="${escapeText(suggestionListId)}" role="listbox" data-manual-suggestions hidden></div>
       </div>
       <footer class="note-footer">
-        <button class="note-delete-button" type="button" data-delete-list="${escapeText(listData.id)}">
+        <button class="note-delete-button" type="button" ${canRemoveList ? "" : "disabled"} data-delete-list="${escapeText(listData.id)}">
           ${icon(listData.ownerId === currentUser.userId ? "trash" : "logout")}
           <span>${listData.ownerId === currentUser.userId ? "Zettel löschen" : "Zettel verlassen"}</span>
         </button>
@@ -5701,7 +5973,7 @@ function noteMarkup(listData) {
 function emptyNotesMarkup() {
   return `
     <div class="empty-notes-state">
-      <button class="add-note-button add-note-button-large" type="button" data-empty-add-list>
+      <button class="add-note-button add-note-button-large" type="button" ${isActivationReady() ? "" : "disabled"} data-empty-add-list>
         ${icon("plus")}
         Neuer Zettel
       </button>
@@ -5954,6 +6226,25 @@ elements.modalContent.addEventListener("click", (event) => {
     restoreAccountFromCode();
     return;
   }
+  if (event.target.closest("[data-delete-account]")) {
+    showAccountDeletionConfirmation();
+    return;
+  }
+  if (event.target.closest("[data-confirm-account-deletion], [data-retry-account-deletion]")) {
+    deleteCurrentAccount();
+    return;
+  }
+  if (event.target.closest("[data-cancel-account-deletion]")) {
+    const cancellation = accountDeletionFlow?.choose("cancel");
+    if (cancellation) {
+      cancellation.then((result) => {
+        if (!result?.deletionCommitted) showProfile();
+      });
+    } else {
+      showProfile();
+    }
+    return;
+  }
   const renameDeviceButton = event.target.closest("[data-rename-account-device]");
   if (renameDeviceButton) {
     showRenameDevice(renameDeviceButton.dataset.renameAccountDevice, renameDeviceButton.dataset.deviceLabel);
@@ -5984,6 +6275,15 @@ elements.modalContent.addEventListener("click", (event) => {
   const approvePairingButton = event.target.closest("[data-approve-device-pairing]");
   if (approvePairingButton) {
     approveDevicePairing(approvePairingButton.dataset.approveDevicePairing);
+    return;
+  }
+  if (event.target.closest("[data-cancel-pending-device-pairing]")) {
+    cancelPendingDevicePairing();
+    return;
+  }
+  if (event.target.closest("[data-retry-pending-device-pairing]")) {
+    closeModal();
+    connectDeviceAccount();
     return;
   }
   if (event.target.closest("[data-copy-bug]")) {
@@ -6067,6 +6367,7 @@ elements.modalContent.addEventListener("keydown", (event) => {
 });
 
 function updatePresence() {
+  if (!isActivationReady()) return;
   const listData = activeList();
   if (!listData) return;
   const member = memberFor(listData, currentUser.userId);
@@ -6075,7 +6376,8 @@ function updatePresence() {
 }
 
 async function refreshRealtimeNow(reason) {
-  await flushSyncQueue();
+  if (!isActivationReady()) return false;
+  await flushMutationQueue();
   return pullRemoteLists(reason);
 }
 
@@ -6086,24 +6388,31 @@ async function bootApp() {
 
   authSubscription = collaborationService.onAuthStateChange?.((event, nextUser) => {
     if (accountSetupPromise) return;
-    if (event === "SIGNED_OUT" || !nextUser) {
+    const route = MartAccountLogic.routeAuthEvent({
+      event,
+      hasAuthUser: Boolean(nextUser),
+      isDeviceUser: isDeviceAuthUser(nextUser),
+      hasPendingPairing: Boolean(pendingDevicePairing),
+      accountReady: authState.accountReady
+    });
+    if (route === "connect" || route === "reconnect") {
       if (authState.accountReady) deactivateAccount("Der Geräte-Account wird neu verbunden.");
       window.setTimeout(() => connectDeviceAccount(), 0);
       return;
     }
-    if (isDeviceAuthUser(nextUser)) activateAccount(nextUser);
+    if (route === "activate") activateAccount(nextUser);
   }) ?? null;
 
   window.addEventListener("online", () => {
-    if (isAuthenticatedAccount()) refreshRealtimeNow("online");
+    if (isActivationReady()) refreshRealtimeNow("online");
   });
   window.addEventListener("offline", () => markSyncError("offline"));
   window.addEventListener("focus", () => {
-    if (isAuthenticatedAccount()) refreshRealtimeNow("focus");
+    if (isActivationReady()) refreshRealtimeNow("focus");
   });
   document.addEventListener("focusout", () => flushPendingNotesRender(220));
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && isAuthenticatedAccount()) refreshRealtimeNow("visible");
+    if (!document.hidden && isActivationReady()) refreshRealtimeNow("visible");
   });
 }
 

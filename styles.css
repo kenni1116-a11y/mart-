@@ -2230,6 +2230,12 @@ button.sync-chip:hover {
   color: var(--muted);
 }
 
+.modal-actions button.is-danger {
+  border-color: #8f312c;
+  background: #a33c35;
+  color: #fff;
+}
+
 .background-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
