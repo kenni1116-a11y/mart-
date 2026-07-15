@@ -11,10 +11,11 @@ function read(file) {
 
 test("tested app logic loads before the browser entrypoint", () => {
   const html = read("index.html");
-  const accountIndex = html.indexOf("./account-logic.js?v=61");
-  const syncIndex = html.indexOf("./sync-logic.js?v=61");
-  const helperIndex = html.indexOf("./app-logic.js?v=61");
-  const appIndex = html.indexOf("./app.js?v=61");
+  const release = read("sw.js").match(/einkaufszettel-v(\d+)/)?.[1];
+  const accountIndex = html.indexOf(`./account-logic.js?v=${release}`);
+  const syncIndex = html.indexOf(`./sync-logic.js?v=${release}`);
+  const helperIndex = html.indexOf(`./app-logic.js?v=${release}`);
+  const appIndex = html.indexOf(`./app.js?v=${release}`);
 
   assert.notEqual(accountIndex, -1, "index.html must load account-logic.js");
   assert.notEqual(syncIndex, -1, "index.html must load sync-logic.js");
@@ -28,7 +29,7 @@ test("tested app logic loads before the browser entrypoint", () => {
 test("the service worker keeps the tested helper available offline", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /const CACHE_NAME = "einkaufszettel-v61"/);
+  assert.match(serviceWorker, /const CACHE_NAME = "einkaufszettel-v\d+"/);
   assert.match(serviceWorker, /"\.\/account-logic\.js"/);
   assert.match(serviceWorker, /"\.\/sync-logic\.js"/);
   assert.match(serviceWorker, /"\.\/app-logic\.js"/);
@@ -144,4 +145,42 @@ test("account deletion is confirmed, retryable, and isolated from pairing", () =
   assert.match(app, /rpc\("delete_current_account_v3", \{\s*expected_account_id: expectedAccountId\s*\}\)/);
   assert.equal((app.match(/rpc\("delete_current_account_v3"/g) ?? []).length, 1);
   assert.doesNotMatch(pairingBody, /delete_current_account_v3|deleteCurrentAccount|data-delete-account/);
+});
+
+test("list deletion and the zero-list state cannot resurrect cached notes", () => {
+  const app = read("app.js");
+  const styles = read("styles.css");
+  const mergeStart = app.indexOf("function mergeRemoteLists");
+  const mergeEnd = app.indexOf("async function pullRemoteLists", mergeStart);
+  const mergeBody = app.slice(mergeStart, mergeEnd);
+  const deleteStart = app.indexOf("async function deleteList");
+  const deleteEnd = app.indexOf("function renameList", deleteStart);
+  const deleteBody = app.slice(deleteStart, deleteEnd);
+  const emptyStart = app.indexOf("function emptyNotesMarkup");
+  const emptyEnd = app.indexOf("function renderNotes", emptyStart);
+  const emptyBody = app.slice(emptyStart, emptyEnd);
+
+  assert.match(app, /function discardMutationsForList\(listId\)/);
+  assert.match(mergeBody, /remoteList\.deletedAt[\s\S]*discardMutationsForList\(remoteList\.id\)/);
+  assert.match(mergeBody, /!hasAccess[\s\S]*discardMutationsForList\(remoteList\.id\)/);
+  assert.match(deleteBody, /ownerId !== currentUser\.userId[\s\S]*leaveSharedList/);
+  assert.match(deleteBody, /window\.confirm[\s\S]*createListMutation\("delete_list"/);
+  assert.equal((emptyBody.match(/data-empty-add-list/g) ?? []).length, 1);
+  assert.match(styles, /\.notes-board\.is-empty[\s\S]*align-content:\s*center/);
+  assert.match(styles, /\.empty-notes-state[\s\S]*place-items:\s*center/);
+});
+
+test("the mutation queue never truncates writes and ownership transfer is server-first", () => {
+  const app = read("app.js");
+  const storeStart = app.indexOf("function storeMutationQueue");
+  const storeEnd = app.indexOf("function discardMutationsForList", storeStart);
+  const storeBody = app.slice(storeStart, storeEnd);
+  const transferStart = app.indexOf("async function transferOwnership");
+  const transferEnd = app.indexOf("async function regenerateInvite", transferStart);
+  const transferBody = app.slice(transferStart, transferEnd);
+
+  assert.doesNotMatch(storeBody, /\.slice\(/);
+  assert.match(app, /async transferListOwnership\(listId, userId\)/);
+  assert.match(transferBody, /await collaborationService\.transferListOwnership/);
+  assert.ok(transferBody.indexOf("await collaborationService.transferListOwnership") < transferBody.indexOf("listData.ownerId ="));
 });

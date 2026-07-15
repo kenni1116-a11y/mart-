@@ -180,3 +180,17 @@ test("a missing service response never removes a queued mutation", async () => {
   assert.equal(replay.queue[0].operationId, OPERATION_ID_1);
   assert.equal(replay.queue[0].attempts, 1);
 });
+
+test("item payloads always clamp quantity to the server range", () => {
+  const baseItem = {
+    id: "milk",
+    name: "Milch",
+    shelfId: "dairy",
+    shelfTitle: "Milchprodukte",
+    quantity: 100,
+    done: false
+  };
+
+  assert.equal(SyncLogic.createItemPayload(baseItem).quantity, 99);
+  assert.equal(SyncLogic.createItemPayload({ ...baseItem, quantity: -4 }).quantity, 1);
+});

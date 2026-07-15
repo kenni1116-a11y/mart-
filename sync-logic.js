@@ -115,6 +115,22 @@
     return !nonRetryableErrors.has(code);
   }
 
+  function createItemPayload(item = {}) {
+    const itemId = cleanRequiredText(item.id, "itemId");
+    const quantity = Math.max(1, Math.min(99, Math.round(Number(item.quantity) || 1)));
+    return {
+      itemId,
+      productId: itemId.startsWith("manual:") ? "" : itemId,
+      name: typeof item.name === "string" ? item.name.trim().slice(0, 80) : "",
+      shelfId: typeof item.shelfId === "string" ? item.shelfId : "",
+      shelfTitle: typeof item.shelfTitle === "string" ? item.shelfTitle : "",
+      shelfIcon: typeof item.shelfIcon === "string" ? item.shelfIcon : "",
+      quantity,
+      done: Boolean(item.done),
+      note: typeof item.note === "string" ? item.note.trim().slice(0, 48) : ""
+    };
+  }
+
   async function applyMutationWithClient(client, mutation) {
     if (!client?.rpc) return { ok: false, error: "network_error", offline: true };
     try {
@@ -198,6 +214,7 @@
 
   return {
     createMutation,
+    createItemPayload,
     compactQueue,
     shouldRetry,
     applyMutationWithClient,

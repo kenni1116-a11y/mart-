@@ -1360,6 +1360,16 @@ class SupabaseRealtimeService {
     return data?.user_id ? { ok: true } : { ok: false, error: "forbidden" };
   }
 
+  async transferListOwnership(listId, userId) {
+    if (!this.client || !await this.ensureAuthenticated()) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client.rpc("transfer_list_ownership_v3", {
+      target_list_id: listId,
+      target_user_id: userId
+    });
+    if (error) return { ok: false, error: error.message };
+    return data ?? { ok: false, error: "server_error" };
+  }
+
   async bootstrapAccount(label = defaultDeviceLabel(), platform = devicePlatform()) {
     if (!this.client) return null;
     const authUser = await this.ensureAuthenticated();
@@ -2982,8 +2992,7 @@ function mutationQueueLength() {
 function storeMutationQueue(queue) {
   if (!isAuthenticatedAccount()) return false;
   const nextQueue = queue
-    .filter((operation) => operation?.accountId === currentUser.userId)
-    .slice(-100);
+    .filter((operation) => operation?.accountId === currentUser.userId);
   try {
     localStorage.setItem(accountStorageKey(storageKeys.syncMutations), JSON.stringify(nextQueue));
     syncState.pendingWrites = nextQueue.length;
@@ -2992,6 +3001,14 @@ function storeMutationQueue(queue) {
     markSyncError(error);
     return false;
   }
+}
+
+function discardMutationsForList(listId) {
+  const queue = mutationQueue();
+  const retained = queue.filter((operation) => operation.listId !== listId);
+  if (retained.length === queue.length) return false;
+  storeMutationQueue(retained);
+  return true;
 }
 
 function operationUuid() {
@@ -3018,17 +3035,7 @@ function createListMutation(type, listId, payload = {}, itemId = "", operationId
 }
 
 function itemMutationPayload(item) {
-  return {
-    itemId: item.id,
-    productId: item.id.startsWith("manual:") ? "" : item.id,
-    name: item.name,
-    shelfId: item.shelfId ?? "",
-    shelfTitle: item.shelfTitle ?? "",
-    shelfIcon: item.shelfIcon ?? "",
-    quantity: item.quantity,
-    done: Boolean(item.done),
-    note: item.note ?? ""
-  };
+  return MartSyncLogic.createItemPayload(item);
 }
 
 function queueMutation(mutation) {
@@ -3726,6 +3733,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
     if (!remoteList) return;
     const index = lists.findIndex((listData) => listData.id === remoteList.id);
     if (remoteList.deletedAt) {
+      didChange = discardMutationsForList(remoteList.id) || didChange;
       if (index !== -1) {
         removeLocalList(remoteList.id, index);
         didChange = true;
@@ -3735,6 +3743,7 @@ function mergeRemoteLists(remoteLists, options = {}) {
     const hasAccess = remoteList.ownerId === currentUser.userId
       || (Boolean(memberFor(remoteList, currentUser.userId)) && !isMemberRemoved(remoteList, currentUser.userId));
     if (!hasAccess) {
+      didChange = discardMutationsForList(remoteList.id) || didChange;
       if (index !== -1) {
         removeLocalList(remoteList.id, index);
         didChange = true;
@@ -3755,6 +3764,9 @@ function mergeRemoteLists(remoteLists, options = {}) {
   });
   const canPrune = options.pruneMissing && activeWriteCount === 0 && mutationQueueLength() === 0;
   if (canPrune) {
+    lists
+      .filter((listData) => !accessibleRemoteIds.has(listData.id))
+      .forEach((listData) => discardMutationsForList(listData.id));
     const retainedLists = lists.filter((listData) => accessibleRemoteIds.has(listData.id));
     if (retainedLists.length !== lists.length) {
       lists = retainedLists;
@@ -4037,21 +4049,28 @@ async function setMemberRole(listId, userId, role) {
   pullRemoteListsSoon("member-role", 250);
 }
 
-function transferOwnership(listId, userId) {
+async function transferOwnership(listId, userId) {
   const listData = listById(listId);
   if (!listData) return;
   if (listData.ownerId !== currentUser.userId || userId === listData.ownerId) return;
   const nextOwner = memberFor(listData, userId);
   if (!nextOwner) return;
   if (!window.confirm(`${cleanDisplayName(nextOwner.displayName, "Gast")} wirklich zum Owner machen?`)) return;
+  const result = await collaborationService.transferListOwnership(listId, userId);
+  if (!result?.ok) {
+    window.alert("Die Owner-Rolle konnte gerade nicht übertragen werden.");
+    pullRemoteListsSoon("owner-transfer-failed", 250);
+    return;
+  }
   listData.ownerId = nextOwner.userId;
   listData.members = listData.members.map((member) => ({
     ...member,
     role: member.userId === nextOwner.userId ? collaborationRoles.owner : (member.userId === currentUser.userId ? collaborationRoles.editor : normalizeRole(member.role))
   }));
   touchList(listData);
-  save();
+  save({ source: "remote" });
   showMembers(listId);
+  pullRemoteListsSoon("owner-transferred", 250);
 }
 
 async function regenerateInvite(listId) {
@@ -5044,7 +5063,7 @@ function addToList(product, listId = activeListId) {
   const existing = items.find((item) => item.id === product.id);
   let changedItem;
   if (existing) {
-    existing.quantity += 1;
+    existing.quantity = Math.min(99, existing.quantity + 1);
     touchItem(existing, currentList);
     changedItem = existing;
   } else {
@@ -5204,7 +5223,7 @@ function updateQuantity(id, delta, listId = activeListId) {
   currentList.items = currentList.items
     .map((item) => {
       if (item.id !== id) return item;
-      const nextItem = { ...item, quantity: item.quantity + delta };
+      const nextItem = { ...item, quantity: Math.min(99, item.quantity + delta) };
       touchItem(nextItem, currentList);
       if (nextItem.quantity <= 0) {
         removedItems.push({ id: item.id, deletedByUserId: currentUser.userId, deletedAt: isoNow() });
