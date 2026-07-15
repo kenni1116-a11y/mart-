@@ -638,8 +638,10 @@ begin
     elsif durable_reference.table_name = 'list_members' then
       insert into public.shopping_lists (id, name, owner_user_id)
       values (reference_id, durable_reference.column_name, owner_account_id);
-      insert into public.list_members (list_id, user_id, display_name, role, removed_at)
-      values (reference_id, owner_account_id, 'Owner history', 'owner', now());
+      update public.list_members
+      set removed_at = now()
+      where list_id = reference_id
+        and user_id = owner_account_id;
       execute format(
         'update public.list_members set %I = $1 where list_id = $2 and user_id = $3',
         durable_reference.column_name

@@ -27,11 +27,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps webkit
       - run: pnpm verify
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
       - name: Transactional Supabase tests
-        if: github.event_name == 'push'
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: pnpm test:sql
+        run: pnpm test:sql:local
 
   deploy:
     if: github.event_name == 'push'
