@@ -194,3 +194,19 @@ test("item payloads always clamp quantity to the server range", () => {
   assert.equal(SyncLogic.createItemPayload(baseItem).quantity, 99);
   assert.equal(SyncLogic.createItemPayload({ ...baseItem, quantity: -4 }).quantity, 1);
 });
+
+test("only an unconfirmed list creation protects a server-missing list from pruning", () => {
+  const create = SyncLogic.createMutation({
+    operationId: OPERATION_ID_1,
+    accountId: ACCOUNT_ID,
+    type: "create_list",
+    listId: "list-new",
+    payload: { name: "Neu" },
+    createdAt: CREATED_AT
+  });
+  const edit = itemMutation({ operationId: OPERATION_ID_2, listId: "list-old" });
+
+  assert.equal(SyncLogic.shouldRetainMissingList([create, edit], "list-new"), true);
+  assert.equal(SyncLogic.shouldRetainMissingList([create, edit], "list-old"), false);
+  assert.equal(SyncLogic.shouldRetainMissingList([], "list-new"), false);
+});

@@ -163,6 +163,7 @@ test("list deletion and the zero-list state cannot resurrect cached notes", () =
   assert.match(app, /function discardMutationsForList\(listId\)/);
   assert.match(mergeBody, /remoteList\.deletedAt[\s\S]*discardMutationsForList\(remoteList\.id\)/);
   assert.match(mergeBody, /!hasAccess[\s\S]*discardMutationsForList\(remoteList\.id\)/);
+  assert.match(mergeBody, /shouldRetainMissingList\(queuedMutations, listData\.id\)/);
   assert.match(deleteBody, /ownerId !== currentUser\.userId[\s\S]*leaveSharedList/);
   assert.match(deleteBody, /window\.confirm[\s\S]*createListMutation\("delete_list"/);
   assert.equal((emptyBody.match(/data-empty-add-list/g) ?? []).length, 1);

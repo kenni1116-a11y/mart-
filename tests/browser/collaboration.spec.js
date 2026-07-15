@@ -99,3 +99,32 @@ test("isolated contexts converge item mutations, preserve owner/member deletion 
     await server.close();
   }
 });
+
+test("ownership transfer reaches the atomic RPC before changing the owner shown by the server", async ({ browser }) => {
+  const server = await startTestServer();
+  const owner = await createIsolatedPage(browser, server);
+  const member = await createIsolatedPage(browser, server);
+  owner.page.on("dialog", (dialog) => dialog.accept());
+
+  try {
+    await owner.page.goto(server.origin);
+    await waitForReady(owner.page);
+    await owner.page.locator("[data-empty-add-list]").click();
+    await expect.poll(() => server.state.lists.size).toBe(1);
+
+    const list = [...server.state.lists.values()][0];
+    const invite = Buffer.from(JSON.stringify({ id: list.id, inviteCode: list.invite_code })).toString("base64url");
+    await member.page.goto(`${server.origin}/?invite=${encodeURIComponent(invite)}`);
+    await expect(member.page.locator("[data-delete-list]")).toBeVisible();
+    const nextOwner = [...server.state.members.values()].find((entry) => entry.list_id === list.id && entry.user_id !== list.owner_user_id);
+
+    await owner.page.locator(`[data-members-list="${list.id}"]`).click();
+    await owner.page.locator(`[data-transfer-owner="${nextOwner.user_id}"]`).click();
+
+    await expect.poll(() => server.state.lists.get(list.id)?.owner_user_id).toBe(nextOwner.user_id);
+    expect(server.state.members.get(`${list.id}:${nextOwner.user_id}`)?.role).toBe("owner");
+  } finally {
+    await Promise.all([owner.context.close(), member.context.close()]);
+    await server.close();
+  }
+});

@@ -131,6 +131,13 @@
     };
   }
 
+  function shouldRetainMissingList(queue, listId) {
+    return Array.isArray(queue) && queue.some((mutation) => (
+      mutation?.type === "create_list"
+      && mutation.listId === listId
+    ));
+  }
+
   async function applyMutationWithClient(client, mutation) {
     if (!client?.rpc) return { ok: false, error: "network_error", offline: true };
     try {
@@ -215,6 +222,7 @@
   return {
     createMutation,
     createItemPayload,
+    shouldRetainMissingList,
     compactQueue,
     shouldRetry,
     applyMutationWithClient,

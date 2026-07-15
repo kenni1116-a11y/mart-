@@ -275,6 +275,19 @@ function rpc(state, token, name, args) {
   if (!account) return apiError("Account unavailable", "account_unavailable");
 
   if (name === "apply_list_mutation_v3") return applyMutation(state, account, args);
+  if (name === "transfer_list_ownership_v3") {
+    const list = state.lists.get(args.target_list_id);
+    const target = list ? state.members.get(memberKey(list.id, args.target_user_id)) : null;
+    if (!list || list.deleted_at) return { data: { ok: false, error: "list_deleted" }, error: null };
+    if (list.owner_user_id !== account.id) return { data: { ok: false, error: "forbidden" }, error: null };
+    if (!target || target.removed_at || target.user_id === account.id) return { data: { ok: false, error: "invalid_member" }, error: null };
+    const priorOwner = state.members.get(memberKey(list.id, account.id));
+    target.role = "owner";
+    if (priorOwner) priorOwner.role = "editor";
+    list.owner_user_id = target.user_id;
+    updateList(state, list, account.id);
+    return { data: { ok: true, listId: list.id, ownerId: target.user_id, previousOwnerId: account.id }, error: null };
+  }
   if (name === "update_account_profile") {
     account.displayName = args.display_name || account.displayName;
     account.avatarUrl = args.avatar_url || "";
@@ -318,7 +331,7 @@ function rpc(state, token, name, args) {
     const pairing = state.pairingRequests.get(args.target_pairing_id);
     return { data: pairing ? { ok: true, status: pairing.status } : { ok: false, error: "invalid_pairing" }, error: null };
   }
-  return { data: { ok: true }, error: null };
+  return apiError(`Unsupported RPC: ${name}`, "unsupported_rpc");
 }
 
 const adapterSource = String.raw`(function () {

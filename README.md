@@ -20,6 +20,8 @@ SUPABASE_DB_URL="..." pnpm test:sql
 
 SQL-Fixtures werden in Transaktionen angelegt und am Ende zurückgerollt.
 
+Neue Dateien unter `supabase/` werden vor dem zugehörigen Client-Release als Migration im Supabase-Projekt installiert. Der GitHub-Workflow führt absichtlich keine Produktions-DDL aus; seine SQL-Tests prüfen stattdessen, dass die benötigten RPCs bereits vorhanden sind, und stoppen andernfalls das Deployment.
+
 ## GitHub Pages
 
 Ein Push auf `main` startet `.github/workflows/verify-and-deploy.yml`. Erst nach erfolgreicher Prüfung und den transaktionalen SQL-Tests wird die statische App über GitHub Pages veröffentlicht. Anschließend prüft ein WebKit-Smoke-Test die veröffentlichte Version; bei einem Fehlschlag ist ein Rollback auf das letzte erfolgreiche Pages-Artefakt vorbereitet.

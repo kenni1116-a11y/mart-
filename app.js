@@ -3762,12 +3762,19 @@ function mergeRemoteLists(remoteLists, options = {}) {
       didChange = true;
     }
   });
-  const canPrune = options.pruneMissing && activeWriteCount === 0 && mutationQueueLength() === 0;
+  const queuedMutations = mutationQueue();
+  const canPrune = options.pruneMissing && activeWriteCount === 0;
   if (canPrune) {
     lists
-      .filter((listData) => !accessibleRemoteIds.has(listData.id))
+      .filter((listData) => (
+        !accessibleRemoteIds.has(listData.id)
+        && !MartSyncLogic.shouldRetainMissingList(queuedMutations, listData.id)
+      ))
       .forEach((listData) => discardMutationsForList(listData.id));
-    const retainedLists = lists.filter((listData) => accessibleRemoteIds.has(listData.id));
+    const retainedLists = lists.filter((listData) => (
+      accessibleRemoteIds.has(listData.id)
+      || MartSyncLogic.shouldRetainMissingList(queuedMutations, listData.id)
+    ));
     if (retainedLists.length !== lists.length) {
       lists = retainedLists;
       activeListId = lists.some((listData) => listData.id === activeListId) ? activeListId : (lists[0]?.id ?? "");
