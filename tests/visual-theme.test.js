@@ -15,6 +15,14 @@ test("Graphite Midnight exposes one dark token set and matching PWA colors", () 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
 
+test("the long-page Graphite background scrolls once without repeating", () => {
+  const css = fs.readFileSync("styles.css", "utf8");
+  const body = css.match(/body\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  assert.doesNotMatch(body, /background-attachment:\s*fixed/);
+  assert.match(body, /background-repeat:\s*no-repeat/);
+});
+
 test("the shell exposes the centered lowercase brand and Pinnwand workspace", () => {
   const html = fs.readFileSync("index.html", "utf8");
   assert.match(html, /<h1>zettel<\/h1>/);

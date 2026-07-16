@@ -34,7 +34,7 @@ body {
   margin: 0;
   color: var(--gm-text);
   background: linear-gradient(145deg, var(--gm-bg-top) 0%, var(--gm-bg-middle) 48%, var(--gm-bg-bottom) 100%);
-  background-attachment: fixed;
+  background-repeat: no-repeat;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
