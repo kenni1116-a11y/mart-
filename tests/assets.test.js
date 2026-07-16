@@ -7,16 +7,16 @@ const root = path.resolve(__dirname, "..");
 
 test("browser entrypoint loads the tested app logic before app.js", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const releaseIndex = html.indexOf('<script src="./app-version.js?v=67"></script>');
-  const logicIndex = html.indexOf('<script src="./app-logic.js?v=67"></script>');
-  const appIndex = html.indexOf('<script src="./app.js?v=67"></script>');
+  const releaseIndex = html.indexOf('<script src="./app-version.js?v=70"></script>');
+  const logicIndex = html.indexOf('<script src="./app-logic.js?v=70"></script>');
+  const appIndex = html.indexOf('<script src="./app.js?v=70"></script>');
 
   assert.notEqual(releaseIndex, -1);
   assert.notEqual(logicIndex, -1);
   assert.notEqual(appIndex, -1);
   assert.ok(releaseIndex < appIndex);
   assert.ok(logicIndex < appIndex);
-  assert.match(html, /styles\.css\?v=67/);
+  assert.match(html, /styles\.css\?v=70/);
 });
 
 test("service worker derives its cache version from the central release metadata", () => {

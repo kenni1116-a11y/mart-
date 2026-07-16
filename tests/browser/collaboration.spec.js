@@ -870,13 +870,13 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Menü öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.6.7 · Build 67", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.0 · Build 70", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.6.7");
-    expect(report).toContain("Build: 67");
+    expect(report).toContain("App-Version: 0.7.0");
+    expect(report).toContain("Build: 70");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 
