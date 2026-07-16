@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="white-onion-brown-skin">
+  <title>Zwiebeln</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#c8894a" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 30c1-8 7-13 14-13s13 5 14 13c2 12-5 22-14 22S16 42 18 30Z" fill="#fff7dd"/><path d="M18 31c2-7 5-11 10-13-4 9-3 22 3 33M46 31c-2-7-5-11-10-13 4 9 3 22-3 33" fill="#c98a4b" opacity=".75"/><path d="M27 18c1-5 3-8 5-11 2 3 4 6 5 11M22 50l-5 4m11-3-2 6m16-7 5 4" class="detail"/><path d="M24 29c2-4 5-6 8-6" class="shine"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>

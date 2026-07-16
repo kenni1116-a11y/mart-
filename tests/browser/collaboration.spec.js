@@ -167,6 +167,29 @@ async function readProductGridMetrics(page) {
   });
 }
 
+async function readProductAssetMetrics(page) {
+  return page.locator("#productGrid").evaluate((grid) => {
+    const assets = [...grid.querySelectorAll(".product-asset")];
+    const images = assets.map((asset) => asset.querySelector("img"));
+    const containmentFailures = images.flatMap((image) => {
+      const iconBox = image.parentElement.getBoundingClientRect();
+      const imageBox = image.getBoundingClientRect();
+      const contained = imageBox.left >= iconBox.left - 0.5
+        && imageBox.right <= iconBox.right + 0.5
+        && imageBox.top >= iconBox.top - 0.5
+        && imageBox.bottom <= iconBox.bottom + 0.5;
+      return contained ? [] : [{ iconBox: { x: iconBox.x, y: iconBox.y, width: iconBox.width, height: iconBox.height }, imageBox: { x: imageBox.x, y: imageBox.y, width: imageBox.width, height: imageBox.height } }];
+    });
+    return {
+      count: assets.length,
+      uniqueMotifs: new Set(assets.map((asset) => asset.dataset.iconMotif)).size,
+      allLoaded: images.every((image) => image?.complete && image.naturalWidth === 64 && image.naturalHeight === 64),
+      allContained: containmentFailures.length === 0,
+      containmentFailures
+    };
+  });
+}
+
 test("isolated contexts converge item mutations, preserve owner/member deletion roles, and show one centered empty action", async ({ browser }) => {
   const server = await startTestServer();
   const owner = await createIsolatedPage(browser, server);
@@ -342,13 +365,13 @@ test("imprint and bugreport show the central app version and device context", as
 
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.6.6 · Build 66", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.6.7 · Build 67", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.6.6");
-    expect(report).toContain("Build: 66");
+    expect(report).toContain("App-Version: 0.6.7");
+    expect(report).toContain("Build: 67");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 
@@ -369,11 +392,13 @@ test("product cards keep four readable columns with contained text and aligned a
     await visitor.page.locator("[data-empty-add-list]").click();
     await visitor.page.getByRole("button", { name: /Gemüse 26 Artikel/ }).click();
     await expect(visitor.page.locator(".product-card")).toHaveCount(26);
+    await expect(visitor.page.locator(".product-asset img")).toHaveCount(26);
     await visitor.page.evaluate(() => document.fonts.ready);
 
     for (const width of [393, 430]) {
       await visitor.page.setViewportSize({ width, height: 874 });
       const metrics = await readProductGridMetrics(visitor.page);
+      const assetMetrics = await readProductAssetMetrics(visitor.page);
       expect(metrics.columns, `${width}px columns`).toBe(4);
       expect(metrics.gridWithinViewport, `${width}px grid`).toBe(true);
       expect(metrics.cardOverflow, `${width}px card overflow ${JSON.stringify(metrics.overflowCards)}`).toBe(false);
@@ -391,8 +416,21 @@ test("product cards keep four readable columns with contained text and aligned a
         expect(iconWidth, `${width}px icon width`).toBeGreaterThanOrEqual(52);
         expect(height, `${width}px icon height`).toBeGreaterThanOrEqual(50);
       });
-      await visitor.page.screenshot({ path: `test-results/optik-paket-3-products-${width}.png`, fullPage: true });
+      expect(assetMetrics.count, `${width}px individual icons`).toBe(26);
+      expect(assetMetrics.uniqueMotifs, `${width}px unique motifs`).toBe(26);
+      expect(assetMetrics.allLoaded, `${width}px loaded icons`).toBe(true);
+      expect(assetMetrics.allContained, `${width}px contained icons ${JSON.stringify(assetMetrics.containmentFailures)}`).toBe(true);
+      await visitor.page.screenshot({ path: `test-results/icon-batch-1-gemuese-${width}.png`, fullPage: true });
     }
+
+    await visitor.page.locator("#backButton").click();
+    await visitor.page.getByRole("button", { name: /Salate & Frischetheke 19 Artikel/ }).click();
+    await expect(visitor.page.locator(".product-card")).toHaveCount(19);
+    await expect.poll(() => visitor.page.locator(".product-card").evaluateAll((cards) => (
+      cards.slice(0, 10).filter((card) => card.querySelector(".product-asset img")).length
+    ))).toBe(10);
+    await visitor.page.setViewportSize({ width: 393, height: 874 });
+    await visitor.page.screenshot({ path: "test-results/icon-batch-1-frische-393.png", fullPage: true });
   } finally {
     await visitor.context.close();
     await server.close();

@@ -3487,6 +3487,13 @@ function productIconSvg(product) {
 }
 
 function productIconMarkup(product) {
+  const asset = window.MartProductIconAssets
+    && window.MartProductIconAssets.getProductIconAsset(product.name, product.shelfId);
+
+  if (asset) {
+    return `<span class="product-icon product-sketch product-asset" data-icon-motif="${escapeText(asset.motif)}"><img src="${escapeText(asset.path)}" alt="" loading="lazy" decoding="async"></span>`;
+  }
+
   return `<span class="product-icon product-sketch">${productIconSvg(product)}</span>`;
 }
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="three-bell-peppers">
+  <title>Paprika</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#f0442e" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 32c0-9 5-15 12-14 7 1 9 8 7 17-2 10-7 15-12 13-6-2-8-8-7-16Z" fill="#36b94f"/><path d="M22 29c0-10 6-17 13-15 7 1 9 10 6 20-2 9-8 14-13 11-5-3-7-9-6-16Z" fill="#ffd12e"/><path d="M38 31c0-9 6-15 12-13 7 2 8 10 5 19-3 9-8 13-13 9-5-3-6-9-4-15Z" fill="#ef4436"/><path d="m18 18 2-7m14 4 1-7m14 11 2-7" class="stem"/><path d="M12 29c2-4 5-6 8-6m7 3c2-4 5-6 8-6m8 7c2-3 5-4 8-3" class="shine"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>

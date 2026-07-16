@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="fennel-bulb">
+  <title>Fenchel</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#d8e8a8" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 50c2-15 7-23 15-24 8 1 13 9 15 24-9 7-21 7-30 0Z" fill="#eef3c6"/><path d="M32 27V10m0 10L19 8m13 10L45 7m-13 14L11 18m21 4 21-5" class="green-stalk"/><path d="M19 8c5-2 8-1 10 2m16-3c-5-1-8 1-10 4M11 18c5-3 9-3 13 0m29-1c-5-2-9-1-13 2" class="frond"/><path d="M22 47c3-8 6-13 10-20m10 20c-3-8-6-13-10-20" class="detail"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>

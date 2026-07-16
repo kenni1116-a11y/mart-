@@ -1,4 +1,5 @@
 importScripts("./app-version.js");
+importScripts("./product-icon-assets.js");
 
 const CACHE_NAME = `einkaufszettel-v${MartRelease.build}`;
 // Keep this file changing when the installed iPhone app needs a fresh cache.
@@ -11,9 +12,11 @@ const ASSETS = [
   "./account-logic.js",
   "./sync-logic.js",
   "./app-logic.js",
+  "./product-icon-assets.js",
   "./app.js",
   "./manifest.json",
-  "./icon.svg"
+  "./icon.svg",
+  ...MartProductIconAssets.allProductIconAssetPaths
 ];
 
 self.addEventListener("install", (event) => {

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="long-leek">
+  <title>Lauch</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#46aa55" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M27 55c-1-15 0-27 2-38l7 1c2 12 2 25 0 37Z" fill="#fff6dc"/><path d="M29 36c0-10-3-20-7-29 8 3 11 13 11 29Zm4 0c0-12 3-23 9-31 2 12-1 22-7 32Zm1-1c3-10 9-17 16-21-1 10-6 18-14 24Z" fill="#3a9f50"/><path d="m27 55-5 5m9-5-2 6m7-6 3 6m-5-26-1 19" class="detail"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>

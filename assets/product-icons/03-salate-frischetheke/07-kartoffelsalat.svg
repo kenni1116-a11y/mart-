@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="potato-salad-bowl">
+  <title>Kartoffelsalat</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#e2bd56" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 31h44l-5 22H15Z" fill="#e7eef0"/><ellipse cx="32" cy="31" rx="22" ry="8" fill="#f4d76c"/><g fill="#e6b94d"><ellipse cx="21" cy="29" rx="7" ry="3" transform="rotate(-12 21 29)"/><ellipse cx="34" cy="33" rx="8" ry="3" transform="rotate(8 34 33)"/><ellipse cx="44" cy="28" rx="7" ry="3" transform="rotate(-8 44 28)"/></g><circle cx="28" cy="28" r="1.5" fill="#5b9e45" stroke="none"/><circle cx="42" cy="33" r="1.5" fill="#5b9e45" stroke="none"/><path d="M16 47c10 4 22 4 32 0" class="detail"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>

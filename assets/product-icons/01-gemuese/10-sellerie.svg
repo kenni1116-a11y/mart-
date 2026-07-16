@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="celery-bunch">
+  <title>Sellerie</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#91cf5b" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 55c2-17 3-28 2-39h7c1 13 0 26-1 39Zm10 0c1-17 1-30-1-42h7c3 14 3 28 2 42Zm10 0c-1-16-1-27 1-37l7 2c0 12-1 23-2 35Z" fill="#a9dc68"/><path d="M23 18C14 18 10 13 11 7c7 0 12 4 14 10Zm8-4c-4-7-1-12 4-14 4 5 3 10-2 15Zm11 6c2-8 8-11 14-9-1 7-6 11-13 11Z" fill="#46a94e"/><path d="M25 24c1 10 0 20-1 30m9-31c2 11 2 22 1 31m10-27c-1 9-1 18-2 27" class="detail"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>

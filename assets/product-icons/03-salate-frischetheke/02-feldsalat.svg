@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="lambs-lettuce-rosettes">
+  <title>Feldsalat</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c13-8 36-9 53 0l-5 35c-14 7-34 7-47-2Z" fill="#3f9d4b" opacity=".16" stroke="none"/>
+  <path d="M10 12c15 3 29 4 44 1l-2 11c-15-2-28-1-41 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="#4da84e"><ellipse cx="19" cy="32" rx="7" ry="13" transform="rotate(-45 19 32)"/><ellipse cx="29" cy="27" rx="7" ry="13" transform="rotate(-12 29 27)"/><ellipse cx="39" cy="29" rx="7" ry="13" transform="rotate(24 39 29)"/><ellipse cx="46" cy="39" rx="7" ry="13" transform="rotate(52 46 39)"/><ellipse cx="31" cy="43" rx="7" ry="13" transform="rotate(8 31 43)"/></g><circle cx="32" cy="35" r="5" fill="#85c85d"/><path d="M14 27c4 4 10 8 18 8m0 0c4-4 9-8 14-10m-14 10c0 6 0 11-1 15" class="detail"/>
+  </g>
+  <style>
+    .detail{fill:none;stroke:#171513;stroke-width:1.7}.fine{fill:none;stroke:#171513;stroke-width:1.35}.shine{fill:none;stroke:#fff;stroke-width:2.5;opacity:.78}.stem,.green-stalk{fill:none;stroke:#328f47;stroke-width:4}.frond{fill:none;stroke:#4a9b4f;stroke-width:2}.tie{fill:none;stroke:#dfad43;stroke-width:4}.slaw{fill:none;stroke:#b5ad91;stroke-width:2}.carrot-strip{fill:none;stroke:#ed7b32;stroke-width:2}.pasta{fill:none;stroke:#d88d28;stroke-width:2.4}
+  </style>
+</svg>
