@@ -76,14 +76,20 @@ body[data-background="clean"] {
 }
 
 .auth-sheet {
+  --muted: var(--gm-muted);
+  --line: var(--gm-line);
+  --paper: rgba(255, 255, 255, 0.08);
+  --ink: var(--gm-text);
+  --accent: var(--gm-focus);
   width: min(420px, 100%);
   display: grid;
   gap: 20px;
   padding: 26px 22px;
-  border: 1px solid rgba(204, 195, 179, 0.78);
+  border: 1px solid var(--gm-line);
   border-radius: 8px;
-  background: rgba(255, 254, 249, 0.9);
-  box-shadow: 0 24px 60px rgba(43, 38, 29, 0.12);
+  background: var(--gm-paper);
+  color: var(--gm-text);
+  box-shadow: 0 24px 60px rgba(4, 8, 14, 0.32);
   backdrop-filter: blur(8px);
 }
 
@@ -91,9 +97,9 @@ body[data-background="clean"] {
   justify-self: center;
   min-width: 154px;
   padding: 6px 22px 7px;
-  border: 1px solid rgba(204, 195, 179, 0.58);
+  border: 1px solid var(--gm-line);
   border-radius: 999px;
-  background: rgba(255, 253, 246, 0.62);
+  background: var(--gm-glass);
   font-family: "Bodoni 72", Didot, Cochin, Baskerville, "Iowan Old Style", Georgia, serif;
   font-size: 2.35rem;
   font-style: italic;
