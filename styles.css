@@ -3018,3 +3018,153 @@ button.sync-chip:hover {
     min-height: 170px;
   }
 }
+
+/* Shared dialog material keeps account, support, share, market, and price flows on one graphite surface. */
+.auth-sheet,
+.modal-card {
+  --muted: var(--gm-muted);
+  --line: var(--gm-line);
+  --paper: #0c1117;
+  --ink: var(--gm-text);
+  --accent: var(--gm-focus);
+  border-color: var(--gm-line);
+  background: rgba(14, 19, 26, 0.94);
+  color: var(--gm-text);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(14px);
+}
+
+.auth-form input,
+.bug-form textarea,
+.rename-form input,
+.item-note-form input,
+.profile-form input,
+.share-panel textarea,
+.recovery-form input {
+  border-color: var(--gm-line);
+  background: #0c1117;
+  color: var(--gm-text);
+}
+
+.auth-form input:focus,
+.bug-form textarea:focus,
+.rename-form input:focus,
+.item-note-form input:focus,
+.profile-form input:focus,
+.share-panel textarea:focus,
+.recovery-form input:focus {
+  border-color: var(--gm-focus);
+  box-shadow: 0 0 0 3px rgba(119, 174, 228, 0.24);
+}
+
+.auth-primary,
+.modal-actions button:not(.is-muted):not(.is-danger),
+.modal-link {
+  border-color: rgba(237, 240, 242, 0.56);
+  background: var(--gm-titanium);
+  color: #15191e;
+}
+
+.auth-secondary,
+.modal-actions button.is-muted {
+  border-color: var(--gm-line);
+  background: var(--gm-glass);
+  color: var(--gm-muted);
+}
+
+.modal-layer {
+  background: rgba(3, 6, 10, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.modal-card h2,
+.modal-copy,
+.modal-copy strong,
+.account-identity strong,
+.account-device-copy strong,
+.share-member-row span,
+.invite-card strong,
+.share-qr > strong {
+  color: var(--gm-text);
+}
+
+.modal-close {
+  width: 44px;
+  height: 44px;
+  border-color: var(--gm-line);
+  background: #0c1117;
+  color: var(--gm-text);
+}
+
+.share-qr,
+.invite-card,
+.share-member-row,
+.price-sync-card,
+.market-detail-head,
+.market-detail-grid,
+.market-price-row,
+.market-preview,
+.market-mini-row,
+.market-result-row,
+.data-tool-button,
+.account-device-row > button,
+.recovery-code-panel code,
+.device-qr,
+.mock-map,
+.map-marker {
+  border-color: var(--gm-line);
+  background: var(--gm-glass);
+  color: var(--gm-text);
+}
+
+.share-qr-code {
+  border-color: var(--gm-line);
+  box-shadow: none;
+}
+
+.account-identity,
+.account-security-row,
+.account-device-row {
+  border-color: var(--gm-line);
+}
+
+.account-device-row.is-current,
+.account-device-row > button,
+.data-tool-button,
+.market-mini-row,
+.market-result-row,
+.market-preview-add,
+.market-price-main {
+  color: var(--gm-text);
+}
+
+.market-preview-add,
+.map-marker.is-active,
+.pairing-status button {
+  border-color: rgba(237, 240, 242, 0.56);
+  background: var(--gm-titanium);
+  color: #15191e;
+}
+
+.market-preview-actions button,
+.market-price-actions button {
+  border-color: var(--gm-line);
+  background: #0c1117;
+  color: var(--gm-text);
+}
+
+.status-note,
+.product-price-summary {
+  border-color: rgba(119, 174, 228, 0.36);
+  background: rgba(46, 82, 112, 0.24);
+  color: var(--gm-text);
+}
+
+.modal-actions button.is-danger,
+.account-device-row > button.is-danger,
+.share-member-row button.is-danger,
+.share-member-row .member-actions button.is-danger {
+  border-color: rgba(191, 121, 122, 0.68);
+  background: #9d5758;
+  color: #fff8f8;
+}

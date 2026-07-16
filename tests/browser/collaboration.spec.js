@@ -46,6 +46,41 @@ async function waitForStableElement(page, selector, stableFor = 250) {
   }, { selector, stableFor })).toBeGreaterThanOrEqual(stableFor);
 }
 
+async function readDialogPresentation(page, selector) {
+  return page.locator(selector).evaluate((element) => {
+    const parseColor = (value) => {
+      const channels = value.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
+      return channels.length === 3 ? channels : [255, 255, 255];
+    };
+    const luminance = ([red, green, blue]) => {
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+    };
+    const contrast = (foreground, background) => {
+      const [lighter, darker] = [luminance(foreground), luminance(background)].sort((left, right) => right - left);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const text = element.querySelector("h1, h2, h3, p, strong, label, button, a") ?? element;
+    const close = document.querySelector("#modalCloseButton");
+    const closeBox = close?.getBoundingClientRect();
+    return {
+      background: parseColor(style.backgroundColor),
+      closeHeight: closeBox?.height ?? 0,
+      closeWidth: closeBox?.width ?? 0,
+      contrast: contrast(parseColor(getComputedStyle(text).color), parseColor(style.backgroundColor)),
+      horizontalOverflow: element.scrollWidth > element.clientWidth + 1,
+      withinViewport: box.left >= 0 && box.right <= window.innerWidth && box.top >= 0 && box.bottom <= window.innerHeight
+    };
+  });
+}
+
 async function readStableNoteMetrics(page) {
   let metrics;
   await expect.poll(async () => {
@@ -254,6 +289,75 @@ test("Graphite Midnight workspace follows taps and horizontal swipes", async ({ 
     await expect(visitor.page.getByRole("button", { name: "Markt", exact: true })).toHaveAttribute("aria-current", "page");
     await visitor.page.locator(".layout").evaluate((layout) => layout.scrollTo({ left: 0, behavior: "auto" }));
     await expect(visitor.page.getByRole("button", { name: "Pinnwand", exact: true })).toHaveAttribute("aria-current", "page");
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("Graphite Midnight dialogs keep auth, support, account, and sharing readable", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  const expectModalPresentation = async (heading) => {
+    await expect(visitor.page.getByRole("heading", { name: heading })).toBeVisible();
+    const metrics = await readDialogPresentation(visitor.page, ".modal-card");
+    expect(metrics.withinViewport, `${heading} within viewport`).toBe(true);
+    expect(metrics.horizontalOverflow, `${heading} horizontal overflow`).toBe(false);
+    expect(Math.max(...metrics.background), `${heading} graphite card`).toBeLessThanOrEqual(38);
+    expect(metrics.contrast, `${heading} text contrast`).toBeGreaterThanOrEqual(4.5);
+    expect(metrics.closeWidth, `${heading} close width`).toBeGreaterThanOrEqual(44);
+    expect(metrics.closeHeight, `${heading} close height`).toBeGreaterThanOrEqual(44);
+  };
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+
+    await visitor.page.locator("#authGate").evaluate((gate) => gate.classList.remove("is-hidden"));
+    const authMetrics = await readDialogPresentation(visitor.page, ".auth-sheet");
+    expect(authMetrics.withinViewport, "auth gate within viewport").toBe(true);
+    expect(authMetrics.horizontalOverflow, "auth gate horizontal overflow").toBe(false);
+    expect(Math.max(...authMetrics.background), "auth gate graphite glass").toBeLessThanOrEqual(38);
+    expect(authMetrics.contrast, "auth gate text contrast").toBeGreaterThanOrEqual(4.5);
+    await visitor.page.locator("#authGate").evaluate((gate) => gate.classList.add("is-hidden"));
+
+    await visitor.page.locator("[data-empty-add-list]").click();
+    await expect(visitor.page.locator("[data-share-list]")).toBeVisible();
+
+    await visitor.page.getByRole("button", { name: "Menü öffnen" }).click();
+    await visitor.page.locator("#imprintButton").click();
+    await expectModalPresentation("Impressum");
+    await visitor.page.locator("#modalCloseButton").click();
+
+    await visitor.page.locator("#bugreportButton").click();
+    await expectModalPresentation("Bugreport");
+    const bugInput = visitor.page.locator("#bugReportText");
+    await bugInput.focus();
+    const bugInputStyles = await bugInput.evaluate((input) => {
+      const style = getComputedStyle(input);
+      return { background: style.backgroundColor, border: style.borderColor, boxShadow: style.boxShadow };
+    });
+    expect(bugInputStyles.background).toBe("rgb(12, 17, 23)");
+    expect(bugInputStyles.border).toBe("rgb(119, 174, 228)");
+    expect(bugInputStyles.boxShadow).not.toBe("none");
+    expect(await bugInput.inputValue()).toContain("Bugreport für Zettel");
+    await visitor.page.locator("#modalCloseButton").click();
+
+    await visitor.page.locator("#accountButton").click();
+    await expectModalPresentation("Mehr");
+    expect(await visitor.page.getByRole("button", { name: "Account", exact: true }).evaluate((button) => getComputedStyle(button).backgroundImage)).toContain("rgb(237, 240, 242)");
+    await visitor.page.getByRole("button", { name: "Account", exact: true }).click();
+    await expectModalPresentation("Account");
+    await expect(visitor.page.getByRole("button", { name: /Account sichern|Neuen Wiederherstellungscode erzeugen/ })).toBeVisible();
+    const deleteButton = visitor.page.getByRole("button", { name: "Account löschen", exact: true });
+    await expect(deleteButton).toBeVisible();
+    expect(await deleteButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgb(157, 87, 88)");
+    await visitor.page.locator("#modalCloseButton").click();
+
+    await visitor.page.locator("[data-share-list]").click();
+    await expectModalPresentation("Zettel teilen");
+    await expect(visitor.page.getByRole("button", { name: "Link kopieren", exact: true })).toBeVisible();
   } finally {
     await visitor.context.close();
     await server.close();
