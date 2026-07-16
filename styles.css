@@ -739,6 +739,11 @@ h2 {
   color: var(--muted);
 }
 
+.search-row:focus-within {
+  border-color: var(--gm-focus);
+  box-shadow: 0 0 0 3px rgba(119, 174, 228, 0.24);
+}
+
 .search-row input,
 .manual-add input {
   width: 100%;
@@ -747,6 +752,11 @@ h2 {
   outline: 0;
   background: transparent;
   color: var(--ink);
+}
+
+.search-row input:focus {
+  outline: 2px solid var(--gm-focus);
+  outline-offset: 2px;
 }
 
 .manual-add {

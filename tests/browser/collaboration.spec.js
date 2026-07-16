@@ -76,9 +76,27 @@ async function readDialogPresentation(page, selector) {
       closeWidth: closeBox?.width ?? 0,
       contrast: contrast(parseColor(getComputedStyle(text).color), parseColor(style.backgroundColor)),
       horizontalOverflow: element.scrollWidth > element.clientWidth + 1,
-      withinViewport: box.left >= 0 && box.right <= window.innerWidth && box.top >= 0 && box.bottom <= window.innerHeight
+      pageHasHorizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      withinViewport: box.left >= 0 && box.right <= window.innerWidth && box.top >= 0 && box.bottom <= window.innerHeight,
+      closeWithinViewport: Boolean(closeBox
+        && closeBox.left >= 0
+        && closeBox.right <= window.innerWidth
+        && closeBox.top >= 0
+        && closeBox.bottom <= window.innerHeight)
     };
   });
+}
+
+async function expectDialogFitsViewport(page, label) {
+  const closeButton = page.locator("#modalCloseButton");
+  await expect(closeButton, `${label} close button visible`).toBeVisible();
+  const metrics = await readDialogPresentation(page, ".modal-card");
+  expect(metrics.withinViewport, `${label} within viewport`).toBe(true);
+  expect(metrics.horizontalOverflow, `${label} dialog horizontal overflow`).toBe(false);
+  expect(metrics.pageHasHorizontalOverflow, `${label} page horizontal overflow`).toBe(false);
+  expect(metrics.closeWithinViewport, `${label} close button within viewport`).toBe(true);
+  expect(metrics.closeWidth, `${label} close width`).toBeGreaterThanOrEqual(44);
+  expect(metrics.closeHeight, `${label} close height`).toBeGreaterThanOrEqual(44);
 }
 
 async function readDialogMaterial(page, selector, textSelector = "strong, span, small, button") {
@@ -401,10 +419,13 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
         expect(inviteCode.contrast, `${width}px invitation code contrast`).toBeGreaterThanOrEqual(4.5);
         await page.locator("#modalCloseButton").click();
 
-        await page.locator(".shelf-card").first().dispatchEvent("click");
+        const shelfCard = page.locator(".shelf-card").first();
+        await shelfCard.scrollIntoViewIfNeeded();
+        await shelfCard.click();
         const productPriceButton = page.locator("[data-product-prices]").first();
         await expect(productPriceButton).toBeVisible();
-        await productPriceButton.dispatchEvent("click");
+        await productPriceButton.scrollIntoViewIfNeeded();
+        await productPriceButton.click();
         await expect(page.locator(".product-price-panel")).toBeVisible();
         const priceMarketIcon = await readDialogMaterial(page, ".market-mini-icon", "svg");
         expect(Math.max(...priceMarketIcon.background), `${width}px price market icon material`).toBeLessThanOrEqual(55);
@@ -416,7 +437,8 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
         expect(Math.max(...detailMarketIcon.background), `${width}px detail market icon material`).toBeLessThanOrEqual(55);
         expect(detailMarketIcon.contrast, `${width}px detail market icon contrast`).toBeGreaterThanOrEqual(4.5);
         await page.locator("#modalCloseButton").click();
-        await productPriceButton.dispatchEvent("click");
+        await productPriceButton.scrollIntoViewIfNeeded();
+        await productPriceButton.click();
 
         await page.getByRole("button", { name: "Weitere Märkte hinzufügen", exact: true }).click();
         await expect(page.getByRole("heading", { name: "Märkte suchen" })).toBeVisible();
@@ -433,6 +455,127 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
         await marketVisitor.context.close();
       }
     }
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("market and price searches show a graphite focus ring when focused", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  const expectSearchFocus = async (input) => {
+    await input.focus();
+    await expect(input).toBeFocused();
+    const styles = await input.evaluate((field) => {
+      const inputStyle = getComputedStyle(field);
+      const rowStyle = getComputedStyle(field.parentElement);
+      return {
+        borderColor: rowStyle.borderColor,
+        boxShadow: rowStyle.boxShadow,
+        outlineColor: inputStyle.outlineColor,
+        outlineStyle: inputStyle.outlineStyle
+      };
+    });
+    expect(styles.borderColor).toBe("rgb(119, 174, 228)");
+    expect(styles.boxShadow).not.toBe("none");
+    expect(styles.outlineColor).toBe("rgb(119, 174, 228)");
+    expect(styles.outlineStyle).toBe("solid");
+  };
+
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+
+    const shelfCard = page.locator(".shelf-card").first();
+    await shelfCard.scrollIntoViewIfNeeded();
+    await shelfCard.click();
+    const productPriceButton = page.locator("[data-product-prices]").first();
+    await productPriceButton.scrollIntoViewIfNeeded();
+    await productPriceButton.click();
+    await expectSearchFocus(page.locator("#priceMarketSearchInput"));
+
+    await page.getByRole("button", { name: "Weitere Märkte hinzufügen", exact: true }).click();
+    await expectSearchFocus(page.locator("#marketSearchInput"));
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("share and market dialogs stay contained at mobile and desktop widths", async ({ browser }) => {
+  const server = await startTestServer();
+
+  try {
+    for (const width of [393, 430, 1280]) {
+      const visitor = await createIsolatedPage(browser, server);
+      const page = visitor.page;
+      try {
+        await page.goto(server.origin);
+        await page.setViewportSize({ width, height: width === 1280 ? 900 : 874 });
+        await waitForReady(page);
+        await page.locator("[data-empty-add-list]").click();
+
+        await page.locator("[data-share-list]").click();
+        await expect(page.getByRole("heading", { name: "Zettel teilen" })).toBeVisible();
+        await expectDialogFitsViewport(page, `${width}px sharing`);
+        await page.locator("#modalCloseButton").click();
+
+        const shelfCard = page.locator(".shelf-card").first();
+        await shelfCard.scrollIntoViewIfNeeded();
+        await shelfCard.click();
+        const productPriceButton = page.locator("[data-product-prices]").first();
+        await productPriceButton.scrollIntoViewIfNeeded();
+        await productPriceButton.click();
+        await expect(page.locator(".product-price-panel")).toBeVisible();
+        await expectDialogFitsViewport(page, `${width}px product prices`);
+
+        const marketPrice = page.locator(".market-price-main").first();
+        await marketPrice.scrollIntoViewIfNeeded();
+        await marketPrice.click();
+        await expect(page.locator(".market-detail-panel")).toBeVisible();
+        await expectDialogFitsViewport(page, `${width}px market detail`);
+        await page.locator("#modalCloseButton").click();
+
+        await productPriceButton.scrollIntoViewIfNeeded();
+        await productPriceButton.click();
+        await page.getByRole("button", { name: "Weitere Märkte hinzufügen", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "Märkte suchen" })).toBeVisible();
+        await expectDialogFitsViewport(page, `${width}px market search`);
+      } finally {
+        await visitor.context.close();
+      }
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+test("market price journey opens shelves and prices through Playwright clicks", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+
+    const shelfCard = page.locator(".shelf-card").first();
+    await shelfCard.scrollIntoViewIfNeeded();
+    await shelfCard.click();
+    await expect(page.locator("#productGrid")).toBeVisible();
+
+    const productPriceButton = page.locator("[data-product-prices]").first();
+    await productPriceButton.scrollIntoViewIfNeeded();
+    await productPriceButton.click();
+    await expect(page.locator(".product-price-panel")).toBeVisible();
+
+    const marketPrice = page.locator(".market-price-main").first();
+    await marketPrice.scrollIntoViewIfNeeded();
+    await marketPrice.click();
+    await expect(page.locator(".market-detail-panel")).toBeVisible();
   } finally {
     await visitor.context.close();
     await server.close();
