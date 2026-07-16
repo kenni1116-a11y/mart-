@@ -15,6 +15,14 @@ test("Graphite Midnight exposes one dark token set and matching PWA colors", () 
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
 
+test("the shell exposes the centered lowercase brand and Pinnwand workspace", () => {
+  const html = fs.readFileSync("index.html", "utf8");
+  assert.match(html, /<h1>zettel<\/h1>/);
+  assert.match(html, /data-workspace="pinnwand"[^>]*>\s*Pinnwand\s*</);
+  assert.match(html, /data-workspace="market"[^>]*>\s*Markt\s*</);
+  assert.doesNotMatch(html, /data-workspace="pinnwand"[^>]*>\s*Einkaufszettel\s*</);
+});
+
 test("auth surface keeps readable contrast on the dark foundation", () => {
   const css = fs.readFileSync("styles.css", "utf8");
   const authSheet = css.match(/\.auth-sheet\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";

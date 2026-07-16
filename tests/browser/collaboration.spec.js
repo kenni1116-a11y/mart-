@@ -190,6 +190,26 @@ async function readProductAssetMetrics(page) {
   });
 }
 
+test("Graphite Midnight workspace follows taps and horizontal swipes", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await expect(visitor.page.locator("h1")).toHaveText("zettel");
+    await expect(visitor.page.getByRole("button", { name: "Pinnwand", exact: true })).toHaveAttribute("aria-current", "page");
+    await visitor.page.getByRole("button", { name: "Markt", exact: true }).click();
+    await expect(visitor.page.locator(".market-panel")).toBeInViewport();
+    await expect(visitor.page.getByRole("button", { name: "Markt", exact: true })).toHaveAttribute("aria-current", "page");
+    await visitor.page.locator(".layout").evaluate((layout) => layout.scrollTo({ left: 0, behavior: "auto" }));
+    await expect(visitor.page.getByRole("button", { name: "Pinnwand", exact: true })).toHaveAttribute("aria-current", "page");
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
 test("isolated contexts converge item mutations, preserve owner/member deletion roles, and show one centered empty action", async ({ browser }) => {
   const server = await startTestServer();
   const owner = await createIsolatedPage(browser, server);
@@ -363,6 +383,8 @@ test("imprint and bugreport show the central app version and device context", as
     await visitor.page.goto(server.origin);
     await waitForReady(visitor.page);
 
+    await visitor.page.getByRole("button", { name: "Menü öffnen" }).click();
+    await expect(visitor.page.getByRole("button", { name: "Menü öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
     await expect(visitor.page.getByText("Version 0.6.7 · Build 67", { exact: true })).toBeVisible();

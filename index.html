@@ -19,7 +19,7 @@
       <div class="auth-sheet">
         <div class="auth-brand" aria-hidden="true">Zettel</div>
         <div class="auth-copy">
-          <h1 id="authTitle">Wird vorbereitet</h1>
+          <p class="auth-title" id="authTitle">Wird vorbereitet</p>
           <p>Dein Geräte-Account wird sicher verbunden.</p>
         </div>
 
@@ -34,22 +34,28 @@
 
     <div class="app-shell is-hidden" id="appShell">
       <header class="topbar">
-        <div class="brand-zone">
-          <h1>Zettel</h1>
-        </div>
-        <div class="topbar-actions">
-          <nav class="top-options" aria-label="Optionen">
-            <button id="imprintButton" type="button">Impressum</button>
-            <button id="bugreportButton" type="button">Bugreport</button>
-            <button id="moreButton" type="button">Mehr</button>
-          </nav>
-        </div>
+        <button class="topbar-icon" id="topMenuButton" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="topOptions">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
+        </button>
+        <div class="brand-zone"><h1>zettel</h1></div>
+        <button class="topbar-icon" id="accountButton" type="button" aria-label="Account öffnen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.8-4 3-6 6.5-6s5.7 2 6.5 6"/></svg>
+        </button>
+        <nav class="top-options is-hidden" id="topOptions" aria-label="Optionen">
+          <button id="imprintButton" type="button">Impressum</button>
+          <button id="bugreportButton" type="button">Bugreport</button>
+          <button id="moreButton" type="button">Mehr</button>
+        </nav>
       </header>
+      <nav class="workspace-tabs" aria-label="Hauptbereich">
+        <button class="workspace-tab is-active" type="button" data-workspace="pinnwand" aria-current="page">Pinnwand</button>
+        <button class="workspace-tab" type="button" data-workspace="market">Markt</button>
+      </nav>
 
       <main class="layout">
         <section class="market-panel" aria-label="Artikel auswählen">
           <nav class="tabs" aria-label="Auswahlmodus">
-            <button class="tab is-active" type="button" data-view="market">
+            <button class="tab is-active" type="button" data-view="market" aria-label="Artikelmarkt">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16l-1 10H5L4 10Zm2-4h12l2 4H4l2-4Zm4 8h4"/></svg>
               Markt
             </button>

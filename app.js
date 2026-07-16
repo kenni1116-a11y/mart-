@@ -2113,6 +2113,12 @@ const elements = {
   authStatus: document.querySelector("#authStatus"),
   appShell: document.querySelector("#appShell"),
   tabs: document.querySelectorAll(".tab"),
+  workspaceTabs: document.querySelectorAll("[data-workspace]"),
+  layout: document.querySelector(".layout"),
+  marketPanel: document.querySelector(".market-panel"),
+  topMenuButton: document.querySelector("#topMenuButton"),
+  topOptions: document.querySelector("#topOptions"),
+  accountButton: document.querySelector("#accountButton"),
   imprintButton: document.querySelector("#imprintButton"),
   bugreportButton: document.querySelector("#bugreportButton"),
   moreButton: document.querySelector("#moreButton"),
@@ -5042,6 +5048,34 @@ function setView(view) {
   render();
 }
 
+function updateWorkspaceTabs(workspace) {
+  elements.workspaceTabs.forEach((button) => {
+    const active = button.dataset.workspace === workspace;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+}
+
+function setWorkspace(workspace, { smooth = true } = {}) {
+  const target = workspace === "market" ? elements.marketPanel : elements.notesBoard;
+  const left = target.offsetLeft - elements.layout.offsetLeft;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  elements.layout.scrollTo({ left, behavior: smooth && !reducedMotion ? "smooth" : "auto" });
+  updateWorkspaceTabs(workspace);
+}
+
+let workspaceScrollFrame = 0;
+function syncWorkspaceFromScroll() {
+  if (workspaceScrollFrame) cancelAnimationFrame(workspaceScrollFrame);
+  workspaceScrollFrame = requestAnimationFrame(() => {
+    workspaceScrollFrame = 0;
+    const marketDistance = Math.abs(elements.marketPanel.offsetLeft - elements.layout.offsetLeft - elements.layout.scrollLeft);
+    const noteDistance = Math.abs(elements.notesBoard.offsetLeft - elements.layout.offsetLeft - elements.layout.scrollLeft);
+    updateWorkspaceTabs(marketDistance < noteDistance ? "market" : "pinnwand");
+  });
+}
+
 function openShelf(id) {
   selectedShelfId = id;
   activeView = "products";
@@ -6141,6 +6175,13 @@ function schedulePriceSearchRender(query) {
 
 elements.authRetryButton?.addEventListener("click", connectDeviceAccount);
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
+elements.workspaceTabs.forEach((tab) => tab.addEventListener("click", () => setWorkspace(tab.dataset.workspace)));
+elements.layout.addEventListener("scroll", syncWorkspaceFromScroll, { passive: true });
+elements.topMenuButton.addEventListener("click", () => {
+  const isOpen = elements.topOptions.classList.toggle("is-hidden");
+  elements.topMenuButton.setAttribute("aria-expanded", String(!isOpen));
+});
+elements.accountButton.addEventListener("click", showMore);
 elements.searchInput.addEventListener("input", scheduleMainSearchRender);
 elements.backButton.addEventListener("click", backToShelves);
 elements.addListButton.addEventListener("click", addList);

@@ -114,7 +114,7 @@ body[data-background="clean"] {
   text-align: center;
 }
 
-.auth-copy h1 {
+.auth-title {
   position: static;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 1.2rem;
@@ -269,58 +269,71 @@ svg {
 
 .topbar {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
-  justify-content: flex-start;
-  gap: 5px;
-  min-height: 78px;
+  min-height: 44px;
   margin-bottom: 8px;
 }
 
 .brand-zone {
-  position: relative;
-  display: grid;
-  width: 100%;
-  min-height: 40px;
-  place-items: center;
-  padding: 0 72px;
-}
-
-.brand-zone::before {
-  content: "";
   position: absolute;
-  top: 3px;
-  left: 50%;
-  width: 142px;
-  height: 32px;
-  transform: translateX(-50%);
-  border: 1px solid rgba(204, 195, 179, 0.42);
-  border-radius: 999px;
-  background: rgba(255, 253, 246, 0.5);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
-    0 8px 18px rgba(38, 33, 25, 0.035);
+  inset: 0;
+  pointer-events: none;
 }
 
-.topbar-actions {
+.brand-zone h1 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  margin: 0;
+  color: var(--gm-text);
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 30px;
+  font-style: normal;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  transform: translate(-50%, -50%);
+}
+
+.topbar-icon {
   position: relative;
-  display: flex;
-  order: 2;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 40px;
+  z-index: 1;
+  display: grid;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
   padding: 0;
+  border: 1px solid var(--gm-line);
+  border-radius: 8px;
+  background: var(--gm-glass);
+  color: var(--gm-text);
+}
+
+.topbar-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .top-options {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  left: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: min(100%, 480px);
+  width: min(100%, 360px);
+  padding: 8px;
+  border: 1px solid var(--gm-line);
+  border-radius: 8px;
+  background: rgba(23, 28, 35, 0.94);
+  box-shadow: 0 12px 30px rgba(4, 8, 14, 0.28);
   min-width: 0;
   overflow: visible;
 }
@@ -328,7 +341,7 @@ svg {
 .top-options button {
   min-width: 0;
   width: 100%;
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 10px;
   border: 1px solid rgba(204, 195, 179, 0.72);
   border-radius: 999px;
@@ -341,6 +354,35 @@ svg {
   white-space: nowrap;
 }
 
+.workspace-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid var(--gm-line);
+  border-radius: 8px;
+  background: var(--gm-glass);
+}
+
+.workspace-tab {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gm-muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 620;
+}
+
+.workspace-tab.is-active {
+  background: var(--gm-titanium);
+  color: #20252c;
+}
+
 h1,
 h2,
 p {
@@ -348,17 +390,7 @@ p {
 }
 
 h1 {
-  position: relative;
-  z-index: 1;
-  font-family: "Bodoni 72", Didot, Cochin, Baskerville, "Iowan Old Style", Georgia, serif;
-  font-size: clamp(1.8rem, 6vw, 2.65rem);
-  font-style: italic;
-  font-weight: 430;
-  font-feature-settings: "liga" 1, "swsh" 1;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
+  margin: 0;
 }
 
 h2 {
@@ -2698,40 +2730,18 @@ button.sync-chip:hover {
   }
 
   .topbar {
-    gap: 5px;
-    min-height: 76px;
+    min-height: 44px;
     margin-bottom: 7px;
   }
 
-  .brand-zone {
-    min-height: 39px;
-    padding: 0 64px;
-  }
-
-  .brand-zone::before {
-    width: 132px;
-    height: 30px;
-  }
-
-  .topbar-actions {
-    min-height: 34px;
-    padding: 0;
-  }
-
   .top-options {
-    width: 100%;
-    max-width: 460px;
+    width: min(100%, 340px);
   }
 
   .top-options button {
     min-width: 0;
-    min-height: 31px;
     padding: 0 6px;
     font-size: 0.7rem;
-  }
-
-  h1 {
-    font-size: clamp(1.65rem, 8vw, 2.2rem);
   }
 
   .list-panel {
