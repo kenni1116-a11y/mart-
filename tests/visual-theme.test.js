@@ -17,10 +17,17 @@ test("Graphite Midnight exposes one dark token set and matching PWA colors", () 
 
 test("the long-page Graphite background scrolls once without repeating", () => {
   const css = fs.readFileSync("styles.css", "utf8");
-  const body = css.match(/body\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const selectors = [
+    /body\s*\{([\s\S]*?)\n\}/,
+    /body\[data-background="linen"\]\s*\{([\s\S]*?)\n\}/,
+    /body\[data-background="clean"\]\s*\{([\s\S]*?)\n\}/,
+  ];
 
-  assert.doesNotMatch(body, /background-attachment:\s*fixed/);
-  assert.match(body, /background-repeat:\s*no-repeat/);
+  for (const selector of selectors) {
+    const rule = css.match(selector)?.[1] ?? "";
+    assert.doesNotMatch(rule, /background-attachment:\s*fixed/);
+    assert.match(rule, /background-repeat:\s*no-repeat/);
+  }
 });
 
 test("the shell exposes the centered lowercase brand and Pinnwand workspace", () => {

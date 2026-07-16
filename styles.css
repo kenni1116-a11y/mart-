@@ -43,6 +43,7 @@ body[data-background="linen"] {
   --gm-bg-middle: #1c222b;
   --gm-bg-bottom: #0e1621;
   background: linear-gradient(145deg, var(--gm-bg-top) 0%, var(--gm-bg-middle) 48%, var(--gm-bg-bottom) 100%);
+  background-repeat: no-repeat;
 }
 
 body[data-background="clean"] {
@@ -50,6 +51,7 @@ body[data-background="clean"] {
   --gm-bg-middle: #151b23;
   --gm-bg-bottom: #0a111b;
   background: linear-gradient(145deg, var(--gm-bg-top) 0%, var(--gm-bg-middle) 48%, var(--gm-bg-bottom) 100%);
+  background-repeat: no-repeat;
 }
 
 @media (prefers-reduced-motion: reduce) {
