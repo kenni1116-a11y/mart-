@@ -185,6 +185,14 @@ function applyMutation(state, account, args) {
   if (!list || list.deleted_at) return { data: { ok: false, error: "list_deleted" }, error: null };
   if (!activeMember) return { data: { ok: false, error: "membership_removed" }, error: null };
 
+  if (mutation === "rename_list") {
+    const name = String(payload.name ?? "").trim().slice(0, 24);
+    if (!name) return { data: { ok: false, error: "invalid_mutation" }, error: null };
+    list.name = name;
+    updateList(state, list, account.id);
+    return { data: { ok: true }, error: null };
+  }
+
   if (mutation === "delete_list") {
     if (list.owner_user_id !== account.id) return { data: { ok: false, error: "forbidden" }, error: null };
     list.deleted_at = now();

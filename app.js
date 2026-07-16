@@ -5107,7 +5107,7 @@ function addManualItem(listId, input) {
   manualDrafts[listId] = "";
   input.value = "";
   const added = addToList({
-    id: `manual:${Date.now()}`,
+    id: `manual:${operationUuid()}`,
     name,
     shelfId: "manual",
     shelfTitle: "Eigener Artikel"
@@ -5174,7 +5174,7 @@ function selectManualSuggestion(input, index) {
   const product = suggestion.source === "catalog"
     ? allProducts().find((entry) => entry.id === suggestion.id)
     : {
-        id: `manual:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+        id: `manual:${operationUuid()}`,
         name: suggestion.name,
         shelfId: suggestion.shelfId || "manual",
         shelfTitle: suggestion.shelfTitle || "Eigener Artikel",
