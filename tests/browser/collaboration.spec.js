@@ -210,6 +210,77 @@ test("Graphite Midnight workspace follows taps and horizontal swipes", async ({ 
   }
 });
 
+test("Graphite Midnight notes keep separate graphite and shared wine-red papers", async ({ browser }) => {
+  const server = await startTestServer();
+  const owner = await createIsolatedPage(browser, server);
+  const member = await createIsolatedPage(browser, server);
+
+  try {
+    await owner.page.goto(server.origin);
+    await waitForReady(owner.page);
+    await owner.page.locator("[data-empty-add-list]").click();
+    await expect.poll(() => server.state.lists.size).toBe(1);
+
+    const sharedList = [...server.state.lists.values()][0];
+    const invite = Buffer.from(JSON.stringify({ id: sharedList.id, inviteCode: sharedList.invite_code })).toString("base64url");
+    await member.page.goto(`${server.origin}/?invite=${encodeURIComponent(invite)}`);
+    await expect(owner.page.locator(".note-card.is-shared")).toHaveCount(1);
+
+    await owner.page.locator("#addListButton").click();
+    await expect.poll(() => server.state.lists.size).toBe(2);
+    await expect(owner.page.locator(".note-card")).toHaveCount(2);
+
+    const manualInput = owner.page.locator("[data-manual-input]").last();
+    await manualInput.fill("Hafermilch");
+    await addManualItem(member.page, "Brot");
+    await expect(manualInput).toBeFocused();
+    await expect(manualInput).toHaveValue("Hafermilch");
+    await manualInput.press("Enter");
+    await expect(owner.page.locator(".note-card:not(.is-shared) .list-name")).toHaveText("Hafermilch");
+
+    for (const width of [393, 430, 1280]) {
+      await owner.page.setViewportSize({ width, height: width === 1280 ? 900 : 874 });
+      const metrics = await owner.page.locator(".notes-board").evaluate((board) => {
+        const cards = [...board.querySelectorAll(".note-card")];
+        const rect = (element) => element.getBoundingClientRect();
+        const personal = cards.find((card) => !card.classList.contains("is-shared"));
+        const shared = cards.find((card) => card.classList.contains("is-shared"));
+        return {
+          cards: cards.map(rect),
+          boardBackground: getComputedStyle(board).backgroundColor,
+          personalBackground: getComputedStyle(personal).backgroundImage,
+          sharedBackground: getComputedStyle(shared).backgroundImage,
+          personalOverflow: personal.scrollWidth > personal.clientWidth + 1,
+          sharedOverflow: shared.scrollWidth > shared.clientWidth + 1,
+          titleFontFamily: getComputedStyle(personal.querySelector(".list-title")).fontFamily,
+          nameFontFamily: getComputedStyle(personal.querySelector(".list-name")).fontFamily,
+          toolsFontFamily: getComputedStyle(personal.querySelector(".list-tools")).fontFamily
+        };
+      });
+
+      expect(metrics.cards).toHaveLength(2);
+      expect(metrics.cards[1].top - metrics.cards[0].bottom, `${width}px card gap`).toBeGreaterThanOrEqual(14);
+      expect(metrics.boardBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(metrics.personalBackground).not.toBe(metrics.sharedBackground);
+      expect(metrics.personalOverflow, `${width}px personal overflow`).toBe(false);
+      expect(metrics.sharedOverflow, `${width}px shared overflow`).toBe(false);
+      expect(metrics.titleFontFamily).toContain("Optima");
+      expect(metrics.nameFontFamily).toContain("Optima");
+      expect(metrics.toolsFontFamily).not.toContain("Optima");
+    }
+
+    await owner.page.setViewportSize({ width: 393, height: 874 });
+    await owner.page.screenshot({ path: "test-results/graphite-notes-393.png", fullPage: true });
+    await owner.page.setViewportSize({ width: 430, height: 874 });
+    await owner.page.screenshot({ path: "test-results/graphite-notes-430.png", fullPage: true });
+    await owner.page.setViewportSize({ width: 1280, height: 900 });
+    await owner.page.screenshot({ path: "test-results/graphite-notes-desktop.png", fullPage: true });
+  } finally {
+    await Promise.all([owner.context.close(), member.context.close()]);
+    await server.close();
+  }
+});
+
 test("isolated contexts converge item mutations, preserve owner/member deletion roles, and show one centered empty action", async ({ browser }) => {
   const server = await startTestServer();
   const owner = await createIsolatedPage(browser, server);

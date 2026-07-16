@@ -512,14 +512,20 @@ h2 {
   padding: 44px 14px 10px;
   position: relative;
   overflow: hidden;
-  transform: rotate(-0.12deg);
-  border-color: rgba(213, 191, 98, 0.62);
-  background:
-    linear-gradient(180deg, #fff8bf 0%, #f9ed9d 100%);
+  color: var(--gm-text);
+  border: 1px solid var(--gm-line);
+  border-radius: 17px;
+  background: var(--gm-paper);
   box-shadow:
-    0 24px 42px rgba(86, 73, 31, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  font-family: "Noteworthy", "Bradley Hand", "Apple Chancery", "Segoe Print", cursive;
+    0 18px 36px rgba(0, 0, 0, 0.31),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --line: var(--gm-line);
+  --paper: rgba(255, 255, 255, 0.035);
+  --surface: rgba(255, 255, 255, 0.06);
+  --ink: var(--gm-text);
+  --muted: var(--gm-muted);
+  --accent: var(--gm-focus);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 }
 
 .note-card {
@@ -527,34 +533,39 @@ h2 {
 }
 
 .note-card.is-active {
-  border-color: rgba(210, 242, 255, 0.98);
+  border-color: rgba(180, 205, 230, 0.36);
   box-shadow:
-    0 28px 50px rgba(68, 116, 142, 0.22),
-    0 0 0 3px rgba(236, 249, 255, 0.92),
-    0 0 20px rgba(157, 221, 248, 0.36),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 20px 40px rgba(0, 0, 0, 0.36),
+    0 0 0 2px rgba(123, 174, 223, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .note-card.is-shared {
-  border-color: rgba(150, 81, 75, 0.42);
-  background:
-    linear-gradient(180deg, #f1d1cb 0%, #e9b8b0 100%);
-  box-shadow:
-    0 24px 42px rgba(92, 47, 39, 0.13),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+  border-color: rgba(222, 188, 190, 0.15);
+  background: var(--gm-shared-paper);
 }
 
 .note-card.is-shared.is-active {
-  border-color: rgba(210, 242, 255, 0.98);
+  border-color: rgba(222, 188, 190, 0.3);
   box-shadow:
-    0 28px 50px rgba(68, 116, 142, 0.22),
-    0 0 0 3px rgba(236, 249, 255, 0.92),
-    0 0 20px rgba(157, 221, 248, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+    0 20px 40px rgba(0, 0, 0, 0.36),
+    0 0 0 2px rgba(171, 112, 120, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .list-panel::before {
-  display: none;
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 50%;
+  width: 124px;
+  height: 25px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(218, 228, 238, 0.1);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: rgba(218, 228, 238, 0.1);
 }
 
 .list-panel > * {
@@ -570,23 +581,23 @@ h2 {
   min-height: 29px;
   padding: 0 14px;
   transform: translateX(-50%) rotate(0.35deg);
-  border: 1px solid rgba(137, 121, 70, 0.3);
+  border: 1px solid rgba(218, 228, 238, 0.16);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.56);
-  color: rgba(58, 53, 39, 0.72);
+  background: rgba(15, 20, 27, 0.52);
+  color: var(--gm-muted);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: 0.66rem;
   font-weight: 720;
-  box-shadow: 0 3px 10px rgba(80, 72, 40, 0.08);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
 }
 
 .list-activation-button.is-active {
-  border-color: rgba(132, 199, 228, 0.72);
-  background: linear-gradient(180deg, rgba(246, 253, 255, 0.98), rgba(218, 244, 255, 0.94));
-  color: rgba(37, 91, 118, 0.92);
+  border-color: rgba(132, 199, 228, 0.45);
+  background: rgba(75, 117, 153, 0.38);
+  color: #edf4fa;
   box-shadow:
-    0 5px 16px rgba(86, 164, 198, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    0 5px 16px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .list-activation-button:focus-visible {
@@ -601,11 +612,10 @@ h2 {
   height: 28px;
   padding: 0;
   place-items: center;
-  border: 1px solid rgba(124, 103, 30, 0.16);
+  border: 1px solid rgba(218, 228, 238, 0.14);
   border-radius: 999px;
-  background: rgba(255, 255, 246, 0.46);
-  color: rgba(48, 43, 32, 0.72);
-  transform: rotate(-2deg);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--gm-muted);
 }
 
 .edit-note-button svg {
@@ -614,18 +624,28 @@ h2 {
   stroke-width: 1.8;
 }
 
-.list-panel h2 {
-  font-family: inherit;
+.list-panel h2,
+.list-title,
+.list-name {
+  font-family: Optima, Candara, "Noto Sans", sans-serif;
   font-size: 1.34rem;
   font-weight: 500;
   letter-spacing: 0;
 }
 
 .list-panel .section-head span {
-  font-family: inherit;
+  font-family: Optima, Candara, "Noto Sans", sans-serif;
   font-size: 0.92rem;
   font-weight: 500;
-  color: rgba(68, 63, 46, 0.58);
+  color: var(--gm-text);
+}
+
+.list-tools,
+.collab-row,
+.manual-add,
+.list-shelf,
+.note-footer {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 }
 
 .list-tools {
@@ -637,8 +657,8 @@ h2 {
 }
 
 .list-panel .list-tools > span {
-  color: rgba(67, 62, 52, 0.64);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  color: var(--gm-muted);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 0.66rem;
   font-weight: 680;
   line-height: 1;
@@ -722,19 +742,19 @@ h2 {
 }
 
 .list-panel .manual-add {
-  border-color: rgba(142, 122, 48, 0.18);
-  background: rgba(255, 248, 181, 0.32);
-  box-shadow: inset 0 -1px 0 rgba(103, 87, 31, 0.08);
+  border-color: rgba(218, 228, 238, 0.14);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .note-card.is-shared .manual-add {
-  border-color: rgba(126, 70, 62, 0.18);
-  background: rgba(255, 237, 232, 0.34);
-  box-shadow: inset 0 -1px 0 rgba(105, 56, 49, 0.08);
+  border-color: rgba(222, 188, 190, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .list-panel .manual-add input {
-  font-family: inherit;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 1rem;
 }
 
@@ -809,7 +829,7 @@ h2 {
   justify-content: flex-end;
   margin-top: 5px;
   padding-top: 5px;
-  border-top: 1px solid rgba(108, 83, 42, 0.1);
+  border-top: 1px solid rgba(218, 228, 238, 0.1);
 }
 
 .note-delete-button {
@@ -833,7 +853,7 @@ h2 {
 }
 
 .note-card.is-shared .note-footer {
-  border-top-color: rgba(126, 70, 62, 0.12);
+  border-top-color: rgba(222, 188, 190, 0.12);
 }
 
 .manual-add button {
@@ -848,19 +868,19 @@ h2 {
 .share-button {
   min-height: 28px;
   padding: 0 10px;
-  border: 1px solid rgba(124, 103, 30, 0.17);
+  border: 1px solid rgba(218, 228, 238, 0.16);
   border-radius: 999px;
-  background: rgba(255, 255, 246, 0.4);
-  color: rgba(63, 59, 50, 0.72);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--gm-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 0.66rem;
   font-weight: 680;
   line-height: 1;
 }
 
 .share-button:hover {
-  border-color: rgba(86, 72, 25, 0.38);
-  background: rgba(255, 252, 210, 0.58);
+  border-color: rgba(150, 190, 226, 0.38);
+  background: rgba(150, 190, 226, 0.12);
 }
 
 .section-head {
@@ -898,7 +918,7 @@ h2 {
   flex: 0 0 24px;
   width: 24px;
   height: 24px;
-  color: rgba(42, 38, 30, 0.78);
+  color: var(--gm-muted);
   stroke-width: 1.55;
 }
 
@@ -1569,11 +1589,11 @@ button.sync-chip:hover {
   margin-top: 4px;
   padding: 6px 2px 5px;
   border: 0;
-  border-top: 1px solid rgba(111, 93, 37, 0.16);
+  border-top: 1px solid rgba(218, 228, 238, 0.1);
   border-radius: 0;
   background: transparent;
-  color: rgba(62, 56, 40, 0.74);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  color: var(--gm-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 }
 
 .list-value-summary strong {
@@ -1582,13 +1602,13 @@ button.sync-chip:hover {
 }
 
 .list-value-summary small {
-  color: rgba(93, 83, 58, 0.64);
+  color: var(--gm-muted);
   font-size: 0.6rem;
   font-weight: 620;
 }
 
 .note-card.is-shared .list-value-summary {
-  border-top-color: rgba(126, 70, 62, 0.16);
+  border-top-color: rgba(222, 188, 190, 0.13);
   background: transparent;
 }
 
@@ -1606,7 +1626,7 @@ button.sync-chip:hover {
 .list-panel .list-item {
   padding: 4px 1px;
   border: 0;
-  border-bottom: 1px solid rgba(120, 100, 33, 0.14);
+  border-bottom: 1px solid rgba(218, 228, 238, 0.1);
   border-radius: 0;
   background: transparent;
 }
@@ -1664,11 +1684,11 @@ button.sync-chip:hover {
   margin-top: 1px;
   color: var(--muted);
   font-size: 0.68rem;
-  color: rgba(78, 72, 51, 0.58);
+  color: var(--gm-muted);
 }
 
 .list-shelf.is-note {
-  color: rgba(58, 51, 35, 0.78);
+  color: rgba(235, 239, 243, 0.84);
   font-weight: 600;
 }
 
@@ -1757,17 +1777,17 @@ button.sync-chip:hover {
 }
 
 .list-panel .empty-state {
-  border-color: rgba(120, 100, 33, 0.16);
-  color: rgba(78, 72, 51, 0.62);
+  border-color: rgba(218, 228, 238, 0.16);
+  color: var(--gm-muted);
 }
 
 .note-card.is-shared .list-item {
-  border-bottom-color: rgba(126, 70, 62, 0.14);
+  border-bottom-color: rgba(222, 188, 190, 0.12);
 }
 
 .note-card.is-shared .empty-state {
-  border-color: rgba(126, 70, 62, 0.18);
-  color: rgba(91, 57, 50, 0.62);
+  border-color: rgba(222, 188, 190, 0.16);
+  color: var(--gm-muted);
 }
 
 .modal-layer {
@@ -2753,7 +2773,7 @@ button.sync-chip:hover {
   }
 
   .notes-stack {
-    gap: 14px;
+    gap: 16px;
   }
 
   .add-note-button {
