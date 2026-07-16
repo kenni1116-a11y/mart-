@@ -199,8 +199,8 @@ body[data-background="clean"] {
 }
 
 .auth-form input:focus {
-  border-color: rgba(43, 41, 38, 0.72);
-  box-shadow: 0 0 0 3px rgba(43, 41, 38, 0.08);
+  border-color: var(--gm-focus);
+  box-shadow: 0 0 0 3px rgba(119, 174, 228, 0.24);
 }
 
 .auth-primary,
@@ -235,11 +235,11 @@ body[data-background="clean"] {
 }
 
 .auth-status[data-state="error"] {
-  color: #a33c35;
+  color: #f0a6a0;
 }
 
 .auth-status[data-state="success"] {
-  color: #3f7654;
+  color: #a8d8b8;
 }
 
 button,

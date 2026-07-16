@@ -23,6 +23,23 @@ test("auth surface keeps readable contrast on the dark foundation", () => {
   assert.match(authSheet, /color:\s*var\(--gm-text\)/);
 });
 
+test("auth inputs use the light Graphite focus token and transparent ring", () => {
+  const css = fs.readFileSync("styles.css", "utf8");
+  const focus = css.match(/\.auth-form input:focus\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  assert.match(focus, /border-color:\s*var\(--gm-focus\)/);
+  assert.match(focus, /box-shadow:\s*0 0 0 3px rgba\(119, 174, 228, 0\.24\)/);
+});
+
+test("auth status states use light readable Graphite colors", () => {
+  const css = fs.readFileSync("styles.css", "utf8");
+  const error = css.match(/\.auth-status\[data-state="error"\]\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const success = css.match(/\.auth-status\[data-state="success"\]\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  assert.match(error, /color:\s*#f0a6a0/);
+  assert.match(success, /color:\s*#a8d8b8/);
+});
+
 test("stored linen and clean backgrounds keep dark Graphite variants", () => {
   const css = fs.readFileSync("styles.css", "utf8");
 
