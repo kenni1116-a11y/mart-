@@ -167,6 +167,35 @@ async function readProductGridMetrics(page) {
   });
 }
 
+async function readShelfGridMetrics(page) {
+  return page.locator("#shelfGrid").evaluate((grid) => {
+    const rect = (element) => element.getBoundingClientRect();
+    const cards = [...grid.querySelectorAll(".shelf-card")];
+    const boards = [...grid.querySelectorAll(".shelf-board")];
+    const lightness = (color) => {
+      const channels = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
+      return channels.length === 3
+        ? Math.round((Math.max(...channels) + Math.min(...channels)) / 2)
+        : 0;
+    };
+
+    return {
+      columns: getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length,
+      gridWithinViewport: rect(grid).left >= 0 && rect(grid).right <= window.innerWidth,
+      cards: cards.map((card) => ({
+        overflow: card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1,
+        height: rect(card).height,
+        width: rect(card).width,
+        titleFontFamily: getComputedStyle(card.querySelector(".shelf-title")).fontFamily
+      })),
+      boards: boards.map((board) => ({
+        height: rect(board).height,
+        lightness: lightness(getComputedStyle(board).stroke)
+      }))
+    };
+  });
+}
+
 async function readProductAssetMetrics(page) {
   return page.locator("#productGrid").evaluate((grid) => {
     const assets = [...grid.querySelectorAll(".product-asset")];
@@ -204,6 +233,46 @@ test("Graphite Midnight workspace follows taps and horizontal swipes", async ({ 
     await expect(visitor.page.getByRole("button", { name: "Markt", exact: true })).toHaveAttribute("aria-current", "page");
     await visitor.page.locator(".layout").evaluate((layout) => layout.scrollTo({ left: 0, behavior: "auto" }));
     await expect(visitor.page.getByRole("button", { name: "Pinnwand", exact: true })).toHaveAttribute("aria-current", "page");
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("Graphite Midnight shelves keep three contained titanium columns and reorder", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.evaluate(() => document.fonts.ready);
+
+    for (const width of [393, 430]) {
+      await visitor.page.setViewportSize({ width, height: 874 });
+      await visitor.page.getByRole("button", { name: "Markt", exact: true }).click();
+      await expect(visitor.page.locator(".market-panel")).toBeInViewport();
+      await expect.poll(() => visitor.page.locator(".layout").evaluate((layout) => {
+        const market = layout.querySelector(".market-panel");
+        return Math.abs(layout.scrollLeft - (market.offsetLeft - layout.offsetLeft)) <= 1;
+      })).toBe(true);
+      await expect(visitor.page.locator(".shelf-card").first()).toBeVisible();
+      const metrics = await readShelfGridMetrics(visitor.page);
+      expect(metrics.columns, `${width}px columns`).toBe(3);
+      expect(metrics.gridWithinViewport, `${width}px grid`).toBe(true);
+      expect(metrics.cards.every((card) => !card.overflow), `${width}px cards`).toBe(true);
+      expect(Math.max(...metrics.cards.map((card) => card.height)) - Math.min(...metrics.cards.map((card) => card.height)), `${width}px equal card heights`).toBeLessThanOrEqual(0.5);
+      expect(metrics.boards.every((board) => board.height >= 4), `${width}px board height`).toBe(true);
+      expect(metrics.boards.every((board) => board.lightness >= 145), `${width}px titanium board lightness`).toBe(true);
+      expect(metrics.cards.every((card) => card.titleFontFamily.includes("Optima")), `${width}px shelf names`).toBe(true);
+      await visitor.page.screenshot({ path: `test-results/graphite-shelves-${width}.png`, fullPage: true });
+    }
+
+    const firstShelf = visitor.page.locator(".shelf-card").first();
+    await firstShelf.dispatchEvent("pointerdown", { pointerId: 1, pointerType: "touch" });
+    await expect(visitor.page.locator(".shelf-card.is-wiggling").first()).toBeVisible({ timeout: 1200 });
+    await expect(visitor.page.getByRole("button", { name: "Fertig", exact: true })).toBeVisible();
+    await visitor.page.getByRole("button", { name: "Fertig", exact: true }).click();
   } finally {
     await visitor.context.close();
     await server.close();
