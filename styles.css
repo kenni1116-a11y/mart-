@@ -538,10 +538,10 @@ h2 {
 }
 
 .edit-note-button {
-  flex: 0 0 26px;
+  flex: 0 0 28px;
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   place-items: center;
   border: 1px solid rgba(124, 103, 30, 0.2);
@@ -780,7 +780,7 @@ h2 {
 }
 
 .share-button {
-  min-height: 26px;
+  min-height: 28px;
   padding: 0 9px;
   border: 1px solid rgba(124, 103, 30, 0.22);
   border-radius: 999px;
@@ -910,6 +910,10 @@ h2 {
 }
 
 button.sync-chip {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
@@ -1591,8 +1595,8 @@ button.sync-chip:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 21px;
+  min-width: 28px;
+  height: 28px;
   padding: 0 6px;
   border: 1px solid rgba(83, 74, 48, 0.22);
   border-radius: 999px;
@@ -1619,7 +1623,7 @@ button.sync-chip:hover {
 }
 
 .user-badge.is-conflict {
-  min-width: 23px;
+  min-width: 28px;
   padding: 0 5px;
   border-color: rgba(178, 82, 66, 0.28);
   background: rgba(255, 239, 229, 0.78);
@@ -2725,7 +2729,7 @@ button.sync-chip:hover {
   }
 
   .share-button {
-    min-height: 25px;
+    min-height: 28px;
     padding: 0 8px;
     font-size: 0.84rem;
   }
