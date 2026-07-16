@@ -81,6 +81,34 @@ async function readDialogPresentation(page, selector) {
   });
 }
 
+async function readDialogMaterial(page, selector, textSelector = "strong, span, small, button") {
+  return page.locator(selector).first().evaluate((element, textSelector) => {
+    const parseColor = (value) => {
+      const channels = value.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
+      return channels.length === 3 ? channels : [255, 255, 255];
+    };
+    const luminance = ([red, green, blue]) => {
+      const channel = (value) => {
+        const normalized = value / 255;
+        return normalized <= 0.03928
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
+    };
+    const contrast = (foreground, background) => {
+      const [lighter, darker] = [luminance(foreground), luminance(background)].sort((left, right) => right - left);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const style = getComputedStyle(element);
+    const text = element.querySelector(textSelector) ?? element;
+    return {
+      background: parseColor(style.backgroundColor),
+      contrast: contrast(parseColor(getComputedStyle(text).color), parseColor(style.backgroundColor))
+    };
+  }, textSelector);
+}
+
 async function readStableNoteMetrics(page) {
   let metrics;
   await expect.poll(async () => {
@@ -295,7 +323,7 @@ test("Graphite Midnight workspace follows taps and horizontal swipes", async ({ 
   }
 });
 
-test("Graphite Midnight dialogs keep auth, support, account, and sharing readable", async ({ browser }) => {
+test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices readable", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
 
@@ -355,9 +383,56 @@ test("Graphite Midnight dialogs keep auth, support, account, and sharing readabl
     expect(await deleteButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgb(157, 87, 88)");
     await visitor.page.locator("#modalCloseButton").click();
 
-    await visitor.page.locator("[data-share-list]").click();
-    await expectModalPresentation("Zettel teilen");
-    await expect(visitor.page.getByRole("button", { name: "Link kopieren", exact: true })).toBeVisible();
+    for (const width of [393, 430, 1280]) {
+      const marketVisitor = await createIsolatedPage(browser, server);
+      const page = marketVisitor.page;
+      try {
+        await page.goto(server.origin);
+        await page.setViewportSize({ width, height: width === 1280 ? 900 : 874 });
+        await waitForReady(page);
+        await page.locator("[data-empty-add-list]").click();
+        await expect(page.locator("[data-share-list]")).toBeVisible();
+
+        await page.locator("[data-share-list]").click();
+        await expect(page.getByRole("heading", { name: "Zettel teilen" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Link kopieren", exact: true })).toBeVisible();
+        const inviteCode = await readDialogMaterial(page, ".invite-card");
+        expect(Math.max(...inviteCode.background), `${width}px invitation code material`).toBeLessThanOrEqual(55);
+        expect(inviteCode.contrast, `${width}px invitation code contrast`).toBeGreaterThanOrEqual(4.5);
+        await page.locator("#modalCloseButton").click();
+
+        await page.locator(".shelf-card").first().dispatchEvent("click");
+        const productPriceButton = page.locator("[data-product-prices]").first();
+        await expect(productPriceButton).toBeVisible();
+        await productPriceButton.dispatchEvent("click");
+        await expect(page.locator(".product-price-panel")).toBeVisible();
+        const priceMarketIcon = await readDialogMaterial(page, ".market-mini-icon", "svg");
+        expect(Math.max(...priceMarketIcon.background), `${width}px price market icon material`).toBeLessThanOrEqual(55);
+        expect(priceMarketIcon.contrast, `${width}px price market icon contrast`).toBeGreaterThanOrEqual(4.5);
+
+        await page.locator(".market-price-main").first().click();
+        await expect(page.locator(".market-detail-panel")).toBeVisible();
+        const detailMarketIcon = await readDialogMaterial(page, ".market-detail-icon", "svg");
+        expect(Math.max(...detailMarketIcon.background), `${width}px detail market icon material`).toBeLessThanOrEqual(55);
+        expect(detailMarketIcon.contrast, `${width}px detail market icon contrast`).toBeGreaterThanOrEqual(4.5);
+        await page.locator("#modalCloseButton").click();
+        await productPriceButton.dispatchEvent("click");
+
+        await page.getByRole("button", { name: "Weitere Märkte hinzufügen", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "Märkte suchen" })).toBeVisible();
+        const searchMarketIcon = await readDialogMaterial(page, ".market-mini-icon", "svg");
+        expect(Math.max(...searchMarketIcon.background), `${width}px search market icon material`).toBeLessThanOrEqual(55);
+        expect(searchMarketIcon.contrast, `${width}px search market icon contrast`).toBeGreaterThanOrEqual(4.5);
+        const savePreview = page.locator(".market-preview-add");
+        await expect(savePreview).toBeVisible();
+        await savePreview.click();
+        const savedPreview = await readDialogMaterial(page, ".market-preview-add.is-added", "svg");
+        expect(Math.max(...savedPreview.background), `${width}px saved preview material`).toBeLessThanOrEqual(55);
+        expect(savedPreview.contrast, `${width}px saved preview contrast`).toBeGreaterThanOrEqual(4.5);
+      } finally {
+        await marketVisitor.context.close();
+      }
+    }
   } finally {
     await visitor.context.close();
     await server.close();

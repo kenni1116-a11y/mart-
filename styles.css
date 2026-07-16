@@ -3122,6 +3122,17 @@ button.sync-chip:hover {
   box-shadow: none;
 }
 
+.invite-code,
+.invite-card,
+.price-sync-card > span,
+.market-detail-icon,
+.market-mini-icon,
+.map-marker {
+  border-color: var(--gm-line);
+  background: #0c1117;
+  color: var(--gm-text);
+}
+
 .account-identity,
 .account-security-row,
 .account-device-row {
@@ -3144,6 +3155,12 @@ button.sync-chip:hover {
   border-color: rgba(237, 240, 242, 0.56);
   background: var(--gm-titanium);
   color: #15191e;
+}
+
+.market-preview-add.is-added {
+  border-color: var(--gm-line);
+  background: #0c1117;
+  color: var(--gm-text);
 }
 
 .market-preview-actions button,
