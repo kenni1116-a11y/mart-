@@ -160,6 +160,31 @@ create index list_items_checked_by_user_id_idx on public.list_items(checked_by_u
 create index list_items_updated_by_user_id_idx on public.list_items(updated_by_user_id) where updated_by_user_id is not null;
 create index list_items_deleted_by_user_id_idx on public.list_items(deleted_by_user_id) where deleted_by_user_id is not null;
 
+create or replace function private.keep_newest_list_change()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if old.updated_at > new.updated_at then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger shopping_lists_keep_newest_change
+before update on public.shopping_lists
+for each row execute function private.keep_newest_list_change();
+
+create trigger list_items_keep_newest_change
+before update on public.list_items
+for each row execute function private.keep_newest_list_change();
+
+alter table public.shopping_lists replica identity full;
+alter table public.list_members replica identity full;
+alter table public.list_items replica identity full;
+
 alter table public.accounts enable row level security;
 alter table public.account_devices enable row level security;
 alter table public.account_recovery_credentials enable row level security;
@@ -344,7 +369,6 @@ as $$
     select 1
     from public.shopping_lists lists
     where lists.id = target_list_id
-      and lists.deleted_at is null
       and (
         lists.owner_user_id = private.current_account_id()
         or exists (

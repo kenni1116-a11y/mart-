@@ -15,3 +15,5 @@ Die App erstellt beim ersten Start automatisch einen anonym authentifizierten Ge
 Unter `Mehr` -> `Account` kann der Anzeigename geändert und ein einmal sichtbarer Wiederherstellungscode erzeugt werden. Unter `Account` -> `Geräte` lassen sich weitere Geräte per fünf Minuten gültigem QR-Code, Vergleichscode und Bestätigung durch ein bereits verbundenes Gerät hinzufügen.
 
 Das aktuelle Schema liegt in `supabase/device_accounts_v2.sql`. Es trennt Supabase-Auth-Geräte von dauerhaften Accounts und enthält RLS-Regeln, Recovery, Geräte-Pairing sowie die relationalen gemeinsamen Zettel. In Supabase Auth muss `Allow anonymous sign-ins` aktiviert sein.
+
+Für bestehende Projekte enthält `supabase/stability_patch.sql` die ergänzende Synchronisationshärtung. Sie wird einmal im Supabase SQL Editor ausgeführt, nachdem `device_accounts_v2.sql` bereits eingerichtet wurde.

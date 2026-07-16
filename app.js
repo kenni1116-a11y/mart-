@@ -1247,6 +1247,7 @@ class SupabaseRealtimeService {
     this.profileSyncedAt = 0;
     this.profileSyncPromise = null;
     this.profileSyncSignature = "";
+    this.writeQueue = Promise.resolve();
     this.client = this.createClient();
   }
 
@@ -1256,6 +1257,11 @@ class SupabaseRealtimeService {
     }
     try {
       return window.supabase.createClient(this.url, this.publishableKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false
+        },
         realtime: { params: { eventsPerSecond: 10 } }
       });
     } catch {
@@ -1269,15 +1275,6 @@ class SupabaseRealtimeService {
       const { data: sessionData, error: sessionError } = await this.client.auth.getSession();
       if (sessionError) throw sessionError;
       let authUser = sessionData?.session?.user ?? null;
-      if (authUser) {
-        const { data: verifiedData, error: verificationError } = await this.client.auth.getUser();
-        if (!verificationError && verifiedData?.user?.id === authUser.id) {
-          authUser = verifiedData.user;
-        } else {
-          await this.client.auth.signOut({ scope: "local" });
-          authUser = null;
-        }
-      }
       if (authUser && !isDeviceAuthUser(authUser)) {
         await this.client.auth.signOut({ scope: "local" });
         authUser = null;
@@ -1774,9 +1771,8 @@ class SupabaseRealtimeService {
     const { data: listRows, error: listError } = await this.client
       .from(this.listTable)
       .select("*")
-      .is("deleted_at", null)
       .order("updated_at", { ascending: false })
-      .limit(200);
+      .limit(500);
     if (listError) return { ok: false, error: listError.message, rawError: listError };
     const listIds = (Array.isArray(listRows) ? listRows : []).map((row) => row.id);
     if (!listIds.length) return { ok: true, lists: [] };
@@ -1794,14 +1790,19 @@ class SupabaseRealtimeService {
   }
 
   async publishLists(nextLists, options = {}) {
-    if (!this.client) {
-      if (options.queueOnFail !== false) {
-        this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
+    const write = async () => {
+      if (!this.client) {
+        if (options.queueOnFail !== false) {
+          this.queueOffline({ type: "lists", createdAt: isoNow(), lists: nextLists.map(exportCollaborativeList) });
+        }
+        return { ok: false, offline: true };
       }
-      return Promise.resolve({ ok: false, offline: true });
-    }
 
-    return this.publishRelationalLists(nextLists, currentUser);
+      return this.publishRelationalLists(nextLists, currentUser);
+    };
+    const result = this.writeQueue.then(write, write);
+    this.writeQueue = result.catch(() => undefined);
+    return result;
   }
 
   async fetchSharedLists(user) {
@@ -3644,7 +3645,13 @@ function mergeRemoteLists(remoteLists, options = {}) {
       didChange = true;
     }
   });
-  const canPrune = options.pruneMissing && activeWriteCount === 0 && syncQueueLength() === 0;
+  // An empty response can be a transient server/API state. Never delete local
+  // data based on that response; deleted lists arrive as tombstones instead.
+  const hasAuthoritativeSnapshot = remoteLists.length > 0 || lists.length === 0;
+  const canPrune = options.pruneMissing
+    && hasAuthoritativeSnapshot
+    && activeWriteCount === 0
+    && syncQueueLength() === 0;
   if (canPrune) {
     const retainedLists = lists.filter((listData) => accessibleRemoteIds.has(listData.id));
     if (retainedLists.length !== lists.length) {
