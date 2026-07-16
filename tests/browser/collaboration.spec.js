@@ -124,6 +124,18 @@ async function readProductGridMetrics(page) {
     const rect = (element) => element.getBoundingClientRect();
     const cards = [...grid.querySelectorAll(".product-card")];
     const cardBoxes = cards.map(rect);
+    const firstSecondRow = cards[4];
+    const secondRowStyle = getComputedStyle(firstSecondRow, "::before");
+    const overflowingCards = cards.filter((card) => {
+      const cardBox = rect(card);
+      return [...card.children].some((child) => {
+        const childBox = rect(child);
+        return childBox.left < cardBox.left - 0.5
+          || childBox.right > cardBox.right + 0.5
+          || childBox.top < cardBox.top - 0.5
+          || childBox.bottom > cardBox.bottom + 0.5;
+      });
+    });
     const controlSizes = cards.flatMap((card) => (
       [...card.querySelectorAll(".favorite-button, .add-button")].map((control) => {
         const box = rect(control);
@@ -143,9 +155,8 @@ async function readProductGridMetrics(page) {
     return {
       columns: getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length,
       gridWithinViewport: rect(grid).left >= 0 && rect(grid).right <= window.innerWidth,
-      cardOverflow: cards.some((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1),
-      overflowCards: cards
-        .filter((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1)
+      cardOverflow: overflowingCards.length > 0,
+      overflowCards: overflowingCards
         .map((card) => ({
           name: card.querySelector(".product-name")?.textContent,
           clientWidth: card.clientWidth,
@@ -156,6 +167,16 @@ async function readProductGridMetrics(page) {
       textInsideCards,
       cardHeights: cardBoxes.map((box) => box.height),
       cardWidths: cardBoxes.map((box) => box.width),
+      secondRowBoardHeight: Number.parseFloat(secondRowStyle.height),
+      secondRowBoardBackground: secondRowStyle.backgroundImage,
+      cardBackgrounds: cards.map((card) => getComputedStyle(card).backgroundImage),
+      actionContained: cards.every((card) => {
+        const cardBox = rect(card);
+        return [...card.querySelectorAll(".favorite-button, .add-button")].every((button) => {
+          const buttonBox = rect(button);
+          return buttonBox.left >= cardBox.left && buttonBox.right <= cardBox.right;
+        });
+      }),
       controlSizes,
       nameFontSizes: cards.map((card) => Number.parseFloat(getComputedStyle(card.querySelector(".product-name")).fontSize)),
       priceFontSizes: cards.map((card) => Number.parseFloat(getComputedStyle(card.querySelector(".product-price")).fontSize)),
@@ -565,6 +586,10 @@ test("product cards keep four readable columns with contained text and aligned a
       expect(metrics.gridWithinViewport, `${width}px grid`).toBe(true);
       expect(metrics.cardOverflow, `${width}px card overflow ${JSON.stringify(metrics.overflowCards)}`).toBe(false);
       expect(metrics.textInsideCards, `${width}px text containment`).toBe(true);
+      expect(metrics.actionContained, `${width}px action containment`).toBe(true);
+      expect(metrics.secondRowBoardHeight, `${width}px second row board height`).toBeGreaterThanOrEqual(4);
+      expect(metrics.secondRowBoardBackground, `${width}px second row titanium board`).toContain("linear-gradient");
+      expect(metrics.cardBackgrounds.every((background) => background.includes("linear-gradient")), `${width}px dark glass cards`).toBe(true);
       expect(Math.max(...metrics.cardWidths) - Math.min(...metrics.cardWidths), `${width}px equal widths`).toBeLessThanOrEqual(0.5);
       expect(Math.min(...metrics.cardHeights), `${width}px card height`).toBeGreaterThanOrEqual(164);
       expect(Math.max(...metrics.cardHeights), `${width}px card height`).toBeLessThanOrEqual(176);
@@ -582,7 +607,7 @@ test("product cards keep four readable columns with contained text and aligned a
       expect(assetMetrics.uniqueMotifs, `${width}px unique motifs`).toBe(26);
       expect(assetMetrics.allLoaded, `${width}px loaded icons`).toBe(true);
       expect(assetMetrics.allContained, `${width}px contained icons ${JSON.stringify(assetMetrics.containmentFailures)}`).toBe(true);
-      await visitor.page.screenshot({ path: `test-results/icon-batch-1-gemuese-${width}.png`, fullPage: true });
+      await visitor.page.locator("#productGrid").screenshot({ path: `test-results/graphite-products-${width}.png` });
     }
 
     await visitor.page.locator("#backButton").click();
