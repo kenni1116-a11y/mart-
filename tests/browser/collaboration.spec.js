@@ -119,6 +119,54 @@ async function readStableNoteMetrics(page) {
   return metrics;
 }
 
+async function readProductGridMetrics(page) {
+  return page.locator("#productGrid").evaluate((grid) => {
+    const rect = (element) => element.getBoundingClientRect();
+    const cards = [...grid.querySelectorAll(".product-card")];
+    const cardBoxes = cards.map(rect);
+    const controlSizes = cards.flatMap((card) => (
+      [...card.querySelectorAll(".favorite-button, .add-button")].map((control) => {
+        const box = rect(control);
+        return { width: box.width, height: box.height };
+      })
+    ));
+    const textInsideCards = cards.every((card) => {
+      const cardBox = rect(card);
+      return [...card.querySelectorAll(".product-name, .product-shelf, .product-price")].every((element) => {
+        const box = rect(element);
+        return box.left >= cardBox.left - 0.5
+          && box.right <= cardBox.right + 0.5
+          && box.top >= cardBox.top - 0.5
+          && box.bottom <= cardBox.bottom + 0.5;
+      });
+    });
+    return {
+      columns: getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length,
+      gridWithinViewport: rect(grid).left >= 0 && rect(grid).right <= window.innerWidth,
+      cardOverflow: cards.some((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1),
+      overflowCards: cards
+        .filter((card) => card.scrollWidth > card.clientWidth + 1 || card.scrollHeight > card.clientHeight + 1)
+        .map((card) => ({
+          name: card.querySelector(".product-name")?.textContent,
+          clientWidth: card.clientWidth,
+          scrollWidth: card.scrollWidth,
+          clientHeight: card.clientHeight,
+          scrollHeight: card.scrollHeight
+        })),
+      textInsideCards,
+      cardHeights: cardBoxes.map((box) => box.height),
+      cardWidths: cardBoxes.map((box) => box.width),
+      controlSizes,
+      nameFontSizes: cards.map((card) => Number.parseFloat(getComputedStyle(card.querySelector(".product-name")).fontSize)),
+      priceFontSizes: cards.map((card) => Number.parseFloat(getComputedStyle(card.querySelector(".product-price")).fontSize)),
+      iconSizes: cards.map((card) => {
+        const box = rect(card.querySelector(".product-icon-button"));
+        return { width: box.width, height: box.height };
+      })
+    };
+  });
+}
+
 test("isolated contexts converge item mutations, preserve owner/member deletion roles, and show one centered empty action", async ({ browser }) => {
   const server = await startTestServer();
   const owner = await createIsolatedPage(browser, server);
@@ -294,17 +342,57 @@ test("imprint and bugreport show the central app version and device context", as
 
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.6.5 · Build 65", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.6.6 · Build 66", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.6.5");
-    expect(report).toContain("Build: 65");
+    expect(report).toContain("App-Version: 0.6.6");
+    expect(report).toContain("Build: 66");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 
     await visitor.page.screenshot({ path: "test-results/app-version-bugreport.png", fullPage: true });
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("product cards keep four readable columns with contained text and aligned actions", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.locator("[data-empty-add-list]").click();
+    await visitor.page.getByRole("button", { name: /Gemüse 26 Artikel/ }).click();
+    await expect(visitor.page.locator(".product-card")).toHaveCount(26);
+    await visitor.page.evaluate(() => document.fonts.ready);
+
+    for (const width of [393, 430]) {
+      await visitor.page.setViewportSize({ width, height: 874 });
+      const metrics = await readProductGridMetrics(visitor.page);
+      expect(metrics.columns, `${width}px columns`).toBe(4);
+      expect(metrics.gridWithinViewport, `${width}px grid`).toBe(true);
+      expect(metrics.cardOverflow, `${width}px card overflow ${JSON.stringify(metrics.overflowCards)}`).toBe(false);
+      expect(metrics.textInsideCards, `${width}px text containment`).toBe(true);
+      expect(Math.max(...metrics.cardWidths) - Math.min(...metrics.cardWidths), `${width}px equal widths`).toBeLessThanOrEqual(0.5);
+      expect(Math.min(...metrics.cardHeights), `${width}px card height`).toBeGreaterThanOrEqual(164);
+      expect(Math.max(...metrics.cardHeights), `${width}px card height`).toBeLessThanOrEqual(176);
+      expect(Math.min(...metrics.nameFontSizes), `${width}px product name`).toBeGreaterThanOrEqual(10);
+      expect(Math.min(...metrics.priceFontSizes), `${width}px product price`).toBeGreaterThanOrEqual(8.5);
+      metrics.controlSizes.forEach(({ width: controlWidth, height }) => {
+        expect(controlWidth, `${width}px action width`).toBeGreaterThanOrEqual(30);
+        expect(height, `${width}px action height`).toBeGreaterThanOrEqual(30);
+      });
+      metrics.iconSizes.forEach(({ width: iconWidth, height }) => {
+        expect(iconWidth, `${width}px icon width`).toBeGreaterThanOrEqual(52);
+        expect(height, `${width}px icon height`).toBeGreaterThanOrEqual(50);
+      });
+      await visitor.page.screenshot({ path: `test-results/optik-paket-3-products-${width}.png`, fullPage: true });
+    }
   } finally {
     await visitor.context.close();
     await server.close();
