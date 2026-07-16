@@ -64,6 +64,11 @@ async function readStableNoteMetrics(page) {
       const collaborationBox = rect(card.querySelector(".collab-tools"));
       const manualBox = rect(card.querySelector(".manual-add"));
       const footerBox = rect(card.querySelector(".note-footer"));
+      const valueElement = card.querySelector(".list-value-summary");
+      const valueBox = rect(valueElement);
+      const shareElement = card.querySelector(".share-button");
+      const countElement = card.querySelector(".list-tools > span");
+      const valueStyle = getComputedStyle(valueElement);
       const itemRows = [...card.querySelectorAll(".list-item")];
       const controls = [...card.querySelectorAll([
         ".list-activation-button",
@@ -90,6 +95,11 @@ async function readStableNoteMetrics(page) {
         controlOverlap: controlPairs.some(([left, right]) => overlaps(left, right)),
         manualHeight: manualBox.height,
         itemHeights: itemRows.map((item) => rect(item).height),
+        valueHeight: valueBox.height,
+        valueBorderTopStyle: valueStyle.borderTopStyle,
+        valueBorderRightWidth: Number.parseFloat(valueStyle.borderRightWidth),
+        shareFontFamily: getComputedStyle(shareElement).fontFamily,
+        countFontFamily: getComputedStyle(countElement).fontFamily,
         footerHeight: footerBox.height,
         cardHeight: cardBox.height,
         touchSizes: controls.map((control) => {
@@ -250,6 +260,11 @@ test("compact shared iPhone note layout stays readable and touchable at both wid
       expect(metrics.controlOverlap, `${width}px controls`).toBe(false);
       expect(metrics.manualHeight, `${width}px manual input`).toBeLessThanOrEqual(48);
       expect(Math.max(...metrics.itemHeights), `${width}px item rows`).toBeLessThanOrEqual(46);
+      expect(metrics.valueHeight, `${width}px value row`).toBeLessThanOrEqual(34);
+      expect(metrics.valueBorderTopStyle, `${width}px value separator`).toBe("solid");
+      expect(metrics.valueBorderRightWidth, `${width}px value box`).toBe(0);
+      expect(metrics.shareFontFamily, `${width}px share font`).not.toMatch(/Noteworthy|Bradley|Chancery/i);
+      expect(metrics.countFontFamily, `${width}px count font`).not.toMatch(/Noteworthy|Bradley|Chancery/i);
       expect(metrics.footerHeight, `${width}px footer`).toBeLessThanOrEqual(40);
       expect(metrics.cardHeight, `${width}px card height`).toBeLessThanOrEqual(390);
       metrics.touchSizes.forEach(({ label, width: controlWidth, height }) => {
@@ -259,10 +274,10 @@ test("compact shared iPhone note layout stays readable and touchable at both wid
     }
 
     await owner.page.setViewportSize({ width: 393, height: 874 });
-    await owner.page.screenshot({ path: "test-results/optik-paket-1-iphone.png", fullPage: true });
+    await owner.page.screenshot({ path: "test-results/optik-paket-2-iphone.png", fullPage: true });
 
     await owner.page.setViewportSize({ width: 1280, height: 900 });
-    await owner.page.screenshot({ path: "test-results/optik-paket-1-desktop.png", fullPage: true });
+    await owner.page.screenshot({ path: "test-results/optik-paket-2-desktop.png", fullPage: true });
   } finally {
     await Promise.all([owner.context.close(), member.context.close()]);
     await server.close();
@@ -279,13 +294,13 @@ test("imprint and bugreport show the central app version and device context", as
 
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.6.4 · Build 64", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.6.5 · Build 65", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.6.4");
-    expect(report).toContain("Build: 64");
+    expect(report).toContain("App-Version: 0.6.5");
+    expect(report).toContain("Build: 65");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 

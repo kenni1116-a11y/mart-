@@ -544,9 +544,9 @@ h2 {
   height: 28px;
   padding: 0;
   place-items: center;
-  border: 1px solid rgba(124, 103, 30, 0.2);
+  border: 1px solid rgba(124, 103, 30, 0.16);
   border-radius: 999px;
-  background: rgba(255, 252, 210, 0.46);
+  background: rgba(255, 255, 246, 0.46);
   color: rgba(48, 43, 32, 0.72);
   transform: rotate(-2deg);
 }
@@ -574,9 +574,18 @@ h2 {
 .list-tools {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   flex: 0 0 auto;
   min-width: 0;
+}
+
+.list-panel .list-tools > span {
+  color: rgba(67, 62, 52, 0.64);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 0.66rem;
+  font-weight: 680;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .tabs {
@@ -781,14 +790,14 @@ h2 {
 
 .share-button {
   min-height: 28px;
-  padding: 0 9px;
-  border: 1px solid rgba(124, 103, 30, 0.22);
+  padding: 0 10px;
+  border: 1px solid rgba(124, 103, 30, 0.17);
   border-radius: 999px;
-  background: rgba(255, 253, 224, 0.36);
-  color: rgba(68, 63, 46, 0.72);
-  font-family: inherit;
-  font-size: 0.9rem;
-  font-weight: 500;
+  background: rgba(255, 255, 246, 0.4);
+  color: rgba(63, 59, 50, 0.72);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 0.66rem;
+  font-weight: 680;
   line-height: 1;
 }
 
@@ -806,9 +815,11 @@ h2 {
 }
 
 .list-head {
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
   min-height: 28px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .list-title {
@@ -816,7 +827,7 @@ h2 {
   flex: 1 1 auto;
   align-items: center;
   min-width: 0;
-  gap: 7px;
+  gap: 6px;
 }
 
 .list-title span {
@@ -839,8 +850,9 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 23px;
-  margin: 0 0 6px;
+  min-height: 28px;
+  margin: 0 0 4px;
+  padding: 1px 0 2px;
 }
 
 .collab-tools {
@@ -855,13 +867,14 @@ h2 {
 .member-strip {
   display: flex;
   align-items: center;
+  min-height: 28px;
   min-width: 0;
 }
 
 .member-avatar {
   display: grid;
-  width: 23px;
-  height: 23px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(72, 63, 36, 0.28);
@@ -897,11 +910,15 @@ h2 {
 }
 
 .sync-chip {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
-  padding: 3px 8px;
-  border: 1px solid rgba(124, 103, 30, 0.18);
+  padding: 0 8px;
+  border: 1px solid rgba(124, 103, 30, 0.15);
   border-radius: 999px;
-  background: rgba(255, 253, 224, 0.32);
+  background: rgba(255, 255, 246, 0.36);
   color: rgba(68, 63, 46, 0.62);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 0.62rem;
@@ -1478,30 +1495,31 @@ button.sync-chip:hover {
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 4px 12px;
-  margin-top: 6px;
-  padding: 7px 9px;
-  border: 1px dashed rgba(111, 93, 37, 0.2);
-  border-radius: 9px;
-  background: rgba(255, 253, 231, 0.38);
+  gap: 3px 12px;
+  margin-top: 4px;
+  padding: 6px 2px 5px;
+  border: 0;
+  border-top: 1px solid rgba(111, 93, 37, 0.16);
+  border-radius: 0;
+  background: transparent;
   color: rgba(62, 56, 40, 0.74);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
 .list-value-summary strong {
-  font-size: 0.76rem;
-  font-weight: 720;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .list-value-summary small {
   color: rgba(93, 83, 58, 0.64);
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   font-weight: 620;
 }
 
 .note-card.is-shared .list-value-summary {
-  border-color: rgba(126, 70, 62, 0.18);
-  background: rgba(255, 245, 241, 0.36);
+  border-top-color: rgba(126, 70, 62, 0.16);
+  background: transparent;
 }
 
 .list-item {
@@ -2697,7 +2715,7 @@ button.sync-chip:hover {
   }
 
   .list-panel h2 {
-    font-size: 1.26rem;
+    font-size: 1.2rem;
   }
 
   .list-title-icon {
@@ -2707,11 +2725,11 @@ button.sync-chip:hover {
   }
 
   .list-tools {
-    gap: 5px;
+    gap: 4px;
   }
 
-  .list-panel .section-head span {
-    font-size: 0.84rem;
+  .list-panel .list-tools > span {
+    font-size: 0.61rem;
   }
 
   .collab-row {
@@ -2730,8 +2748,8 @@ button.sync-chip:hover {
 
   .share-button {
     min-height: 28px;
-    padding: 0 8px;
-    font-size: 0.84rem;
+    padding: 0 7px;
+    font-size: 0.64rem;
   }
 
   .manual-add {
