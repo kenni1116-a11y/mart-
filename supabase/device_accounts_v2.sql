@@ -22,6 +22,10 @@ drop function if exists public.cancel_device_pairing(uuid);
 
 drop schema if exists private cascade;
 
+create schema private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
 drop table if exists public.device_pairings cascade;
 drop table if exists public.account_recovery_attempts cascade;
 drop table if exists public.account_recovery_credentials cascade;
@@ -193,10 +197,6 @@ alter table public.device_pairings enable row level security;
 alter table public.shopping_lists enable row level security;
 alter table public.list_members enable row level security;
 alter table public.list_items enable row level security;
-
-create schema private;
-revoke all on schema private from public, anon;
-grant usage on schema private to authenticated;
 
 create function private.clean_device_label(value text)
 returns text

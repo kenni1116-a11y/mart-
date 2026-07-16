@@ -42,3 +42,28 @@ test("GitHub Pages deploys only after verification and retains a rollback path",
   assert.match(workflow, /gh run list[\s\S]*--status success/);
   assert.match(workflow, /artifact_name: github-pages-rollback/);
 });
+
+test("the verified Pages artifact contains every local startup and product-icon asset", () => {
+  const workflow = read(".github/workflows/verify-and-deploy.yml");
+  const assemblerPath = path.join(root, "scripts", "assemble-pages-site.mjs");
+
+  assert.ok(fs.existsSync(assemblerPath), "scripts/assemble-pages-site.mjs is missing");
+  const assembler = fs.readFileSync(assemblerPath, "utf8");
+
+  assert.match(workflow, /node scripts\/assemble-pages-site\.mjs/);
+  [
+    "index.html",
+    "styles.css",
+    "supabase-config.js",
+    "app-version.js",
+    "account-logic.js",
+    "sync-logic.js",
+    "app-logic.js",
+    "product-icon-assets.js",
+    "app.js",
+    "sw.js",
+    "manifest.json",
+    "icon.svg"
+  ].forEach((asset) => assert.ok(assembler.includes(`"${asset}"`), asset));
+  assert.match(assembler, /cp\([^\n]*"assets"[^\n]*recursive: true/);
+});
