@@ -1,5 +1,17 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --gm-bg-top: #252a31;
+  --gm-bg-middle: #171c23;
+  --gm-bg-bottom: #0b121d;
+  --gm-glass: rgba(126, 151, 178, 0.1);
+  --gm-glass-strong: rgba(151, 176, 204, 0.16);
+  --gm-line: rgba(190, 210, 231, 0.13);
+  --gm-paper: linear-gradient(145deg, #383e46 0%, #292f37 61%, #222831 100%);
+  --gm-shared-paper: linear-gradient(145deg, #493a40 0%, #392f35 58%, #302a31 100%);
+  --gm-titanium: linear-gradient(180deg, #edf0f2, #969da4);
+  --gm-focus: #77aee4;
+  --gm-text: #f1f4f7;
+  --gm-muted: #9eafc0;
   --bg: #f7f3ea;
   --surface: rgba(255, 254, 249, 0.82);
   --paper: #fffdf7;
@@ -20,28 +32,35 @@
 body {
   min-height: 100svh;
   margin: 0;
-  background:
-    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.78), transparent 30%),
-    repeating-linear-gradient(96deg, rgba(41, 37, 28, 0.01) 0 1px, transparent 1px 12px),
-    repeating-linear-gradient(4deg, rgba(255, 255, 255, 0.25) 0 2px, transparent 2px 18px),
-    var(--bg);
-  color: var(--ink);
+  color: var(--gm-text);
+  background: linear-gradient(145deg, var(--gm-bg-top) 0%, var(--gm-bg-middle) 48%, var(--gm-bg-bottom) 100%);
+  background-attachment: fixed;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
 body[data-background="linen"] {
-  --bg: #f1eee5;
-  background:
-    repeating-linear-gradient(91deg, rgba(54, 49, 40, 0.018) 0 1px, transparent 1px 10px),
-    repeating-linear-gradient(2deg, rgba(255, 255, 255, 0.34) 0 2px, transparent 2px 14px),
-    #f1eee5;
+  --gm-bg-top: #303640;
+  --gm-bg-middle: #1c222b;
+  --gm-bg-bottom: #0e1621;
+  background: linear-gradient(145deg, var(--gm-bg-top) 0%, var(--gm-bg-middle) 48%, var(--gm-bg-bottom) 100%);
 }
 
 body[data-background="clean"] {
-  --bg: #fbfaf5;
-  background:
-    repeating-linear-gradient(96deg, rgba(41, 37, 28, 0.006) 0 1px, transparent 1px 16px),
-    #fbfaf5;
+  --gm-bg-top: #20262e;
+  --gm-bg-middle: #151b23;
+  --gm-bg-bottom: #0a111b;
+  background: linear-gradient(145deg, var(--gm-bg-top) 0%, var(--gm-bg-middle) 48%, var(--gm-bg-bottom) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .auth-gate {

@@ -1,13 +1,13 @@
 {
-  "name": "Einkaufszettel",
-  "short_name": "Zettel",
+  "name": "zettel",
+  "short_name": "zettel",
   "description": "Eine schlichte Einkaufszettel-App mit Marktsimulation und Favoriten.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f4f1e7",
-  "theme_color": "#f4f1e7",
+  "background_color": "#11161d",
+  "theme_color": "#11161d",
   "icons": [
     {
       "src": "./icon.svg",
