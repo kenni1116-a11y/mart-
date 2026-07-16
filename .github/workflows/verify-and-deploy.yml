@@ -1,0 +1,119 @@
+name: Verify and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps webkit
+      - run: pnpm verify
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - name: Transactional Supabase tests
+        run: pnpm test:sql:local
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: verification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Assemble verified site
+        run: |
+          mkdir _site
+          cp index.html styles.css supabase-config.js account-logic.js sync-logic.js app-logic.js app.js sw.js manifest.json icon.svg _site/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+          retention-days: 30
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  smoke:
+    if: github.event_name == 'push'
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps webkit
+      - name: Production startup smoke
+        env:
+          PRODUCTION_URL: ${{ needs.deploy.outputs.page_url }}
+        run: pnpm smoke:production
+
+  rollback:
+    if: always() && needs.deploy.result == 'success' && needs.smoke.result == 'failure'
+    needs: [deploy, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.rollback-deployment.outputs.page_url }}
+    steps:
+      - name: Find last successful release
+        id: last-good
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id="$(gh run list --workflow verify-and-deploy.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download last successful Pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "${{ steps.last-good.outputs.run_id }}" --name github-pages --dir rollback-download
+      - uses: actions/upload-artifact@v4
+        with:
+          name: github-pages-rollback
+          path: rollback-download/artifact.tar
+          retention-days: 7
+      - id: rollback-deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-rollback

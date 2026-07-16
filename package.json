@@ -1,0 +1,16 @@
+{
+  "name": "mart-zettel",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "test:unit": "node --test tests/*.test.js",
+    "test:sql": "test -n \"$SUPABASE_DB_URL\" || { echo 'SUPABASE_DB_URL fehlt'; exit 1; }; for f in tests/sql/*.test.sql; do psql \"$SUPABASE_DB_URL\" -v ON_ERROR_STOP=1 -f \"$f\"; done",
+    "test:sql:local": "bash scripts/test-supabase-local.sh",
+    "test:browser": "playwright test",
+    "verify": "node scripts/verify-release.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}
