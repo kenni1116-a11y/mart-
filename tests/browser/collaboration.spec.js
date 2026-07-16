@@ -268,3 +268,30 @@ test("compact shared iPhone note layout stays readable and touchable at both wid
     await server.close();
   }
 });
+
+test("imprint and bugreport show the central app version and device context", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+
+    await visitor.page.locator("#imprintButton").click();
+    await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.6.4 · Build 64", { exact: true })).toBeVisible();
+
+    await visitor.page.locator("#modalCloseButton").click();
+    await visitor.page.locator("#bugreportButton").click();
+    const report = await visitor.page.locator("#bugReportText").inputValue();
+    expect(report).toContain("App-Version: 0.6.4");
+    expect(report).toContain("Build: 64");
+    expect(report).toContain("Gerät/Browser:");
+    expect(report).toContain("Bildschirm: 402 × 874");
+
+    await visitor.page.screenshot({ path: "test-results/app-version-bugreport.png", fullPage: true });
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});

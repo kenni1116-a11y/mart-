@@ -4183,6 +4183,7 @@ function showImprint() {
     <h2 id="modalTitle">Impressum</h2>
     <div class="modal-copy">
       <p><strong>Zettel</strong></p>
+      <p>${escapeText(MartRelease.label)}</p>
       <p>Angaben zum Betreiber werden hier ergänzt.</p>
       <p>Kontakt: bitte noch eintragen</p>
       <p>Verantwortlich für den Inhalt: bitte noch eintragen</p>
@@ -4191,12 +4192,20 @@ function showImprint() {
 }
 
 function bugReportText() {
+  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches
+    || navigator.standalone === true;
   return [
     "Bugreport für Zettel",
     "",
     `Zeitpunkt: ${new Date().toLocaleString("de-DE")}`,
-    `Adresse: ${window.location.href}`,
-    `Gerät/Browser: ${navigator.userAgent}`,
+    ...MartRelease.bugReportLines({
+      href: window.location.href,
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      online: navigator.onLine,
+      standalone,
+      viewport: { width: window.innerWidth, height: window.innerHeight }
+    }),
     "",
     "Was ist passiert?",
     ""

@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const MartRelease = require(path.join(root, "app-version.js"));
 
 function fail(message) {
   console.error(message);
@@ -32,9 +35,12 @@ function verifyReleaseAssets() {
   const localAssets = Array.from(html.matchAll(/(?:src|href)="(\.\/[^"?]+)\?v=(\d+)"/g));
   if (!localAssets.length) fail("Keine versionierten lokalen Laufzeitdateien in index.html gefunden.");
   const versions = new Set(localAssets.map((match) => match[2]));
-  const cacheVersion = serviceWorker.match(/const CACHE_NAME = "einkaufszettel-v(\d+)"/)?.[1];
-  if (versions.size !== 1 || !cacheVersion || !versions.has(cacheVersion)) {
+  const expectedBuild = String(MartRelease.build);
+  if (versions.size !== 1 || !versions.has(expectedBuild)) {
     fail("Die Versionsnummern in index.html und sw.js stimmen nicht überein.");
+  }
+  if (!serviceWorker.includes("einkaufszettel-v${MartRelease.build}")) {
+    fail("Der Service-Worker verwendet nicht die zentrale Build-Nummer.");
   }
   localAssets.forEach((match) => {
     if (!serviceWorker.includes(`"${match[1]}"`)) {
@@ -55,6 +61,7 @@ if (!unitTests.length) fail(`Keine Unit-Tests für ${unitPattern} gefunden.`);
 if (!browserTests.length) fail("Keine Browser-Tests gefunden.");
 run(process.execPath, ["--test", ...unitTests]);
 [
+  "app-version.js",
   "account-logic.js",
   "sync-logic.js",
   "app-logic.js",

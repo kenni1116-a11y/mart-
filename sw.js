@@ -1,10 +1,13 @@
-const CACHE_NAME = "einkaufszettel-v63";
+importScripts("./app-version.js");
+
+const CACHE_NAME = `einkaufszettel-v${MartRelease.build}`;
 // Keep this file changing when the installed iPhone app needs a fresh cache.
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./supabase-config.js",
+  "./app-version.js",
   "./account-logic.js",
   "./sync-logic.js",
   "./app-logic.js",

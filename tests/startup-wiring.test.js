@@ -4,6 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
+const MartRelease = require(path.join(root, "app-version.js"));
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");
@@ -11,16 +12,19 @@ function read(file) {
 
 test("tested app logic loads before the browser entrypoint", () => {
   const html = read("index.html");
-  const release = read("sw.js").match(/einkaufszettel-v(\d+)/)?.[1];
+  const release = String(MartRelease.build);
+  const versionIndex = html.indexOf(`./app-version.js?v=${release}`);
   const accountIndex = html.indexOf(`./account-logic.js?v=${release}`);
   const syncIndex = html.indexOf(`./sync-logic.js?v=${release}`);
   const helperIndex = html.indexOf(`./app-logic.js?v=${release}`);
   const appIndex = html.indexOf(`./app.js?v=${release}`);
 
+  assert.notEqual(versionIndex, -1, "index.html must load app-version.js");
   assert.notEqual(accountIndex, -1, "index.html must load account-logic.js");
   assert.notEqual(syncIndex, -1, "index.html must load sync-logic.js");
   assert.notEqual(helperIndex, -1, "index.html must load app-logic.js");
   assert.notEqual(appIndex, -1, "index.html must load the current app.js release");
+  assert.ok(versionIndex < appIndex, "app-version.js must load before app.js");
   assert.ok(accountIndex < syncIndex, "account-logic.js must load before sync-logic.js");
   assert.ok(syncIndex < helperIndex, "sync-logic.js must load before app-logic.js");
   assert.ok(helperIndex < appIndex, "app-logic.js must load before app.js");
@@ -29,7 +33,9 @@ test("tested app logic loads before the browser entrypoint", () => {
 test("the service worker keeps the tested helper available offline", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /const CACHE_NAME = "einkaufszettel-v\d+"/);
+  assert.match(serviceWorker, /importScripts\("\.\/app-version\.js"\)/);
+  assert.match(serviceWorker, /const CACHE_NAME = `einkaufszettel-v\$\{MartRelease\.build\}`/);
+  assert.match(serviceWorker, /"\.\/app-version\.js"/);
   assert.match(serviceWorker, /"\.\/account-logic\.js"/);
   assert.match(serviceWorker, /"\.\/sync-logic\.js"/);
   assert.match(serviceWorker, /"\.\/app-logic\.js"/);

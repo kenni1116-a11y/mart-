@@ -17,7 +17,8 @@ test("one pinned release command verifies unit, syntax, cache, diff, and discove
   assert.match(verifyScript, /tests\/\*\.test\.js/);
   assert.match(verifyScript, /readdirSync\(browserDirectory\)/);
   assert.match(verifyScript, /git[\s\S]*diff[\s\S]*--check/);
-  assert.match(verifyScript, /CACHE_NAME/);
+  assert.match(verifyScript, /app-version\.js/);
+  assert.match(verifyScript, /MartRelease\.build/);
   ["backups/", "node_modules/", "test-results/", "playwright-report/", ".env*"].forEach((entry) => {
     assert.match(gitignore, new RegExp(`^${entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
   });
