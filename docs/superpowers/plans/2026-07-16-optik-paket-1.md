@@ -16,6 +16,10 @@
 - Zielbreite für die visuelle Prüfung: 393 bis 430 Pixel; automatischer Referenz-Viewport: 402 x 874 Pixel.
 - Bedienelemente dürfen nicht überlappen oder abgeschnitten werden.
 
+## Verifikationsbedingte Stabilitätskorrektur
+
+Die vollständige Prüfung hat reproduzierbar gezeigt, dass zwei Geräte bei identischem `Date.now()` dieselbe manuelle Artikel-ID erzeugen und sich dadurch gegenseitig überschreiben. Als eng begrenzte Ausnahme zur reinen CSS-Arbeit ersetzt dieses Paket die zeitbasierte ID in `app.js` durch die bereits vorhandene `operationUuid()`-Erzeugung. Datenmodell, Supabase-Schnittstelle und Synchronisationsablauf bleiben unverändert.
+
 ---
 
 ### Task 1: Kompakte und stabile iPhone-Zettelansicht

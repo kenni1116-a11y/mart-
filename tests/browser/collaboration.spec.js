@@ -34,10 +34,27 @@ async function addManualItem(page, name) {
   await input.press("Enter");
 }
 
+async function waitForStableElement(page, selector, stableFor = 250) {
+  await expect.poll(() => page.locator(selector).evaluate((element, options) => {
+    const state = window.__martTestStableElements ??= new Map();
+    const previous = state.get(options.selector);
+    if (!previous || previous.element !== element) {
+      state.set(options.selector, { element, since: performance.now() });
+      return 0;
+    }
+    return performance.now() - previous.since;
+  }, { selector, stableFor })).toBeGreaterThanOrEqual(stableFor);
+}
+
 test("isolated contexts converge item mutations, preserve owner/member deletion roles, and show one centered empty action", async ({ browser }) => {
   const server = await startTestServer();
   const owner = await createIsolatedPage(browser, server);
   const member = await createIsolatedPage(browser, server);
+  const fixedClientTime = 1_784_218_156_713;
+  await Promise.all([
+    owner.context.addInitScript((timestamp) => { Date.now = () => timestamp; }, fixedClientTime),
+    member.context.addInitScript((timestamp) => { Date.now = () => timestamp; }, fixedClientTime)
+  ]);
   const ownerDialogs = [];
   owner.page.on("dialog", async (dialog) => {
     ownerDialogs.push(dialog.message());
@@ -68,6 +85,7 @@ test("isolated contexts converge item mutations, preserve owner/member deletion 
     await expect(member.page.getByText("Milch", { exact: true })).toBeVisible();
     await expect(member.page.getByText("Brot", { exact: true })).toBeVisible();
 
+    await waitForStableElement(member.page, "[data-delete-list]");
     await member.page.locator("[data-delete-list]").click();
     await expect(member.page.locator("[data-empty-add-list]")).toHaveCount(1);
     await expect(owner.page.getByText("Milch", { exact: true })).toBeVisible();
@@ -125,6 +143,87 @@ test("ownership transfer reaches the atomic RPC before changing the owner shown 
     expect(server.state.members.get(`${list.id}:${nextOwner.user_id}`)?.role).toBe("owner");
   } finally {
     await Promise.all([owner.context.close(), member.context.close()]);
+    await server.close();
+  }
+});
+
+test("compact iPhone note layout keeps controls separated and touchable", async ({ browser }) => {
+  const server = await startTestServer();
+  const owner = await createIsolatedPage(browser, server);
+
+  try {
+    await owner.page.goto(server.origin);
+    await waitForReady(owner.page);
+    await owner.page.locator("[data-empty-add-list]").click();
+    await addManualItem(owner.page, "Milch");
+    await addManualItem(owner.page, "Vollkornbrot");
+    await addManualItem(owner.page, "Waschmittel");
+    await expect(owner.page.locator(".list-item")).toHaveCount(3);
+    await owner.page.evaluate(() => document.fonts.ready);
+    await owner.page.waitForTimeout(100);
+
+    let metrics;
+    await expect.poll(async () => {
+      metrics = await owner.page.locator(".note-card").evaluate((card) => {
+        const rect = (element) => element.getBoundingClientRect();
+        const overlaps = (left, right) => !(
+          left.right <= right.left
+          || right.right <= left.left
+          || left.bottom <= right.top
+          || right.bottom <= left.top
+        );
+        const cardBox = rect(card);
+        const titleBox = rect(card.querySelector(".list-title"));
+        const toolsBox = rect(card.querySelector(".list-tools"));
+        const manualBox = rect(card.querySelector(".manual-add"));
+        const footerBox = rect(card.querySelector(".note-footer"));
+        const itemRows = [...card.querySelectorAll(".list-item")];
+        const controls = [...card.querySelectorAll(".list-item input[type=checkbox], .quantity-button, .remove-button")];
+        const controlPairs = controls.flatMap((control, index) => (
+          controls.slice(index + 1).map((other) => [rect(control), rect(other)])
+        ));
+        return {
+          connected: card.isConnected,
+          cardWithinViewport: cardBox.left >= 0 && cardBox.right <= window.innerWidth,
+          headerOverlap: overlaps(titleBox, toolsBox),
+          controlOverlap: controlPairs.some(([left, right]) => overlaps(left, right)),
+          manualHeight: manualBox.height,
+          itemHeights: itemRows.map((item) => rect(item).height),
+          footerHeight: footerBox.height,
+          cardHeight: cardBox.height,
+          touchSizes: controls.map((control) => {
+            const box = rect(control);
+            return {
+              label: control.getAttribute("aria-label"),
+              width: box.width,
+              height: box.height
+            };
+          })
+        };
+      });
+      return metrics.connected
+        && metrics.touchSizes.length === 12
+        && metrics.touchSizes.every(({ width, height }) => width > 0 && height > 0);
+    }).toBe(true);
+
+    await owner.page.screenshot({ path: "test-results/optik-paket-1-iphone.png", fullPage: true });
+
+    expect(metrics.cardWithinViewport).toBe(true);
+    expect(metrics.headerOverlap).toBe(false);
+    expect(metrics.controlOverlap).toBe(false);
+    expect(metrics.manualHeight).toBeLessThanOrEqual(48);
+    expect(Math.max(...metrics.itemHeights)).toBeLessThanOrEqual(46);
+    expect(metrics.footerHeight).toBeLessThanOrEqual(40);
+    expect(metrics.cardHeight).toBeLessThanOrEqual(390);
+    metrics.touchSizes.forEach(({ label, width, height }) => {
+      expect(width, `${label} width`).toBeGreaterThanOrEqual(28);
+      expect(height, `${label} height`).toBeGreaterThanOrEqual(28);
+    });
+
+    await owner.page.setViewportSize({ width: 1280, height: 900 });
+    await owner.page.screenshot({ path: "test-results/optik-paket-1-desktop.png", fullPage: true });
+  } finally {
+    await owner.context.close();
     await server.close();
   }
 });

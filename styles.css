@@ -452,7 +452,7 @@ h2 {
 }
 
 .list-panel {
-  padding: 52px 14px 12px;
+  padding: 44px 14px 10px;
   position: relative;
   overflow: hidden;
   transform: rotate(-0.12deg);
@@ -509,16 +509,16 @@ h2 {
   z-index: 3;
   top: 9px;
   left: 50%;
-  min-width: min(220px, calc(100% - 32px));
-  min-height: 36px;
-  padding: 0 18px;
+  min-width: 104px;
+  min-height: 29px;
+  padding: 0 14px;
   transform: translateX(-50%) rotate(0.35deg);
   border: 1px solid rgba(137, 121, 70, 0.3);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.56);
   color: rgba(58, 53, 39, 0.72);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 720;
   box-shadow: 0 3px 10px rgba(80, 72, 40, 0.08);
 }
@@ -675,7 +675,7 @@ h2 {
 .manual-add-wrap {
   position: relative;
   z-index: 4;
-  margin: 11px 0 9px;
+  margin: 8px 0 6px;
 }
 
 .manual-add-wrap .manual-add {
@@ -741,8 +741,8 @@ h2 {
 .note-footer {
   display: flex;
   justify-content: flex-end;
-  margin-top: 7px;
-  padding-top: 7px;
+  margin-top: 5px;
+  padding-top: 5px;
   border-top: 1px solid rgba(108, 83, 42, 0.1);
 }
 
@@ -750,8 +750,8 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 0 9px;
+  min-height: 28px;
+  padding: 0 8px;
   border: 1px solid rgba(154, 59, 51, 0.18);
   border-radius: 8px;
   background: rgba(255, 253, 246, 0.42);
@@ -807,11 +807,13 @@ h2 {
 
 .list-head {
   gap: 8px;
-  margin-bottom: 7px;
+  min-height: 28px;
+  margin-bottom: 4px;
 }
 
 .list-title {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   min-width: 0;
   gap: 7px;
@@ -837,8 +839,8 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 24px;
-  margin: -2px 0 8px;
+  min-height: 23px;
+  margin: 0 0 6px;
 }
 
 .collab-tools {
@@ -1473,8 +1475,8 @@ button.sync-chip:hover {
   align-items: baseline;
   justify-content: space-between;
   gap: 4px 12px;
-  margin-top: 9px;
-  padding: 9px 10px;
+  margin-top: 6px;
+  padding: 7px 9px;
   border: 1px dashed rgba(111, 93, 37, 0.2);
   border-radius: 9px;
   background: rgba(255, 253, 231, 0.38);
@@ -1510,7 +1512,7 @@ button.sync-chip:hover {
 }
 
 .list-panel .list-item {
-  padding: 6px 1px;
+  padding: 4px 1px;
   border: 0;
   border-bottom: 1px solid rgba(120, 100, 33, 0.14);
   border-radius: 0;
@@ -1518,8 +1520,9 @@ button.sync-chip:hover {
 }
 
 .list-item input[type="checkbox"] {
-  width: 17px;
-  height: 17px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
   accent-color: var(--accent);
 }
 
@@ -1637,8 +1640,8 @@ button.sync-chip:hover {
 
 .quantity-button,
 .remove-button {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
 }
 
 .quantity span {
@@ -2672,7 +2675,7 @@ button.sync-chip:hover {
   }
 
   .list-panel {
-    padding: 54px 13px 11px;
+    padding: 42px 12px 9px;
   }
 
   .notes-board {
@@ -2694,9 +2697,9 @@ button.sync-chip:hover {
   }
 
   .list-title-icon {
-    flex-basis: 22px;
-    width: 22px;
-    height: 22px;
+    flex-basis: 21px;
+    width: 21px;
+    height: 21px;
   }
 
   .list-tools {
@@ -2708,7 +2711,7 @@ button.sync-chip:hover {
   }
 
   .collab-row {
-    align-items: flex-start;
+    align-items: center;
   }
 
   .collab-tools {
@@ -2729,8 +2732,8 @@ button.sync-chip:hover {
 
   .manual-add {
     gap: 7px;
-    margin-bottom: 9px;
-    padding: 6px;
+    margin-bottom: 0;
+    padding: 4px;
   }
 
   .manual-add button {
@@ -2740,16 +2743,16 @@ button.sync-chip:hover {
   }
 
   .list-panel .manual-add input {
-    font-size: 0.96rem;
+    font-size: 0.94rem;
   }
 
   .list-panel .list-item {
-    gap: 7px;
-    padding: 6px 0;
+    gap: 6px;
+    padding: 4px 0;
   }
 
   .list-name {
-    font-size: 0.96rem;
+    font-size: 0.94rem;
   }
 
   .list-shelf {
@@ -2758,8 +2761,8 @@ button.sync-chip:hover {
 
   .quantity-button,
   .remove-button {
-    width: 25px;
-    height: 25px;
+    width: 28px;
+    height: 28px;
   }
 
   .share-member-row {
