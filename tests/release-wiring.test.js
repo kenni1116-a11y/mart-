@@ -18,6 +18,7 @@ test("one pinned release command verifies unit, syntax, cache, diff, and discove
   assert.match(verifyScript, /readdirSync\(browserDirectory\)/);
   assert.match(verifyScript, /git[\s\S]*diff[\s\S]*--check/);
   assert.match(verifyScript, /app-version\.js/);
+  assert.match(verifyScript, /avatar-logic\.js/);
   assert.match(verifyScript, /MartRelease\.build/);
   ["backups/", "node_modules/", "test-results/", "playwright-report/", ".env*"].forEach((entry) => {
     assert.match(gitignore, new RegExp(`^${entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
@@ -59,6 +60,7 @@ test("the verified Pages artifact contains every local startup and product-icon 
     "account-logic.js",
     "sync-logic.js",
     "app-logic.js",
+    "avatar-logic.js",
     "product-icon-assets.js",
     "app.js",
     "sw.js",

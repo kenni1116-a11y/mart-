@@ -65,6 +65,7 @@ run(process.execPath, ["--test", ...unitTests]);
   "account-logic.js",
   "sync-logic.js",
   "app-logic.js",
+  "avatar-logic.js",
   "app.js",
   "supabase-config.js",
   "sw.js"

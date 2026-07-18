@@ -627,6 +627,73 @@ test("compact account editor locks and serializes an unresolved profile name sav
   }
 });
 
+test("avatar choices keep a compact profile surface and render initials tokens everywhere", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.locator("[data-empty-add-list]").click();
+    await expect(page.locator(".note-card")).toHaveCount(1);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    await page.locator("[data-edit-avatar]").click();
+    const editor = page.locator("[data-avatar-editor]");
+    await expect(editor).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Foto auswählen" })).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Initialen gestalten" })).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Avatar entfernen" })).toBeVisible();
+    const targetSizes = await editor.locator("button").evaluateAll((buttons) => buttons
+      .map((button) => {
+        const box = button.getBoundingClientRect();
+        return { width: box.width, height: box.height };
+      })
+      .filter(({ width, height }) => width > 0 && height > 0));
+    expect(targetSizes).toHaveLength(3);
+    expect(targetSizes.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
+
+    await editor.getByRole("button", { name: "Initialen gestalten" }).click();
+    const swatches = editor.locator("[data-avatar-palette]");
+    await expect(swatches).toHaveCount(6);
+    const swatchSizes = await swatches.evaluateAll((buttons) => buttons.map((button) => {
+      const box = button.getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    }));
+    expect(swatchSizes.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
+    await swatches.nth(1).click();
+
+    await expect(page.locator("[data-edit-avatar] .member-avatar.is-initials-avatar")).toHaveCount(1);
+    await expect(page.locator("[data-edit-avatar] img")).toHaveCount(0);
+    await expect(page.locator(".note-card .member-avatar.is-initials-avatar")).toHaveCount(1);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("avatar photo selection stays in place when secure upload is not available", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+
+    await expect(page.locator("[data-avatar-editor]")).toBeVisible();
+    await expect(page.locator("[data-avatar-status]")).toContainText("Foto-Upload ist noch nicht verfügbar");
+    await expect(page.locator("[data-edit-avatar] .member-avatar.is-initials-avatar")).toHaveCount(0);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
 test("account protection expands recovery actions without closing the profile register", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
@@ -1477,14 +1544,14 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.1 · Build 71", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.2 · Build 72", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.1");
-    expect(report).toContain("Build: 71");
+    expect(report).toContain("App-Version: 0.7.2");
+    expect(report).toContain("Build: 72");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 

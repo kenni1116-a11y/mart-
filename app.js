@@ -890,6 +890,8 @@ const iconPaths = {
   pill: '<path d="M10 21 4 15a4 4 0 0 1 0-6l5-5a4 4 0 0 1 6 6l-5 5m-3-3 5 5m3-10 5 5"/>',
   spice: '<path d="M8 3h8v5H8V3Zm1 5h6l2 13H7L9 8Zm2 4h2m-3 4h4"/>',
   pencil: '<path d="m4 20 4-1 11-11a2 2 0 0 0-3-3L5 16l-1 4Zm11-14 3 3"/>',
+  image: '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5Zm3 11 3-3 3 3 2-2 3 3M9 8h.01"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h3a6 6 0 0 0 0-12h-3ZM7.5 10h.01M9 6.5h.01M14 6h.01"/>',
   tomato: '<path d="M12 7c4 0 7 3 7 7 0 5-4 8-7 8s-7-3-7-8c0-4 3-7 7-7Zm0 0c-1-2 0-4 2-5m-2 5c1-2 3-2 5-1m-5 1c-2-2-4-2-5-1"/>',
   cucumber: '<path d="M5 15c3-6 8-10 14-10 2 5-1 11-7 15-3 2-7-1-7-5Zm5-1h.01m4-4h.01"/>',
   pepper: '<path d="M8 8c-3 4-1 12 4 12s7-8 4-12c-1-2-2-3-4-3s-3 1-4 3Zm4-3V2m-3 8h6"/>',
@@ -2092,6 +2094,7 @@ let deviceHeartbeatTimer = 0;
 let devicePairingPollTimer = 0;
 let profileRegisterSessionVersion = 0;
 let profileNameSaveInFlight = false;
+let avatarSaveInFlight = false;
 let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
@@ -4550,6 +4553,7 @@ function profileRegisterMarkup() {
             <button class="profile-metal-action" type="button" data-edit-profile-name aria-label="Anzeigename ändern" title="Anzeigename ändern">${icon("pencil")}</button>
           </div>
           <div data-profile-name-editor hidden></div>
+          <div data-avatar-editor hidden></div>
           <button class="account-protection-row" type="button" data-toggle-account-protection aria-expanded="false">
             <span class="account-protection-icon">${currentUser.recoveryReady ? icon("check") : icon("warning")}</span>
             <span class="account-protection-copy">
@@ -4606,6 +4610,118 @@ function setProfileNameEditing(isEditing) {
   `;
   const input = editor.querySelector("#profileNameInput");
   window.setTimeout(() => input?.focus(), 0);
+}
+
+function avatarColorChoiceFor(avatarUrl) {
+  const paletteId = String(avatarUrl ?? "").match(/^initials:([a-z0-9-]+)$/i)?.[1] ?? "";
+  return MartAvatarLogic.avatarColorChoices.find((choice) => choice.id === paletteId) ?? null;
+}
+
+function avatarEditorMarkup() {
+  const swatches = MartAvatarLogic.avatarColorChoices.map((choice) => `
+    <button class="avatar-palette-swatch" type="button" data-avatar-palette="${choice.id}" aria-label="Initialenfarbe auswählen" title="Initialenfarbe auswählen" style="--avatar-color: ${choice.color}"></button>
+  `).join("");
+  return `
+    <div class="profile-avatar-editor-surface">
+      <input type="file" accept="image/*" data-avatar-file hidden>
+      <div class="profile-avatar-editor-actions">
+        <button type="button" data-choose-avatar-photo>${icon("image")} Foto auswählen</button>
+        <button type="button" data-choose-avatar-initials>${icon("palette")} Initialen gestalten</button>
+        <button class="is-danger" type="button" data-remove-avatar>${icon("trash")} Avatar entfernen</button>
+      </div>
+      <div class="avatar-palette-options" data-avatar-palette-options hidden aria-label="Initialenfarbe wählen">
+        ${swatches}
+      </div>
+      <p class="profile-avatar-status" data-avatar-status role="status" aria-live="polite"></p>
+    </div>
+  `;
+}
+
+function setAvatarEditorOpen(isOpen) {
+  const editor = elements.profileRegisterContent.querySelector("[data-avatar-editor]");
+  if (!editor || (isOpen && avatarSaveInFlight)) return;
+  editor.hidden = !isOpen;
+  if (!isOpen) {
+    editor.innerHTML = "";
+    return;
+  }
+  editor.innerHTML = avatarEditorMarkup();
+}
+
+function setAvatarEditorBusy(isBusy) {
+  elements.profileRegisterContent.querySelectorAll("[data-avatar-editor] button, [data-avatar-editor] input").forEach((control) => {
+    control.disabled = isBusy;
+  });
+  const avatarButton = elements.profileRegisterContent.querySelector("[data-edit-avatar]");
+  if (avatarButton) avatarButton.disabled = isBusy;
+}
+
+function avatarStatusMessage(error) {
+  if (error?.message === "avatar_upload_unavailable") {
+    return "Foto-Upload ist noch nicht verfügbar. Das Bild wurde nicht gespeichert.";
+  }
+  if (/image_(decode|dimensions|encode)|canvas_/i.test(error?.message ?? "")) {
+    return "Das Foto konnte nicht gelesen oder verarbeitet werden.";
+  }
+  return "Der Avatar konnte gerade nicht synchronisiert werden.";
+}
+
+async function saveProfileAvatar(resolveAvatarUrl) {
+  if (avatarSaveInFlight || !isActivationReady()) return false;
+  const status = elements.profileRegisterContent.querySelector("[data-avatar-status]");
+  avatarSaveInFlight = true;
+  setAvatarEditorBusy(true);
+  if (status) status.textContent = "Avatar wird gespeichert …";
+  try {
+    const avatarUrl = await resolveAvatarUrl();
+    if (typeof avatarUrl !== "string") throw new Error("avatar_upload_unavailable");
+    const nextUser = { ...currentUser, avatarUrl };
+    let profileResult;
+    try {
+      profileResult = await collaborationService.upsertProfile?.(nextUser);
+    } catch {
+      profileResult = { ok: false };
+    }
+    if (profileResult?.ok === false) throw new Error("avatar_profile_sync_failed");
+
+    currentUser = nextUser;
+    saveCurrentUser();
+    lists.forEach((listData) => {
+      const member = memberFor(listData, currentUser.userId);
+      if (member) member.avatarUrl = currentUser.avatarUrl;
+      listData.items.forEach((item) => {
+        if (item.addedByUserId === currentUser.userId) item.addedByAvatarUrl = currentUser.avatarUrl;
+      });
+    });
+    save();
+    updatePresence();
+    render();
+    const avatarButton = elements.profileRegisterContent.querySelector("[data-edit-avatar]");
+    if (avatarButton) avatarButton.innerHTML = memberAvatarMarkup(currentUser, "is-current");
+    setAvatarEditorOpen(false);
+    return true;
+  } catch (error) {
+    if (status) status.textContent = avatarStatusMessage(error);
+    return false;
+  } finally {
+    avatarSaveInFlight = false;
+    setAvatarEditorBusy(false);
+  }
+}
+
+async function selectAvatarPhoto(file) {
+  if (!file) return;
+  await saveProfileAvatar(async () => {
+    const avatarFile = await MartAvatarLogic.resizeAvatarFile(file);
+    if (typeof collaborationService.uploadAvatar !== "function") {
+      throw new Error("avatar_upload_unavailable");
+    }
+    const uploadResult = await collaborationService.uploadAvatar(avatarFile, currentUser.userId);
+    if (!uploadResult?.ok || typeof uploadResult.url !== "string") {
+      throw new Error("avatar_upload_failed");
+    }
+    return uploadResult.url;
+  });
 }
 
 function setAccountProtectionExpanded(isExpanded) {
@@ -5923,8 +6039,13 @@ function memberBadgeLabel(member) {
 function memberAvatarMarkup(member, extraClass = "") {
   const label = memberBadgeLabel(member);
   const title = escapeText(`${cleanDisplayName(member?.displayName, "Gast")} · ${roleLabels[member?.role] ?? "Editor"}`);
-  if (member?.avatarUrl) {
-    return `<span class="member-avatar ${extraClass}" title="${title}"><img src="${escapeText(member.avatarUrl)}" alt="${title}"></span>`;
+  const avatarUrl = typeof member?.avatarUrl === "string" ? member.avatarUrl : "";
+  const colorChoice = avatarColorChoiceFor(avatarUrl);
+  if (colorChoice) {
+    return `<span class="member-avatar is-initials-avatar ${extraClass}" title="${title}" style="--avatar-color: ${colorChoice.color}">${label}</span>`;
+  }
+  if (avatarUrl) {
+    return `<span class="member-avatar ${extraClass}" title="${title}"><img src="${escapeText(avatarUrl)}" alt="${title}"></span>`;
   }
   return `<span class="member-avatar ${extraClass}" title="${title}">${label}</span>`;
 }
@@ -6615,6 +6736,29 @@ elements.modalContent.addEventListener("keydown", (event) => {
   }
 });
 elements.profileRegisterContent.addEventListener("click", (event) => {
+  if (event.target.closest("[data-edit-avatar]")) {
+    const editor = elements.profileRegisterContent.querySelector("[data-avatar-editor]");
+    setAvatarEditorOpen(editor?.hidden !== false);
+    return;
+  }
+  if (event.target.closest("[data-choose-avatar-photo]")) {
+    elements.profileRegisterContent.querySelector("[data-avatar-file]")?.click();
+    return;
+  }
+  if (event.target.closest("[data-choose-avatar-initials]")) {
+    const choices = elements.profileRegisterContent.querySelector("[data-avatar-palette-options]");
+    if (choices) choices.hidden = !choices.hidden;
+    return;
+  }
+  const paletteButton = event.target.closest("[data-avatar-palette]");
+  if (paletteButton) {
+    saveProfileAvatar(async () => `initials:${paletteButton.dataset.avatarPalette}`);
+    return;
+  }
+  if (event.target.closest("[data-remove-avatar]")) {
+    saveProfileAvatar(async () => "");
+    return;
+  }
   if (event.target.closest("[data-retry-profile-pairing]")) {
     loadProfilePairing();
     return;
@@ -6675,6 +6819,11 @@ elements.profileRegisterContent.addEventListener("click", (event) => {
   if (approvePairingButton) {
     approveDevicePairing(approvePairingButton.dataset.approveDevicePairing, profileRegisterSessionVersion);
     return;
+  }
+});
+elements.profileRegisterContent.addEventListener("change", (event) => {
+  if (event.target.matches("[data-avatar-file]")) {
+    selectAvatarPhoto(event.target.files?.[0]);
   }
 });
 elements.profileRegisterContent.addEventListener("keydown", (event) => {

@@ -3610,6 +3610,80 @@ button.sync-chip:hover {
   line-height: 1.4;
 }
 
+.profile-avatar-editor-surface {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(182, 202, 220, 0.24);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(86, 105, 124, 0.34), rgba(20, 27, 35, 0.76));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 12px 24px rgba(0, 0, 0, 0.16);
+}
+
+.profile-avatar-editor-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-avatar-editor-actions button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--gm-line);
+  border-radius: 6px;
+  background: var(--gm-glass);
+  color: var(--gm-text);
+  font: inherit;
+  font-weight: 620;
+  text-align: left;
+}
+
+.profile-avatar-editor-actions button.is-danger {
+  color: #efb4b2;
+}
+
+.profile-avatar-editor-actions svg {
+  width: 18px;
+  height: 18px;
+}
+
+.avatar-palette-options {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(44px, 1fr));
+  gap: 8px;
+}
+
+.avatar-palette-options[hidden] {
+  display: none;
+}
+
+.avatar-palette-swatch {
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid rgba(238, 243, 248, 0.64);
+  border-radius: 50%;
+  background: var(--avatar-color);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.profile-avatar-status {
+  min-height: 1.2rem;
+  margin: 0;
+  color: var(--gm-muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.member-avatar.is-initials-avatar {
+  background: var(--avatar-color);
+  color: #fff;
+}
+
 .account-protection-row {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) 24px;

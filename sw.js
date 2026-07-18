@@ -12,6 +12,7 @@ const ASSETS = [
   "./account-logic.js",
   "./sync-logic.js",
   "./app-logic.js",
+  "./avatar-logic.js",
   "./product-icon-assets.js",
   "./app.js",
   "./manifest.json",
