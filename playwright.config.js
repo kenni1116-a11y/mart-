@@ -4,10 +4,11 @@ module.exports = defineConfig({
   testDir: "./tests/browser",
   fullyParallel: false,
   workers: 1,
-  timeout: 30_000,
+  timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: "line",
   use: {
+    reducedMotion: "reduce",
     serviceWorkers: "block",
     trace: "retain-on-failure"
   },

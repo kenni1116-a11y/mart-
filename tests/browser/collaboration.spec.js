@@ -2136,6 +2136,8 @@ test("share and market dialogs stay contained at mobile and desktop widths", asy
         await page.setViewportSize({ width, height: width === 1280 ? 900 : 874 });
         await waitForReady(page);
         await page.locator("[data-empty-add-list]").click();
+        await expect(page.locator("[data-share-list]")).toBeVisible();
+        await waitForStableElement(page, ".note-card");
 
         await page.locator("[data-share-list]").click();
         await expect(page.getByRole("heading", { name: "Zettel teilen" })).toBeVisible();
