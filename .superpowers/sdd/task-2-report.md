@@ -58,3 +58,85 @@ Result: exit code `0`; `73` unit tests passed and `16` WebKit browser tests pass
 
 - No known implementation concerns.
 - SQL integration tests were not run locally; they are a separately configured CI database job and no local database URL was supplied.
+
+## Review Findings Fixes (2026-07-18)
+
+### RED Evidence
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "mirrored right register"
+```
+
+Exit code `1`. The browser assertion expected `env(safe-area-inset-right` in the profile register padding but received `calc(env(safe-area-inset-top, 0px) + 58px) 22px calc(env(safe-area-inset-bottom, 0px) + 28px) 54px`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "44px targets"
+```
+
+Exit code `1`. The browser measured undersized controls in the register: `Speichern` and recovery actions at `38px`, `Verwalten` and pairing approval at `36px`, and device rename/remove at `30px`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "delayed pairing"
+```
+
+Exit code `1`. After closing the register and releasing the delayed `create_device_pairing` RPC, `[data-device-pairing]` was rendered in the closed register (expected count `0`, received `1`).
+
+### GREEN Evidence
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "mirrored right register"
+```
+
+Exit code `0`; `1 passed (3.0s)`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "44px targets"
+```
+
+Exit code `0`; `1 passed (1.7s)`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "delayed pairing"
+```
+
+Exit code `0`; `1 passed (5.4s)`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "remain exclusive"
+```
+
+Exit code `0`; `1 passed (7.3s)`. This also verifies the existing modal pairing flow remains available.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit
+```
+
+Playwright recorded `{"status":"passed","failedTests":[]}` in `test-results/.last-run.json` after all `19` browser tests completed.
+
+```bash
+PATH=/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH /Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm verify
+```
+
+The first full-suite attempt passed all `73` unit tests but hit a timing-sensitive failure in the existing multi-context test `isolated contexts converge item mutations, preserve owner/member deletion roles, and show one centered empty action` at `tests/browser/collaboration.spec.js:1089`. Its exact focused replay was green:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "isolated contexts converge item mutations"
+```
+
+Exit code `0`; `1 passed (3.5s)`.
+
+The final full-verification retry exited `0`. Output: `73` unit tests passed; syntax checks and `git diff --check` completed before the browser phase; Playwright completed all `19` WebKit browser tests with `{"status":"passed","failedTests":[]}`.
+
+### Files Changed
+
+- `app.js`
+- `styles.css`
+- `tests/browser/collaboration.spec.js`
+- `.superpowers/sdd/task-2-report.md`
+
+### Self-Review
+
+- The right register now includes `env(safe-area-inset-right)` in its right padding; the existing 32px left mask fade is unchanged, and browser coverage verifies scrolling behavior.
+- All buttons and inputs rendered inside `#profileRegisterContent` measure at least `44x44` CSS pixels. The device-row grid override is scoped to the profile register, leaving compact controls in other surfaces unchanged.
+- Closing or superseding the profile register increments a session version. Profile pairing checks that version and open state after each await before rendering or scheduling another poll. The modal pairing path uses its existing unguarded modal behavior and is exercised by browser coverage.
+- Browser coverage verifies QR, device rename/remove, and account deletion visibility; register exclusivity; close button, scrim, Escape, and modal transitions; safe-area/scrolling; target dimensions; and the delayed pairing-close race.

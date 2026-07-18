@@ -2088,6 +2088,7 @@ let presenceTimer = 0;
 let refreshTimer = 0;
 let deviceHeartbeatTimer = 0;
 let devicePairingPollTimer = 0;
+let profileRegisterSessionVersion = 0;
 let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
@@ -4619,11 +4620,13 @@ async function loadProfileDevices() {
 }
 
 async function loadProfilePairing() {
+  const profileSessionVersion = profileRegisterSessionVersion;
+  if (!isProfileRegisterSessionActive(profileSessionVersion)) return;
   const panel = elements.profileRegisterContent.querySelector("[data-profile-pairing]");
   if (!panel) return;
   try {
     const result = await collaborationService.createDevicePairing?.();
-    if (!panel.isConnected) return;
+    if (!isProfileRegisterSessionActive(profileSessionVersion) || !panel.isConnected) return;
     if (!result?.ok) {
       panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(result))}</p><button type="button" class="profile-section-action" data-retry-profile-pairing>Erneut versuchen</button>`;
       return;
@@ -4646,9 +4649,9 @@ async function loadProfilePairing() {
         </div>
       </div>
     `;
-    pollOwnerPairing(result.pairingId);
+    pollOwnerPairing(result.pairingId, profileSessionVersion);
   } catch (error) {
-    if (panel.isConnected) panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(error))}</p><button type="button" class="profile-section-action" data-retry-profile-pairing>Erneut versuchen</button>`;
+    if (isProfileRegisterSessionActive(profileSessionVersion) && panel.isConnected) panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(error))}</p><button type="button" class="profile-section-action" data-retry-profile-pairing>Erneut versuchen</button>`;
   }
 }
 
@@ -4992,14 +4995,22 @@ async function copyPairingLink() {
 
 function schedulePairingPoll(callback) {
   if (devicePairingPollTimer) window.clearTimeout(devicePairingPollTimer);
-  devicePairingPollTimer = window.setTimeout(callback, 1600);
+  devicePairingPollTimer = window.setTimeout(() => {
+    devicePairingPollTimer = 0;
+    callback();
+  }, 1600);
 }
 
-async function pollOwnerPairing(pairingId) {
-  const panel = elements.profileRegisterContent.querySelector(`[data-device-pairing="${pairingId}"]`) ?? elements.modalContent.querySelector(`[data-device-pairing="${pairingId}"]`);
+async function pollOwnerPairing(pairingId, profileSessionVersion = null) {
+  const isProfilePairing = profileSessionVersion !== null;
+  if (isProfilePairing && !isProfileRegisterSessionActive(profileSessionVersion)) return;
+  const panel = isProfilePairing
+    ? elements.profileRegisterContent.querySelector(`[data-device-pairing="${pairingId}"]`)
+    : (elements.profileRegisterContent.querySelector(`[data-device-pairing="${pairingId}"]`) ?? elements.modalContent.querySelector(`[data-device-pairing="${pairingId}"]`));
   if (!panel) return;
   const statusElement = panel.querySelector("[data-pairing-status]");
   const result = await collaborationService.devicePairingStatus?.(pairingId);
+  if (isProfilePairing && (!isProfileRegisterSessionActive(profileSessionVersion) || !panel.isConnected)) return;
   if (!result?.ok) {
     if (statusElement) statusElement.textContent = accountFlowError(result);
     return;
@@ -5012,7 +5023,7 @@ async function pollOwnerPairing(pairingId) {
         <button type="button" data-approve-device-pairing="${escapeText(pairingId)}">Gerät bestätigen</button>
       `;
     }
-    schedulePairingPoll(() => pollOwnerPairing(pairingId));
+    schedulePairingPoll(() => pollOwnerPairing(pairingId, profileSessionVersion));
     return;
   }
   if (result.status === "approved") {
@@ -5023,7 +5034,7 @@ async function pollOwnerPairing(pairingId) {
     if (statusElement) statusElement.textContent = result.status === "expired" ? "Der QR-Code ist abgelaufen." : "Verbindung abgebrochen.";
     return;
   }
-  schedulePairingPoll(() => pollOwnerPairing(pairingId));
+  schedulePairingPoll(() => pollOwnerPairing(pairingId, profileSessionVersion));
 }
 
 async function approveDevicePairing(pairingId) {
@@ -6260,9 +6271,12 @@ function setOptionsRegisterOpen(isOpen) {
 }
 
 function stopProfilePairing() {
-  if (!devicePairingPollTimer) return;
-  window.clearTimeout(devicePairingPollTimer);
+  if (devicePairingPollTimer) window.clearTimeout(devicePairingPollTimer);
   devicePairingPollTimer = 0;
+}
+
+function isProfileRegisterSessionActive(sessionVersion) {
+  return sessionVersion === profileRegisterSessionVersion && elements.profileRegister.classList.contains("is-open");
 }
 
 function closeSideRegisters() {
@@ -6272,6 +6286,7 @@ function closeSideRegisters() {
 
 function setProfileRegisterOpen(isOpen) {
   if (isOpen) setOptionsRegisterOpen(false);
+  profileRegisterSessionVersion += 1;
   elements.profileRegister.classList.toggle("is-open", isOpen);
   elements.profileRegisterScrim.classList.toggle("is-open", isOpen);
   elements.profileRegister.setAttribute("aria-hidden", String(!isOpen));

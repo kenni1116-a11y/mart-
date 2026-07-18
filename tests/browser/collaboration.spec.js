@@ -432,18 +432,137 @@ test("profile opens as a mirrored right register", async ({ browser }) => {
     const material = await register.evaluate((element) => {
       const style = getComputedStyle(element);
       const box = element.getBoundingClientRect();
+      const rule = Array.from(document.styleSheets)
+        .flatMap((sheet) => Array.from(sheet.cssRules ?? []))
+        .find((candidate) => candidate.selectorText === ".profile-register");
       return {
         right: Math.abs(window.innerWidth - box.right),
         borderLeft: Number.parseFloat(style.borderLeftWidth),
         shadow: style.boxShadow,
-        mask: style.maskImage || style.webkitMaskImage
+        mask: style.maskImage || style.webkitMaskImage,
+        overflowY: style.overflowY,
+        padding: rule?.style.getPropertyValue("padding") ?? ""
       };
     });
     expect(material.right).toBeLessThanOrEqual(1);
     expect(material.borderLeft).toBe(0);
     expect(material.shadow).toBe("none");
     expect(material.mask).toContain("linear-gradient");
+    expect(material.overflowY).toBe("auto");
+    expect(material.padding).toContain("env(safe-area-inset-right");
+
+    await register.locator("#profileRegisterContent").evaluate((content) => {
+      content.insertAdjacentHTML("beforeend", '<div style="height: 1400px" data-register-scroll-probe></div>');
+    });
+    await register.evaluate((element) => { element.scrollTop = 900; });
+    await expect.poll(() => register.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("profile register exposes account controls at 44px targets", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    await expect(visitor.page.locator("#profileRegister .device-qr")).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Verwalten", exact: true })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Gerät benennen" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Gerät entfernen" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Account löschen", exact: true })).toBeVisible();
+
+    const undersized = await visitor.page.locator("#profileRegisterContent button, #profileRegisterContent input").evaluateAll((controls) => controls
+      .map((control) => {
+        const box = control.getBoundingClientRect();
+        return { label: control.getAttribute("aria-label") || control.textContent.trim() || control.id, width: box.width, height: box.height };
+      })
+      .filter((control) => control.width < 44 || control.height < 44));
+    expect(undersized).toEqual([]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("profile and options registers remain exclusive and close on every register path", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    const profile = visitor.page.locator("#profileRegister");
+    const options = visitor.page.locator("#topOptions");
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await expect(profile).toBeVisible();
+    await visitor.page.locator("#topMenuButton").dispatchEvent("click");
+    await expect(options).toBeVisible();
+    await expect(profile).toBeHidden();
+
+    await visitor.page.locator("#accountButton").dispatchEvent("click");
+    await expect(profile).toBeVisible();
+    await expect(options).toBeHidden();
+    await visitor.page.locator("#profileRegisterCloseButton").click();
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await expect(profile).toBeVisible();
+    await visitor.page.locator("#profileRegisterCloseButton").click();
+    await expect(profile).toBeHidden();
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await visitor.page.locator("#profileRegisterScrim").click({ position: { x: 2, y: 2 } });
+    await expect(profile).toBeHidden();
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await visitor.page.keyboard.press("Escape");
+    await expect(profile).toBeHidden();
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await visitor.page.getByRole("button", { name: "Verwalten", exact: true }).click();
+    await expect(visitor.page.getByRole("heading", { name: "Geräte" })).toBeVisible();
+    await expect(profile).toBeHidden();
+    await visitor.page.getByRole("button", { name: "Gerät hinzufügen", exact: true }).click();
+    await expect(visitor.page.getByRole("heading", { name: "Gerät hinzufügen" })).toBeVisible();
+    await expect(visitor.page.locator("#modalContent [data-device-pairing]")).toBeVisible();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("closing the profile register prevents a delayed pairing from rendering or polling", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let releasePairing;
+  let pairingStatusRequests = 0;
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "create_device_pairing") {
+        await new Promise((resolve) => { releasePairing = resolve; });
+      }
+      if (payload.action === "rpc" && payload.args?.name === "get_device_pairing_status_v3") pairingStatusRequests += 1;
+      await route.continue();
+    });
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await expect.poll(() => Boolean(releasePairing)).toBe(true);
+    await visitor.page.locator("#profileRegisterCloseButton").click();
+    await expect(visitor.page.locator("#profileRegister")).toBeHidden();
+    releasePairing();
+
+    await visitor.page.waitForTimeout(1800);
+    await expect(visitor.page.locator("#profileRegister [data-device-pairing]")).toHaveCount(0);
+    expect(pairingStatusRequests).toBe(0);
+  } finally {
+    releasePairing?.();
     await visitor.context.close();
     await server.close();
   }
