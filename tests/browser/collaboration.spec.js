@@ -557,10 +557,61 @@ test("compact account editor retains the input and shows an inline error when sy
     await page.locator("[data-save-profile-name]").click();
 
     await expect(nameInput).toHaveValue("Ken Offline");
+    await expect(nameInput).toBeEnabled();
     await expect(page.locator("[data-profile-name-status]")).toContainText("Der Name konnte gerade nicht synchronisiert werden.");
     await expect(page.locator("[data-profile-display-name]")).toHaveText("Test 1");
     await expect(page.locator("#profileRegister")).toBeVisible();
   } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("compact account editor serializes an unresolved profile name save", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  const profileRequestNames = [];
+  const releaseProfileResponses = [];
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        profileRequestNames.push(payload.args.args?.display_name);
+        await new Promise((resolve) => { releaseProfileResponses.push(resolve); });
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: { ok: true }, error: null })
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-profile-name]").click();
+    const nameInput = page.locator("#profileNameInput");
+    const saveButton = page.locator("[data-save-profile-name]");
+    await nameInput.fill("Ken Akzeptiert");
+    await saveButton.click();
+    await expect.poll(() => releaseProfileResponses.length).toBe(1);
+
+    await nameInput.evaluate((input) => {
+      input.value = "Ken Veraltet";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await saveButton.dispatchEvent("click");
+    await page.waitForTimeout(250);
+
+    expect(profileRequestNames).toEqual(["Ken Akzeptiert"]);
+    await expect(nameInput).toBeDisabled();
+    releaseProfileResponses[0]();
+    await expect(page.locator("[data-profile-display-name]")).toHaveText("Ken Akzeptiert");
+    await expect(page.locator("#profileNameInput")).toBeHidden();
+  } finally {
+    releaseProfileResponses.forEach((release) => release());
     await visitor.context.close();
     await server.close();
   }

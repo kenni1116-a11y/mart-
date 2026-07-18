@@ -2091,6 +2091,7 @@ let refreshTimer = 0;
 let deviceHeartbeatTimer = 0;
 let devicePairingPollTimer = 0;
 let profileRegisterSessionVersion = 0;
+let profileNameSaveInFlight = false;
 let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
@@ -4615,7 +4616,7 @@ function setAccountProtectionExpanded(isExpanded) {
 }
 
 async function saveProfileName() {
-  if (!isActivationReady()) return;
+  if (profileNameSaveInFlight || !isActivationReady()) return;
   const nameInput = elements.profileRegisterContent.querySelector("#profileNameInput");
   const status = elements.profileRegisterContent.querySelector("[data-profile-name-status]");
   if (!nameInput) return;
@@ -4625,35 +4626,42 @@ async function saveProfileName() {
     displayName: cleanDisplayName(nameInput.value, currentUser.displayName)
   };
   const actions = elements.profileRegisterContent.querySelectorAll("[data-save-profile-name], [data-cancel-profile-name]");
+  profileNameSaveInFlight = true;
+  nameInput.disabled = true;
   actions.forEach((button) => { button.disabled = true; });
   if (status) status.textContent = "Name wird gespeichert …";
-  let profileResult;
   try {
-    profileResult = await collaborationService.upsertProfile?.(nextUser);
-  } catch {
-    profileResult = { ok: false };
-  }
-  if (profileResult?.ok === false) {
-    actions.forEach((button) => { button.disabled = false; });
-    if (status) status.textContent = "Der Name konnte gerade nicht synchronisiert werden.";
-    return;
-  }
+    let profileResult;
+    try {
+      profileResult = await collaborationService.upsertProfile?.(nextUser);
+    } catch {
+      profileResult = { ok: false };
+    }
+    if (profileResult?.ok === false) {
+      nameInput.disabled = false;
+      actions.forEach((button) => { button.disabled = false; });
+      if (status) status.textContent = "Der Name konnte gerade nicht synchronisiert werden.";
+      return;
+    }
 
-  currentUser = nextUser;
-  saveCurrentUser();
-  lists.forEach((listData) => {
-    const member = memberFor(listData, currentUser.userId);
-    if (member) member.displayName = currentUser.displayName;
-    listData.items.forEach((item) => {
-      if (item.addedByUserId === currentUser.userId) item.addedByDisplayName = currentUser.displayName;
+    currentUser = nextUser;
+    saveCurrentUser();
+    lists.forEach((listData) => {
+      const member = memberFor(listData, currentUser.userId);
+      if (member) member.displayName = currentUser.displayName;
+      listData.items.forEach((item) => {
+        if (item.addedByUserId === currentUser.userId) item.addedByDisplayName = currentUser.displayName;
+      });
     });
-  });
-  save();
-  updatePresence();
-  render();
-  const displayName = elements.profileRegisterContent.querySelector("[data-profile-display-name]");
-  if (displayName) displayName.textContent = currentUser.displayName;
-  setProfileNameEditing(false);
+    save();
+    updatePresence();
+    render();
+    const displayName = elements.profileRegisterContent.querySelector("[data-profile-display-name]");
+    if (displayName) displayName.textContent = currentUser.displayName;
+    setProfileNameEditing(false);
+  } finally {
+    profileNameSaveInFlight = false;
+  }
 }
 
 function accountDeviceRowsMarkup(devices) {

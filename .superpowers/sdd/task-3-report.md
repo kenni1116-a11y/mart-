@@ -97,3 +97,73 @@ During the first full browser run, one existing Graphite dialog assertion failed
 
 - No known implementation concerns.
 - Avatar selection and storage are intentionally deferred to Task 4; its button is present but has no action handler.
+
+## Review Fix: Serialized Profile Name Saves (2026-07-18)
+
+### Finding Verification
+
+The review finding reproduced in the current implementation. While the first `update_account_profile` request was deliberately held open, the name input remained enabled. Changing its value and dispatching Enter started a second request with the newer text, so two unresolved saves could complete out of order and overwrite each other's local result.
+
+### RED Evidence
+
+Added the focused browser regression before changing `app.js`:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "serializes an unresolved profile name save"
+```
+
+Exit code `1`; `1` test failed. The intercepted profile requests were expected to equal `["Ken Akzeptiert"]` but instead equaled `["Ken Akzeptiert", "Ken Veraltet"]`, directly demonstrating the parallel upsert.
+
+### Implementation
+
+- Added the application-level `profileNameSaveInFlight` guard and checked it before reading or submitting editor state.
+- Disabled `#profileNameInput` together with save/cancel controls before the first asynchronous operation.
+- Kept the guard active through the complete save path and released it in `finally`, so synthetic Enter/Done or click events cannot launch another save while the request is unresolved.
+- Re-enabled the input and controls when synchronization fails, preserving the entered value and existing inline error.
+- Extended the failed-sync browser case to assert that the retained input is enabled for retry.
+- Added a delayed-RPC regression that dispatches both Enter and the save click during the unresolved request, verifies exactly one accepted request, and confirms the accepted name remains final.
+
+### GREEN Evidence
+
+Focused race regression:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "serializes an unresolved profile name save"
+```
+
+Exit code `0`; `1 passed (2.7s)`.
+
+Focused Task 3 suite:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "compact account|account protection"
+```
+
+Exit code `0`; `4 passed (6.1s)`.
+
+Full verification:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test tests/*.test.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check app.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check app-logic.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check sw.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check supabase-config.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check tests/browser/collaboration.spec.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check tests/startup-wiring.test.js
+git diff --check
+```
+
+Results: exit code `0`; `74` unit tests passed, `25` WebKit browser tests passed, all six JavaScript syntax checks passed, and `git diff --check` was clean.
+
+### Review Fix Files
+
+- `app.js`
+- `tests/browser/collaboration.spec.js`
+- `.superpowers/sdd/task-3-report.md`
+
+### Review Fix Concerns
+
+- No known concerns.
+- Avatar behavior remains unchanged and deferred to Task 4.
