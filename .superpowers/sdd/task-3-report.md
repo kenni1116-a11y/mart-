@@ -167,3 +167,72 @@ Results: exit code `0`; `74` unit tests passed, `25` WebKit browser tests passed
 
 - No known concerns.
 - Avatar behavior remains unchanged and deferred to Task 4.
+
+## Second Review Fix: Locked Profile Editor Entry (2026-07-18)
+
+### Finding Verification
+
+The outer `[data-edit-profile-name]` pencil remained enabled during an unresolved name save. Dispatching its click rebuilt `[data-profile-name-editor]`; when the request later failed, `saveProfileName()` restored the detached original input and status rather than the visible replacement editor.
+
+### RED Evidence
+
+Extended the existing delayed-save regression before changing `app.js`:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "locks and serializes an unresolved profile name save"
+```
+
+Exit code `1`; `1` test failed. After the pending-save pencil click, the visible `#profileNameInput` no longer had the original editor marker (`data-save-editor="original"`), proving that the editor had been rebuilt.
+
+### Implementation
+
+- Made `setProfileNameEditing(true)` return while `profileNameSaveInFlight` is active, preventing the editor host from being rebuilt by real or synthetic pencil clicks.
+- Disabled the outer edit pencil before the profile upsert starts.
+- Restored the pencil from the save's existing `finally` block, covering success, returned synchronization failure, and thrown completion paths.
+- Extended the delayed-RPC test to click the pencil while saving, verify the same marked input stays disabled, then reject the request and verify that exact input is re-enabled with its original text and inline error.
+- Retained the prior Enter/check serialization assertions and left avatar behavior unchanged.
+
+### GREEN Evidence
+
+Focused editor-lock regression:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "locks and serializes an unresolved profile name save"
+```
+
+Exit code `0`; `1 passed (3.2s)`.
+
+Focused Task 3 suite:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "compact account|account protection"
+```
+
+Exit code `0`; `4 passed (6.6s)`.
+
+Full verification:
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test tests/*.test.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check app.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check app-logic.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check sw.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check supabase-config.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check tests/browser/collaboration.spec.js
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check tests/startup-wiring.test.js
+git diff --check
+```
+
+Results: exit code `0`; `74` unit tests passed, `25` WebKit browser tests passed, all six JavaScript syntax checks passed, and `git diff --check` was clean.
+
+### Second Review Fix Files
+
+- `app.js`
+- `tests/browser/collaboration.spec.js`
+- `.superpowers/sdd/task-3-report.md`
+
+### Second Review Fix Concerns
+
+- No known concerns.
+- Task 4 and avatar behavior remain unchanged.

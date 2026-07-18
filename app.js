@@ -4588,6 +4588,7 @@ function profileRegisterMarkup() {
 }
 
 function setProfileNameEditing(isEditing) {
+  if (isEditing && profileNameSaveInFlight) return;
   const editor = elements.profileRegisterContent.querySelector("[data-profile-name-editor]");
   if (!editor) return;
   editor.hidden = !isEditing;
@@ -4626,8 +4627,10 @@ async function saveProfileName() {
     displayName: cleanDisplayName(nameInput.value, currentUser.displayName)
   };
   const actions = elements.profileRegisterContent.querySelectorAll("[data-save-profile-name], [data-cancel-profile-name]");
+  const editButton = elements.profileRegisterContent.querySelector("[data-edit-profile-name]");
   profileNameSaveInFlight = true;
   nameInput.disabled = true;
+  if (editButton) editButton.disabled = true;
   actions.forEach((button) => { button.disabled = true; });
   if (status) status.textContent = "Name wird gespeichert …";
   try {
@@ -4661,6 +4664,7 @@ async function saveProfileName() {
     setProfileNameEditing(false);
   } finally {
     profileNameSaveInFlight = false;
+    if (editButton?.isConnected) editButton.disabled = false;
   }
 }
 
