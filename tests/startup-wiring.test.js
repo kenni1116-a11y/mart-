@@ -179,6 +179,18 @@ test("profile register wires compact identity editing and expandable account pro
   assert.doesNotMatch(saveBody, /closeSideRegisters\(\)/);
 });
 
+test("avatar profile writes require explicit success and use the Task 5 upload contract", () => {
+  const app = read("app.js");
+  const saveStart = app.indexOf("async function saveProfileAvatar");
+  const saveEnd = app.indexOf("function setAccountProtectionExpanded", saveStart);
+  const saveBody = app.slice(saveStart, saveEnd);
+
+  assert.match(saveBody, /profileResult\?\.ok !== true/);
+  assert.match(saveBody, /uploadResult\.avatarUrl/);
+  assert.doesNotMatch(saveBody, /uploadResult\.url/);
+  assert.ok(saveBody.indexOf("profileResult?.ok !== true") < saveBody.indexOf("currentUser = nextUser"));
+});
+
 test("list deletion and the zero-list state cannot resurrect cached notes", () => {
   const app = read("app.js");
   const styles = read("styles.css");

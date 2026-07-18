@@ -54,3 +54,27 @@ test("resizeAvatarFile scales wide images and requests compact WebP output", asy
   assert.ok(encodeCalls.every((call) => call.quality >= 0.58));
   assert.ok(encodeCalls.every((call) => call.width === 512 && call.height === 341));
 });
+
+test("resizeAvatarFile tries the complete quality sequence and keeps the smallest fallback", async () => {
+  const MartAvatarLogic = loadAvatarLogic();
+  const qualities = [];
+  const sizes = [310, 280, 260, 250, 230].map((kilobytes) => kilobytes * 1024);
+  const canvas = {
+    getContext() {
+      return { drawImage() {} };
+    }
+  };
+
+  const result = await MartAvatarLogic.resizeAvatarFile({ type: "image/jpeg" }, {
+    targetBytes: 200 * 1024,
+    decodeImage: async () => ({ width: 600, height: 600, close() {} }),
+    createCanvas: () => canvas,
+    encodeCanvas: async (_canvas, type, quality) => {
+      qualities.push(quality);
+      return new Blob([new Uint8Array(sizes[qualities.length - 1])], { type });
+    }
+  });
+
+  assert.deepEqual(qualities, [0.86, 0.78, 0.7, 0.62, 0.58]);
+  assert.equal(result.size, 230 * 1024);
+});

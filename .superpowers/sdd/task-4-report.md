@@ -35,3 +35,26 @@
 ## Concerns
 
 - Photo selection intentionally does not persist until Task 5 provides authenticated Supabase Storage upload and deletion methods. The current UI explains this clearly and retains the open editor.
+
+## Review Fixes
+
+- Changed the six palette choices to a responsive 3-by-2 grid so every 44px target remains inside the profile register at a 320px viewport.
+- Completed the resize quality sequence with `0.58` and retained the smallest generated blob when none of the attempts reaches the 200KB target.
+- Required `profileResult?.ok === true` before mutating any local avatar state and aligned the future upload handoff with `{ ok, avatarUrl }`.
+- Replaced separate name and avatar save flags with one serialized profile-write guard. While either write is pending, both editors and all related controls remain locked and restore together.
+- Made `initials:` token detection case-insensitive. Known palette IDs normalize case-insensitively and unknown IDs use the safe default palette; neither path can become an image URL.
+
+## Review RED Evidence
+
+- The resize test showed attempted qualities `0.86, 0.78, 0.70, 0.62, 0.54`, proving that `0.58` was absent.
+- The startup wiring test found the permissive `ok === false` check and the obsolete `uploadResult.url` contract.
+- The delayed name-save browser test showed that avatar controls stayed enabled during the unresolved write.
+- The 320px browser bounds test showed palette swatches extending beyond the profile register.
+- The delayed avatar-save browser test showed that name controls stayed enabled during the unresolved write.
+
+## Review GREEN Evidence
+
+- Focused pure and wiring verification: 15 passed, 0 failed.
+- Focused WebKit regression verification: 3 passed, 0 failed.
+- Full release verification: 78 unit/release tests and 28 WebKit browser tests passed.
+- Syntax checks, cache/release wiring checks, `git diff --check`, and the Pages artifact checks all passed through `pnpm verify`.

@@ -595,6 +595,10 @@ test("compact account editor locks and serializes an unresolved profile name sav
     const nameInput = page.locator("#profileNameInput");
     const saveButton = page.locator("[data-save-profile-name]");
     const editButton = page.locator("[data-edit-profile-name]");
+    const avatarEditButton = page.locator("[data-edit-avatar]");
+    await avatarEditButton.click();
+    await page.locator("[data-choose-avatar-initials]").click();
+    const avatarSwatch = page.locator("[data-avatar-palette]").first();
     await nameInput.fill("Ken Akzeptiert");
     await nameInput.evaluate((input) => { input.dataset.saveEditor = "original"; });
     await saveButton.click();
@@ -604,12 +608,15 @@ test("compact account editor locks and serializes an unresolved profile name sav
     await expect(nameInput).toHaveAttribute("data-save-editor", "original");
     await expect(nameInput).toBeDisabled();
     await expect(editButton).toBeDisabled();
+    await expect(avatarEditButton).toBeDisabled();
+    await expect(avatarSwatch).toBeDisabled();
     await nameInput.evaluate((input) => {
       input.value = "Ken Veraltet";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       input.value = "Ken Akzeptiert";
     });
     await saveButton.dispatchEvent("click");
+    await avatarSwatch.dispatchEvent("click");
     await page.waitForTimeout(250);
 
     expect(profileRequestNames).toEqual(["Ken Akzeptiert"]);
@@ -618,6 +625,8 @@ test("compact account editor locks and serializes an unresolved profile name sav
     await expect(nameInput).toHaveValue("Ken Akzeptiert");
     await expect(nameInput).toHaveAttribute("data-save-editor", "original");
     await expect(editButton).toBeEnabled();
+    await expect(avatarEditButton).toBeEnabled();
+    await expect(avatarSwatch).toBeEnabled();
     await expect(page.locator("[data-profile-name-status]")).toContainText("Der Name konnte gerade nicht synchronisiert werden.");
     await expect(page.locator("[data-profile-display-name]")).toHaveText("Test 1");
   } finally {
@@ -634,6 +643,7 @@ test("avatar choices keep a compact profile surface and render initials tokens e
     const page = visitor.page;
     await page.goto(server.origin);
     await waitForReady(page);
+    await page.setViewportSize({ width: 320, height: 874 });
     await page.locator("[data-empty-add-list]").click();
     await expect(page.locator(".note-card")).toHaveCount(1);
     await page.getByRole("button", { name: "Profil öffnen" }).click();
@@ -661,12 +671,92 @@ test("avatar choices keep a compact profile surface and render initials tokens e
       return { width: box.width, height: box.height };
     }));
     expect(swatchSizes.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
+    const swatchBounds = await swatches.evaluateAll((buttons) => {
+      const register = document.querySelector("#profileRegister").getBoundingClientRect();
+      return buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        return {
+          inside: box.left >= register.left && box.right <= register.right,
+          left: box.left,
+          right: box.right,
+          registerLeft: register.left,
+          registerRight: register.right
+        };
+      });
+    });
+    expect(swatchBounds.every(({ inside }) => inside)).toBe(true);
+
+    const tokenMarkup = await page.evaluate(() => ({
+      normalized: memberAvatarMarkup({ displayName: "Ken Beispiel", role: "editor", avatarUrl: "INITIALS:OCEAN" }),
+      unknown: memberAvatarMarkup({ displayName: "Ken Beispiel", role: "editor", avatarUrl: "initials:not-a-palette" })
+    }));
+    expect(tokenMarkup.normalized).not.toContain("<img");
+    expect(tokenMarkup.normalized).toContain("#2f7792");
+    expect(tokenMarkup.unknown).not.toContain("<img");
+    expect(tokenMarkup.unknown).toContain("#4d5d71");
     await swatches.nth(1).click();
 
     await expect(page.locator("[data-edit-avatar] .member-avatar.is-initials-avatar")).toHaveCount(1);
     await expect(page.locator("[data-edit-avatar] img")).toHaveCount(0);
     await expect(page.locator(".note-card .member-avatar.is-initials-avatar")).toHaveCount(1);
   } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("name and avatar changes share one pending profile write", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  const profileRequests = [];
+  const releaseProfileResponses = [];
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        profileRequests.push(payload.args.args);
+        await new Promise((resolve) => { releaseProfileResponses.push(resolve); });
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: null, error: { message: "sync_failed", code: "server_error" } })
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-profile-name]").click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-choose-avatar-initials]").click();
+    const nameInput = page.locator("#profileNameInput");
+    const nameSave = page.locator("[data-save-profile-name]");
+    const nameEdit = page.locator("[data-edit-profile-name]");
+    const avatarEdit = page.locator("[data-edit-avatar]");
+    const swatch = page.locator("[data-avatar-palette]").first();
+    await nameInput.fill("Darf nicht parallel speichern");
+    await swatch.click();
+    await expect.poll(() => releaseProfileResponses.length).toBe(1);
+
+    await expect(nameInput).toBeDisabled();
+    await expect(nameSave).toBeDisabled();
+    await expect(nameEdit).toBeDisabled();
+    await expect(avatarEdit).toBeDisabled();
+    await nameSave.dispatchEvent("click");
+    await page.waitForTimeout(200);
+    expect(profileRequests).toHaveLength(1);
+
+    releaseProfileResponses[0]();
+    await expect(nameInput).toBeEnabled();
+    await expect(nameSave).toBeEnabled();
+    await expect(nameEdit).toBeEnabled();
+    await expect(avatarEdit).toBeEnabled();
+    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
+  } finally {
+    releaseProfileResponses.forEach((release) => release());
     await visitor.context.close();
     await server.close();
   }

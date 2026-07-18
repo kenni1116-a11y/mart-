@@ -2093,8 +2093,7 @@ let refreshTimer = 0;
 let deviceHeartbeatTimer = 0;
 let devicePairingPollTimer = 0;
 let profileRegisterSessionVersion = 0;
-let profileNameSaveInFlight = false;
-let avatarSaveInFlight = false;
+let profileWriteInFlight = "";
 let accountSetupPromise = null;
 let currentAuthUser = null;
 let pendingDevicePairing = null;
@@ -4592,7 +4591,7 @@ function profileRegisterMarkup() {
 }
 
 function setProfileNameEditing(isEditing) {
-  if (isEditing && profileNameSaveInFlight) return;
+  if (isEditing && profileWriteInFlight) return;
   const editor = elements.profileRegisterContent.querySelector("[data-profile-name-editor]");
   if (!editor) return;
   editor.hidden = !isEditing;
@@ -4613,8 +4612,11 @@ function setProfileNameEditing(isEditing) {
 }
 
 function avatarColorChoiceFor(avatarUrl) {
-  const paletteId = String(avatarUrl ?? "").match(/^initials:([a-z0-9-]+)$/i)?.[1] ?? "";
-  return MartAvatarLogic.avatarColorChoices.find((choice) => choice.id === paletteId) ?? null;
+  const token = String(avatarUrl ?? "");
+  if (!/^initials:/i.test(token)) return null;
+  const paletteId = token.slice(token.indexOf(":") + 1).trim().toLowerCase();
+  return MartAvatarLogic.avatarColorChoices.find((choice) => choice.id.toLowerCase() === paletteId)
+    ?? MartAvatarLogic.avatarColorChoices[0];
 }
 
 function avatarEditorMarkup() {
@@ -4639,7 +4641,7 @@ function avatarEditorMarkup() {
 
 function setAvatarEditorOpen(isOpen) {
   const editor = elements.profileRegisterContent.querySelector("[data-avatar-editor]");
-  if (!editor || (isOpen && avatarSaveInFlight)) return;
+  if (!editor || (isOpen && profileWriteInFlight)) return;
   editor.hidden = !isOpen;
   if (!isOpen) {
     editor.innerHTML = "";
@@ -4648,12 +4650,30 @@ function setAvatarEditorOpen(isOpen) {
   editor.innerHTML = avatarEditorMarkup();
 }
 
-function setAvatarEditorBusy(isBusy) {
-  elements.profileRegisterContent.querySelectorAll("[data-avatar-editor] button, [data-avatar-editor] input").forEach((control) => {
+function setProfileWriteControlsBusy(isBusy) {
+  elements.profileRegisterContent.querySelectorAll([
+    "[data-edit-profile-name]",
+    "[data-edit-avatar]",
+    "[data-profile-name-editor] button",
+    "[data-profile-name-editor] input",
+    "[data-avatar-editor] button",
+    "[data-avatar-editor] input"
+  ].join(", ")).forEach((control) => {
     control.disabled = isBusy;
   });
-  const avatarButton = elements.profileRegisterContent.querySelector("[data-edit-avatar]");
-  if (avatarButton) avatarButton.disabled = isBusy;
+}
+
+function beginProfileWrite(kind) {
+  if (profileWriteInFlight || !isActivationReady()) return false;
+  profileWriteInFlight = kind;
+  setProfileWriteControlsBusy(true);
+  return true;
+}
+
+function endProfileWrite(kind) {
+  if (profileWriteInFlight !== kind) return;
+  profileWriteInFlight = "";
+  setProfileWriteControlsBusy(false);
 }
 
 function avatarStatusMessage(error) {
@@ -4667,10 +4687,8 @@ function avatarStatusMessage(error) {
 }
 
 async function saveProfileAvatar(resolveAvatarUrl) {
-  if (avatarSaveInFlight || !isActivationReady()) return false;
   const status = elements.profileRegisterContent.querySelector("[data-avatar-status]");
-  avatarSaveInFlight = true;
-  setAvatarEditorBusy(true);
+  if (!beginProfileWrite("avatar")) return false;
   if (status) status.textContent = "Avatar wird gespeichert …";
   try {
     const avatarUrl = await resolveAvatarUrl();
@@ -4682,7 +4700,7 @@ async function saveProfileAvatar(resolveAvatarUrl) {
     } catch {
       profileResult = { ok: false };
     }
-    if (profileResult?.ok === false) throw new Error("avatar_profile_sync_failed");
+    if (profileResult?.ok !== true) throw new Error("avatar_profile_sync_failed");
 
     currentUser = nextUser;
     saveCurrentUser();
@@ -4704,8 +4722,7 @@ async function saveProfileAvatar(resolveAvatarUrl) {
     if (status) status.textContent = avatarStatusMessage(error);
     return false;
   } finally {
-    avatarSaveInFlight = false;
-    setAvatarEditorBusy(false);
+    endProfileWrite("avatar");
   }
 }
 
@@ -4717,10 +4734,10 @@ async function selectAvatarPhoto(file) {
       throw new Error("avatar_upload_unavailable");
     }
     const uploadResult = await collaborationService.uploadAvatar(avatarFile, currentUser.userId);
-    if (!uploadResult?.ok || typeof uploadResult.url !== "string") {
+    if (!uploadResult?.ok || typeof uploadResult.avatarUrl !== "string") {
       throw new Error("avatar_upload_failed");
     }
-    return uploadResult.url;
+    return uploadResult.avatarUrl;
   });
 }
 
@@ -4733,21 +4750,14 @@ function setAccountProtectionExpanded(isExpanded) {
 }
 
 async function saveProfileName() {
-  if (profileNameSaveInFlight || !isActivationReady()) return;
   const nameInput = elements.profileRegisterContent.querySelector("#profileNameInput");
   const status = elements.profileRegisterContent.querySelector("[data-profile-name-status]");
-  if (!nameInput) return;
+  if (!nameInput || !beginProfileWrite("name")) return;
 
   const nextUser = {
     ...currentUser,
     displayName: cleanDisplayName(nameInput.value, currentUser.displayName)
   };
-  const actions = elements.profileRegisterContent.querySelectorAll("[data-save-profile-name], [data-cancel-profile-name]");
-  const editButton = elements.profileRegisterContent.querySelector("[data-edit-profile-name]");
-  profileNameSaveInFlight = true;
-  nameInput.disabled = true;
-  if (editButton) editButton.disabled = true;
-  actions.forEach((button) => { button.disabled = true; });
   if (status) status.textContent = "Name wird gespeichert …";
   try {
     let profileResult;
@@ -4756,9 +4766,7 @@ async function saveProfileName() {
     } catch {
       profileResult = { ok: false };
     }
-    if (profileResult?.ok === false) {
-      nameInput.disabled = false;
-      actions.forEach((button) => { button.disabled = false; });
+    if (profileResult?.ok !== true) {
       if (status) status.textContent = "Der Name konnte gerade nicht synchronisiert werden.";
       return;
     }
@@ -4779,8 +4787,7 @@ async function saveProfileName() {
     if (displayName) displayName.textContent = currentUser.displayName;
     setProfileNameEditing(false);
   } finally {
-    profileNameSaveInFlight = false;
-    if (editButton?.isConnected) editButton.disabled = false;
+    endProfileWrite("name");
   }
 }
 

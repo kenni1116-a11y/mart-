@@ -3652,7 +3652,7 @@ button.sync-chip:hover {
 
 .avatar-palette-options {
   display: grid;
-  grid-template-columns: repeat(6, minmax(44px, 1fr));
+  grid-template-columns: repeat(3, minmax(44px, 1fr));
   gap: 8px;
 }
 

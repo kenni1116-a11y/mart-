@@ -11,6 +11,7 @@
     Object.freeze({ id: "berry", color: "#9a5365" }),
     Object.freeze({ id: "violet", color: "#705a9c" })
   ]);
+  const avatarQualityChoices = Object.freeze([0.86, 0.78, 0.7, 0.62, 0.58]);
 
   function initialsFor(name) {
     const words = String(name ?? "").trim().split(/\s+/).filter(Boolean);
@@ -83,7 +84,7 @@
     try {
       context.drawImage(image.source ?? image, 0, 0, targetWidth, targetHeight);
       let smallest = null;
-      for (let quality = 0.86; quality >= 0.58; quality = Number((quality - 0.08).toFixed(2))) {
+      for (const quality of avatarQualityChoices) {
         const blob = await encodeCanvas(canvas, "image/webp", quality);
         if (!blob) continue;
         if (!smallest || blob.size < smallest.size) smallest = blob;
