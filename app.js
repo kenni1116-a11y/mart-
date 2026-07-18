@@ -2122,6 +2122,10 @@ const elements = {
   topOptionsScrim: document.querySelector("#topOptionsScrim"),
   topOptionsCloseButton: document.querySelector("#topOptionsCloseButton"),
   accountButton: document.querySelector("#accountButton"),
+  profileRegister: document.querySelector("#profileRegister"),
+  profileRegisterScrim: document.querySelector("#profileRegisterScrim"),
+  profileRegisterCloseButton: document.querySelector("#profileRegisterCloseButton"),
+  profileRegisterContent: document.querySelector("#profileRegisterContent"),
   openBackgroundButton: document.querySelector("#openBackgroundButton"),
   openDataToolsButton: document.querySelector("#openDataToolsButton"),
   imprintButton: document.querySelector("#imprintButton"),
@@ -4174,6 +4178,7 @@ async function leaveSharedList(listData, index) {
 }
 
 function openModal(content, { presentation = "dialog" } = {}) {
+  closeSideRegisters();
   elements.modalContent.innerHTML = content;
   elements.modalLayer.classList.toggle("is-profile-page", presentation === "profile");
   elements.modalLayer.classList.remove("is-hidden");
@@ -4185,10 +4190,7 @@ function closeModal() {
     window.clearTimeout(modalSearchRenderTimer);
     modalSearchRenderTimer = 0;
   }
-  if (devicePairingPollTimer) {
-    window.clearTimeout(devicePairingPollTimer);
-    devicePairingPollTimer = 0;
-  }
+  stopProfilePairing();
   elements.modalLayer.classList.add("is-hidden");
   elements.modalLayer.classList.remove("is-profile-page");
   elements.modalLayer.setAttribute("aria-hidden", "true");
@@ -4520,15 +4522,9 @@ function showProductMarketPrices(productId) {
 }
 
 function showProfile() {
-  openModal(`
+  closeModal();
+  elements.profileRegisterContent.innerHTML = `
     <div class="profile-page" data-profile-page>
-      <header class="profile-page-header">
-        <button class="profile-back-button" type="button" data-close-profile aria-label="Profil schließen">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"/></svg>
-        </button>
-        <h2 id="modalTitle">Profil</h2>
-        <span aria-hidden="true"></span>
-      </header>
       <div class="profile-page-content">
         <section class="profile-section profile-form account-panel" aria-labelledby="profileIdentityTitle">
           <h3 id="profileIdentityTitle">Dein Account</h3>
@@ -4586,7 +4582,8 @@ function showProfile() {
         </section>
       </div>
     </div>
-  `, { presentation: "profile" });
+  `;
+  setProfileRegisterOpen(true);
   loadProfilePairing();
   loadProfileDevices();
 }
@@ -4610,7 +4607,7 @@ function accountDeviceRowsMarkup(devices) {
 }
 
 async function loadProfileDevices() {
-  const panel = elements.modalContent.querySelector("[data-profile-devices]");
+  const panel = elements.profileRegisterContent.querySelector("[data-profile-devices]");
   if (!panel) return;
   try {
     const devices = await collaborationService.listDevices?.() ?? [];
@@ -4622,7 +4619,7 @@ async function loadProfileDevices() {
 }
 
 async function loadProfilePairing() {
-  const panel = elements.modalContent.querySelector("[data-profile-pairing]");
+  const panel = elements.profileRegisterContent.querySelector("[data-profile-pairing]");
   if (!panel) return;
   try {
     const result = await collaborationService.createDevicePairing?.();
@@ -4657,8 +4654,8 @@ async function loadProfilePairing() {
 
 async function saveProfile() {
   if (!isActivationReady()) return;
-  const nameInput = elements.modalContent.querySelector("#profileNameInput");
-  const avatarInput = elements.modalContent.querySelector("#profileAvatarInput");
+  const nameInput = elements.profileRegisterContent.querySelector("#profileNameInput");
+  const avatarInput = elements.profileRegisterContent.querySelector("#profileAvatarInput");
   if (!nameInput) return;
   currentUser = {
     ...currentUser,
@@ -4685,7 +4682,7 @@ async function saveProfile() {
   }
   save();
   updatePresence();
-  closeModal();
+  closeSideRegisters();
   render();
 }
 
@@ -4982,7 +4979,7 @@ async function startDevicePairing() {
 }
 
 async function copyPairingLink() {
-  const panel = elements.modalContent.querySelector("[data-pairing-url]");
+  const panel = elements.profileRegisterContent.querySelector("[data-pairing-url]") ?? elements.modalContent.querySelector("[data-pairing-url]");
   const url = panel?.dataset.pairingUrl;
   if (!url) return;
   try {
@@ -4999,7 +4996,7 @@ function schedulePairingPoll(callback) {
 }
 
 async function pollOwnerPairing(pairingId) {
-  const panel = elements.modalContent.querySelector(`[data-device-pairing="${pairingId}"]`);
+  const panel = elements.profileRegisterContent.querySelector(`[data-device-pairing="${pairingId}"]`) ?? elements.modalContent.querySelector(`[data-device-pairing="${pairingId}"]`);
   if (!panel) return;
   const statusElement = panel.querySelector("[data-pairing-status]");
   const result = await collaborationService.devicePairingStatus?.(pairingId);
@@ -6253,12 +6250,35 @@ function schedulePriceSearchRender(query) {
 }
 
 function setOptionsRegisterOpen(isOpen) {
+  if (isOpen) setProfileRegisterOpen(false);
   elements.topOptions.classList.toggle("is-open", isOpen);
   elements.topOptionsScrim.classList.toggle("is-open", isOpen);
   elements.topOptions.setAttribute("aria-hidden", String(!isOpen));
   elements.topOptionsScrim.setAttribute("aria-hidden", String(!isOpen));
   elements.topMenuButton.setAttribute("aria-expanded", String(isOpen));
   elements.body.classList.toggle("has-open-options", isOpen);
+}
+
+function stopProfilePairing() {
+  if (!devicePairingPollTimer) return;
+  window.clearTimeout(devicePairingPollTimer);
+  devicePairingPollTimer = 0;
+}
+
+function closeSideRegisters() {
+  setOptionsRegisterOpen(false);
+  setProfileRegisterOpen(false);
+}
+
+function setProfileRegisterOpen(isOpen) {
+  if (isOpen) setOptionsRegisterOpen(false);
+  elements.profileRegister.classList.toggle("is-open", isOpen);
+  elements.profileRegisterScrim.classList.toggle("is-open", isOpen);
+  elements.profileRegister.setAttribute("aria-hidden", String(!isOpen));
+  elements.profileRegisterScrim.setAttribute("aria-hidden", String(!isOpen));
+  elements.accountButton.setAttribute("aria-expanded", String(isOpen));
+  elements.body.classList.toggle("has-open-profile", isOpen);
+  if (!isOpen) stopProfilePairing();
 }
 
 elements.authRetryButton?.addEventListener("click", connectDeviceAccount);
@@ -6269,6 +6289,8 @@ elements.topMenuButton.addEventListener("click", () => setOptionsRegisterOpen(!e
 elements.topOptionsCloseButton.addEventListener("click", () => setOptionsRegisterOpen(false));
 elements.topOptionsScrim.addEventListener("click", () => setOptionsRegisterOpen(false));
 elements.accountButton.addEventListener("click", showProfile);
+elements.profileRegisterCloseButton.addEventListener("click", () => setProfileRegisterOpen(false));
+elements.profileRegisterScrim.addEventListener("click", () => setProfileRegisterOpen(false));
 elements.searchInput.addEventListener("input", scheduleMainSearchRender);
 elements.backButton.addEventListener("click", backToShelves);
 elements.addListButton.addEventListener("click", addList);
@@ -6530,10 +6552,63 @@ elements.modalContent.addEventListener("keydown", (event) => {
     restoreAccountFromCode();
   }
 });
+elements.profileRegisterContent.addEventListener("click", (event) => {
+  if (event.target.closest("[data-retry-profile-pairing]")) {
+    loadProfilePairing();
+    return;
+  }
+  if (event.target.closest("[data-open-devices]")) {
+    showDevices();
+    return;
+  }
+  if (event.target.closest("[data-create-recovery-code]")) {
+    createRecoveryCode();
+    return;
+  }
+  if (event.target.closest("[data-open-account-recovery]")) {
+    showAccountRecovery();
+    return;
+  }
+  if (event.target.closest("[data-delete-account]")) {
+    showAccountDeletionConfirmation();
+    return;
+  }
+  const renameDeviceButton = event.target.closest("[data-rename-account-device]");
+  if (renameDeviceButton) {
+    showRenameDevice(renameDeviceButton.dataset.renameAccountDevice, renameDeviceButton.dataset.deviceLabel);
+    return;
+  }
+  const removeDeviceButton = event.target.closest("[data-remove-account-device]");
+  if (removeDeviceButton) {
+    removeAccountDevice(removeDeviceButton.dataset.removeAccountDevice);
+    return;
+  }
+  if (event.target.closest("[data-add-account-device]")) {
+    startDevicePairing();
+    return;
+  }
+  if (event.target.closest("[data-copy-pairing-link]")) {
+    copyPairingLink();
+    return;
+  }
+  const approvePairingButton = event.target.closest("[data-approve-device-pairing]");
+  if (approvePairingButton) {
+    approveDevicePairing(approvePairingButton.dataset.approveDevicePairing);
+    return;
+  }
+  if (event.target.closest("[data-save-profile]")) saveProfile();
+});
+elements.profileRegisterContent.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && event.target.id === "profileNameInput") saveProfile();
+});
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (elements.topOptions.classList.contains("is-open")) {
     setOptionsRegisterOpen(false);
+    return;
+  }
+  if (elements.profileRegister.classList.contains("is-open")) {
+    setProfileRegisterOpen(false);
     return;
   }
   if (!elements.modalLayer.classList.contains("is-hidden")) closeModal();

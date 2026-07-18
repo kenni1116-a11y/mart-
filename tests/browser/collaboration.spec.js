@@ -417,33 +417,32 @@ test("options register exposes direct tools and keeps profile separate", async (
   }
 });
 
-test("full-screen profile loads pairing QR and devices directly", async ({ browser }) => {
+test("profile opens as a mirrored right register", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
-
   try {
     await visitor.page.goto(server.origin);
     await waitForReady(visitor.page);
+    const register = visitor.page.locator("#profileRegister");
+    const closedX = await register.evaluate((element) => new DOMMatrix(getComputedStyle(element).transform).m41);
+    expect(closedX).toBeGreaterThanOrEqual(100);
     await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
-
-    await expect(visitor.page.locator("[data-profile-page]")).toBeVisible();
-    await expect(visitor.page.getByRole("heading", { name: "Profil" })).toBeVisible();
-    await expect(visitor.page.locator("[data-profile-pairing] .device-qr svg")).toBeVisible();
-    await expect(visitor.page.locator("[data-profile-devices] .account-device-row")).toHaveCount(1);
-    await expect(visitor.page.getByRole("button", { name: "Account löschen", exact: true })).toBeVisible();
-    await expect(visitor.page.getByRole("heading", { name: "Mehr" })).toHaveCount(0);
-
-    const profile = await visitor.page.locator(".modal-card").evaluate((card) => {
-      const box = card.getBoundingClientRect();
+    await expect(register).toBeVisible();
+    await expect.poll(() => register.evaluate((element) => Math.abs(new DOMMatrix(getComputedStyle(element).transform).m41))).toBeLessThanOrEqual(1);
+    const material = await register.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
       return {
-        nearlyFullWidth: box.width >= window.innerWidth - 2,
-        nearlyFullHeight: box.height >= window.innerHeight - 2,
-        horizontalOverflow: card.scrollWidth > card.clientWidth + 1
+        right: Math.abs(window.innerWidth - box.right),
+        borderLeft: Number.parseFloat(style.borderLeftWidth),
+        shadow: style.boxShadow,
+        mask: style.maskImage || style.webkitMaskImage
       };
     });
-    expect(profile.nearlyFullWidth).toBe(true);
-    expect(profile.nearlyFullHeight).toBe(true);
-    expect(profile.horizontalOverflow).toBe(false);
+    expect(material.right).toBeLessThanOrEqual(1);
+    expect(material.borderLeft).toBe(0);
+    expect(material.shadow).toBe("none");
+    expect(material.mask).toContain("linear-gradient");
   } finally {
     await visitor.context.close();
     await server.close();
@@ -639,7 +638,7 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
     const deleteButton = visitor.page.getByRole("button", { name: "Account löschen", exact: true });
     await expect(deleteButton).toBeVisible();
     expect(await deleteButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgb(157, 87, 88)");
-    await visitor.page.getByRole("button", { name: "Profil schließen" }).click();
+    await visitor.page.locator("#profileRegisterCloseButton").click();
 
     for (const width of [393, 430, 1280]) {
       const marketVisitor = await createIsolatedPage(browser, server);

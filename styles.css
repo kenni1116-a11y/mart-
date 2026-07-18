@@ -365,7 +365,43 @@ svg {
   pointer-events: auto;
 }
 
-.top-options-scrim {
+.profile-register {
+  position: fixed;
+  z-index: 42;
+  inset: 0 0 0 auto;
+  display: block;
+  width: min(84vw, 360px);
+  padding: calc(env(safe-area-inset-top, 0px) + 58px) 22px calc(env(safe-area-inset-bottom, 0px) + 28px) 54px;
+  overflow-y: auto;
+  visibility: hidden;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(17, 22, 29, 0.03) 0%,
+    rgba(17, 22, 29, 0.14) 20%,
+    rgba(17, 22, 29, 0.84) 46%,
+    rgba(11, 15, 21, 0.98) 100%
+  );
+  box-shadow: none;
+  backdrop-filter: blur(42px) saturate(0.46);
+  -webkit-backdrop-filter: blur(42px) saturate(0.46);
+  transform: translateX(calc(100% + 12px));
+  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 340ms;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 32px, #000 100%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 32px, #000 100%);
+}
+
+.profile-register.is-open {
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s;
+  pointer-events: auto;
+}
+
+.top-options-scrim,
+.profile-register-scrim {
   position: fixed;
   z-index: 41;
   inset: 0;
@@ -383,7 +419,8 @@ svg {
   pointer-events: none;
 }
 
-.top-options-scrim.is-open {
+.top-options-scrim.is-open,
+.profile-register-scrim.is-open {
   visibility: visible;
   opacity: 1;
   transition-delay: 0s;
@@ -392,6 +429,15 @@ svg {
 
 .top-options h2 {
   margin: 0 56px 26px 0;
+  color: var(--gm-text);
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 420;
+  letter-spacing: 0;
+}
+
+.profile-register h2 {
+  margin: 0 0 26px 56px;
   color: var(--gm-text);
   font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
   font-size: 1.25rem;
@@ -419,6 +465,34 @@ svg {
   line-height: 1;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 18px rgba(0, 0, 0, 0.36);
   -webkit-background-clip: text;
+}
+
+.profile-register-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 38px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(145deg, #f2f5f7 12%, #9faab4 52%, #e7ebee 88%);
+  background-clip: text;
+  color: transparent;
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 44px;
+  font-weight: 220;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 18px rgba(0, 0, 0, 0.36);
+  -webkit-background-clip: text;
+}
+
+.profile-register-content .profile-page-content {
+  width: 100%;
+  margin: 0;
+  padding: 14px 0 calc(env(safe-area-inset-bottom, 0px) + 32px);
 }
 
 .top-options-list {
