@@ -19,3 +19,26 @@
 ### Commit
 
 - `feat: complete profile register workflows`
+
+---
+
+## Review-Fixes: Profil-Modal-Rueckkehr
+
+### Umsetzung
+
+- Die Geraeteverwaltung bewahrt ihre Profil-Herkunft. Schliessen ueber X oder den Hintergrund sowie der ausdrueckliche Zurueck-Button fuehren wieder in das Profil-Register.
+- Das Ergebnis eines neu erzeugten Wiederherstellungscodes bewahrt die beim Start erfasste Profil-Herkunft und Account-Sitzung.
+- Nach einer erfolgreichen Account-Wiederherstellung wird die neue Account-Identitaet nicht durch ein erneut geoeffnetes Profil-Register ueberlagert; X, Hintergrund und `Fertig` schliessen dort nur den Ergebnisdialog.
+- Die vorhandene Sperr- und Nebenlaeufigkeitslogik fuer Profilname und Avatar blieb unveraendert.
+
+### Tests
+
+- RED: Die neue Geraeteverwaltungs-Regression lief in den erwarteten Timeout, weil X das Profil-Register nicht wiederherstellte.
+- GREEN: 3 fokussierte WebKit-Tests fuer Geraeteverwaltung, Wiederherstellungscode und erfolgreiche Account-Loeschung bestanden.
+- Vollstaendig: `pnpm verify` bestand mit 81 Unit- und Release-Tests.
+- Vollstaendig: die gesamte WebKit-Suite bestand mit 45 Tests.
+- Syntax-, Cache- und `git diff --check`-Pruefungen bestanden.
+
+### Commit
+
+- `fix: preserve profile modal returns`

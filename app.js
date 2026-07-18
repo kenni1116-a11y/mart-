@@ -5258,7 +5258,7 @@ async function showDevices() {
     <div class="account-devices-panel" data-account-devices>
       <p class="account-loading">Geräte werden geladen …</p>
     </div>
-  `);
+  `, { returnToProfile: true });
   try {
     const devices = await collaborationService.listDevices?.();
     const panel = elements.modalContent.querySelector("[data-account-devices]");
@@ -5319,7 +5319,7 @@ async function removeAccountDevice(deviceId) {
   showDevices();
 }
 
-function showRecoveryCodeResult(code, title = "Account gesichert") {
+function showRecoveryCodeResult(code, title = "Account gesichert", { returnToProfile = false } = {}) {
   openModal(`
     <h2 id="modalTitle">${escapeText(title)}</h2>
     <div class="recovery-code-panel" data-recovery-code="${escapeText(code)}">
@@ -5327,14 +5327,19 @@ function showRecoveryCodeResult(code, title = "Account gesichert") {
       <code>${escapeText(code)}</code>
       <div class="modal-actions">
         <button type="button" data-copy-recovery-code>${icon("copy")} Code kopieren</button>
-        <button type="button" class="is-muted" data-open-profile>Fertig</button>
+        <button type="button" class="is-muted" ${returnToProfile ? "data-open-profile" : "data-close-profile"}>Fertig</button>
       </div>
     </div>
-  `);
+  `, { returnToProfile });
 }
 
 async function createRecoveryCode() {
   if (profileWriteInFlight || !isActivationReady()) return;
+  const profileOrigin = {
+    accountId: currentUser.userId,
+    accountSessionVersion,
+    returnToProfile: elements.profileRegister.classList.contains("is-open")
+  };
   const result = await collaborationService.rotateRecoveryCode?.();
   if (!result?.ok || !result.recoveryCode) {
     window.alert(accountFlowError(result));
@@ -5342,7 +5347,11 @@ async function createRecoveryCode() {
   }
   currentUser.recoveryReady = true;
   saveCurrentUser();
-  showRecoveryCodeResult(result.recoveryCode);
+  showRecoveryCodeResult(result.recoveryCode, "Account gesichert", {
+    returnToProfile: profileOrigin.returnToProfile
+      && profileOrigin.accountId === currentUser.userId
+      && profileOrigin.accountSessionVersion === accountSessionVersion
+  });
 }
 
 async function copyRecoveryCode() {
@@ -5389,7 +5398,7 @@ async function restoreAccountFromCode() {
   }
   clearLocalAccountCache(previousAccountId);
   await activateAccount(currentAuthUser, { force: true, handlePairing: false });
-  showRecoveryCodeResult(result.recoveryCode, "Account wiederhergestellt");
+  showRecoveryCodeResult(result.recoveryCode, "Account wiederhergestellt", { returnToProfile: false });
 }
 
 function pairingPayloadFromUrl() {

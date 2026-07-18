@@ -550,6 +550,117 @@ test("recovery and account deletion dialogs return to the open profile register"
   }
 });
 
+test("device management returns to the profile register through X and backdrop", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const profile = page.locator("#profileRegister");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    await page.getByRole("button", { name: "Verwalten", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Geräte", exact: true })).toBeVisible();
+    await page.locator("#modalCloseButton").click();
+    await expect(profile).toBeVisible();
+
+    await page.getByRole("button", { name: "Verwalten", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Geräte", exact: true })).toBeVisible();
+    await page.locator("#modalLayer").click({ position: { x: 2, y: 2 } });
+    await expect(profile).toBeVisible();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("recovery-code result follows its captured profile origin for X backdrop and Finish", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const profile = page.locator("#profileRegister");
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "rotate_recovery_code") {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: { recoveryCode: "ZTL-TEST-CODE" }, error: null })
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(server.origin);
+    await waitForReady(page);
+
+    const openRecoveryResult = async () => {
+      await page.locator("[data-toggle-account-protection]").click();
+      await page.getByRole("button", { name: /Account sichern|Neuen Wiederherstellungscode erzeugen/ }).click();
+      await expect(page.getByRole("heading", { name: "Account gesichert" })).toBeVisible();
+    };
+
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await openRecoveryResult();
+    await page.locator("#modalCloseButton").click();
+    await expect(profile).toBeVisible();
+
+    await openRecoveryResult();
+    await page.locator("#modalLayer").click({ position: { x: 2, y: 2 } });
+    await expect(profile).toBeVisible();
+
+    await openRecoveryResult();
+    await page.getByRole("button", { name: "Fertig", exact: true }).click();
+    await expect(profile).toBeVisible();
+
+    await page.locator("#profileRegisterCloseButton").click();
+    await page.evaluate(() => showRecoveryCodeResult(
+      "ZTL-RECOVERED-CODE",
+      "Account wiederhergestellt",
+      { returnToProfile: false }
+    ));
+    await page.getByRole("button", { name: "Fertig", exact: true }).click();
+    await expect(profile).toBeHidden();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("successful account deletion never reopens the profile register", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const profile = page.locator("#profileRegister");
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "delete_current_account_v3") {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: { ok: true, deletedAccountId: payload.args.args?.expected_account_id }, error: null })
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-delete-account]").click();
+    await page.getByRole("button", { name: "Ja", exact: true }).click();
+
+    await expect(page.locator("#modalLayer")).toBeHidden();
+    await expect(profile).toBeHidden();
+    await page.waitForTimeout(500);
+    await expect(profile).toBeHidden();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
 test("compact account editor saves with check or Enter and cancels without changing the name", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
