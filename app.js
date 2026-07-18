@@ -948,6 +948,8 @@ const iconPaths = {
   thermometer: '<path d="M10 14V5a3 3 0 0 1 6 0v9a5 5 0 1 1-6 0Zm3-9v11m-2 0h4"/>',
   diaper: '<path d="M5 7h14v7c0 4-3 7-7 7s-7-3-7-7V7Zm0 0c2 2 4 3 7 3s5-1 7-3M8 14h.01M16 14h.01"/>',
   warning: '<path d="M12 3 2 21h20L12 3Zm0 6v5m0 4h.01"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
   phone: '<path d="M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 3h4m-3 14h2"/>',
   copy: '<path d="M9 9h11v11H9V9Zm-5 6H3V4h11v1"/>',
   link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1m3 6a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
@@ -4524,28 +4526,40 @@ function showProductMarketPrices(productId) {
 
 function showProfile() {
   closeModal();
-  elements.profileRegisterContent.innerHTML = `
+  elements.profileRegisterContent.innerHTML = profileRegisterMarkup();
+  setProfileRegisterOpen(true);
+  loadProfilePairing();
+  loadProfileDevices();
+}
+
+function profileRegisterMarkup() {
+  return `
     <div class="profile-page" data-profile-page>
       <div class="profile-page-content">
-        <section class="profile-section profile-form account-panel" aria-labelledby="profileIdentityTitle">
+        <section class="profile-section profile-account" aria-labelledby="profileIdentityTitle">
           <h3 id="profileIdentityTitle">Dein Account</h3>
-          <div class="profile-preview account-identity">
-            ${memberAvatarMarkup(currentUser, "is-current")}
-            <span>
-              <strong>${escapeText(currentUser.displayName)}</strong>
-              <small>${escapeText(currentUser.username)}</small>
+          <div class="profile-identity-row">
+            <button class="profile-avatar-button" type="button" data-edit-avatar aria-label="Avatar ändern">
+              ${memberAvatarMarkup(currentUser, "is-current")}
+            </button>
+            <span class="profile-identity-copy">
+              <strong data-profile-display-name>${escapeText(currentUser.displayName)}</strong>
+              <small data-profile-username>${escapeText(currentUser.username)}</small>
             </span>
+            <button class="profile-metal-action" type="button" data-edit-profile-name aria-label="Anzeigename ändern" title="Anzeigename ändern">${icon("pencil")}</button>
           </div>
-          <label class="account-field" for="profileNameInput">
-            <span>Anzeigename</span>
-            <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
-          </label>
-          <label class="account-field" for="profileAvatarInput">
-            <span>Avatar-Link</span>
-            <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Optional">
-          </label>
-          <div class="modal-actions">
-            <button type="button" data-save-profile>Speichern</button>
+          <div data-profile-name-editor hidden></div>
+          <button class="account-protection-row" type="button" data-toggle-account-protection aria-expanded="false">
+            <span class="account-protection-icon">${currentUser.recoveryReady ? icon("check") : icon("warning")}</span>
+            <span class="account-protection-copy">
+              <strong>${currentUser.recoveryReady ? "Account gesichert" : "Account schützen"}</strong>
+              <small>${currentUser.recoveryReady ? "Wiederherstellungscode aktiv" : "Wiederherstellungscode einrichten"}</small>
+            </span>
+            <span class="account-protection-chevron" aria-hidden="true">${icon("chevronDown")}</span>
+          </button>
+          <div class="account-protection-actions" data-account-protection-actions hidden>
+            <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
+            <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
           </div>
         </section>
         <section class="profile-section" aria-labelledby="profilePairingTitle">
@@ -4563,20 +4577,6 @@ function showProfile() {
             <p class="account-loading">Geräte werden geladen …</p>
           </div>
         </section>
-        <section class="profile-section" aria-labelledby="profileSecurityTitle">
-          <h3 id="profileSecurityTitle">Sicherheit</h3>
-          <div class="account-security-row ${currentUser.recoveryReady ? "is-secured" : ""}">
-            <span>${currentUser.recoveryReady ? icon("check") : icon("warning")}</span>
-            <div>
-              <strong>${currentUser.recoveryReady ? "Account gesichert" : "Noch nicht gesichert"}</strong>
-              <small>${currentUser.recoveryReady ? "Ein Wiederherstellungscode ist aktiv." : "Ohne Code ist der Account nach einer Neuinstallation nicht wiederherstellbar."}</small>
-            </div>
-          </div>
-          <div class="modal-actions modal-actions-stack account-secondary-actions">
-            <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
-            <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
-          </div>
-        </section>
         <section class="profile-section profile-danger-zone" aria-labelledby="profileDangerTitle">
           <h3 id="profileDangerTitle">Account entfernen</h3>
           <button type="button" class="is-danger" data-delete-account>Account löschen</button>
@@ -4584,9 +4584,76 @@ function showProfile() {
       </div>
     </div>
   `;
-  setProfileRegisterOpen(true);
-  loadProfilePairing();
-  loadProfileDevices();
+}
+
+function setProfileNameEditing(isEditing) {
+  const editor = elements.profileRegisterContent.querySelector("[data-profile-name-editor]");
+  if (!editor) return;
+  editor.hidden = !isEditing;
+  if (!isEditing) {
+    editor.innerHTML = "";
+    return;
+  }
+  editor.innerHTML = `
+    <div class="profile-name-editor-row">
+      <input id="profileNameInput" type="text" maxlength="24" enterkeyhint="done" value="${escapeText(currentUser.displayName)}" aria-label="Anzeigename">
+      <button class="profile-metal-action" type="button" data-save-profile-name aria-label="Anzeigename speichern" title="Anzeigename speichern">${icon("check")}</button>
+      <button class="profile-metal-action" type="button" data-cancel-profile-name aria-label="Anzeigename bearbeiten abbrechen" title="Abbrechen">${icon("close")}</button>
+    </div>
+    <p class="profile-name-status" data-profile-name-status role="status" aria-live="polite"></p>
+  `;
+  const input = editor.querySelector("#profileNameInput");
+  window.setTimeout(() => input?.focus(), 0);
+}
+
+function setAccountProtectionExpanded(isExpanded) {
+  const toggle = elements.profileRegisterContent.querySelector("[data-toggle-account-protection]");
+  const actions = elements.profileRegisterContent.querySelector("[data-account-protection-actions]");
+  if (!toggle || !actions) return;
+  toggle.setAttribute("aria-expanded", String(isExpanded));
+  actions.hidden = !isExpanded;
+}
+
+async function saveProfileName() {
+  if (!isActivationReady()) return;
+  const nameInput = elements.profileRegisterContent.querySelector("#profileNameInput");
+  const status = elements.profileRegisterContent.querySelector("[data-profile-name-status]");
+  if (!nameInput) return;
+
+  const nextUser = {
+    ...currentUser,
+    displayName: cleanDisplayName(nameInput.value, currentUser.displayName)
+  };
+  const actions = elements.profileRegisterContent.querySelectorAll("[data-save-profile-name], [data-cancel-profile-name]");
+  actions.forEach((button) => { button.disabled = true; });
+  if (status) status.textContent = "Name wird gespeichert …";
+  let profileResult;
+  try {
+    profileResult = await collaborationService.upsertProfile?.(nextUser);
+  } catch {
+    profileResult = { ok: false };
+  }
+  if (profileResult?.ok === false) {
+    actions.forEach((button) => { button.disabled = false; });
+    if (status) status.textContent = "Der Name konnte gerade nicht synchronisiert werden.";
+    return;
+  }
+
+  currentUser = nextUser;
+  saveCurrentUser();
+  lists.forEach((listData) => {
+    const member = memberFor(listData, currentUser.userId);
+    if (member) member.displayName = currentUser.displayName;
+    listData.items.forEach((item) => {
+      if (item.addedByUserId === currentUser.userId) item.addedByDisplayName = currentUser.displayName;
+    });
+  });
+  save();
+  updatePresence();
+  render();
+  const displayName = elements.profileRegisterContent.querySelector("[data-profile-display-name]");
+  if (displayName) displayName.textContent = currentUser.displayName;
+  setProfileNameEditing(false);
 }
 
 function accountDeviceRowsMarkup(devices) {
@@ -4653,40 +4720,6 @@ async function loadProfilePairing() {
   } catch (error) {
     if (isProfileRegisterSessionActive(profileSessionVersion) && panel.isConnected) panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(error))}</p><button type="button" class="profile-section-action" data-retry-profile-pairing>Erneut versuchen</button>`;
   }
-}
-
-async function saveProfile() {
-  if (!isActivationReady()) return;
-  const nameInput = elements.profileRegisterContent.querySelector("#profileNameInput");
-  const avatarInput = elements.profileRegisterContent.querySelector("#profileAvatarInput");
-  if (!nameInput) return;
-  currentUser = {
-    ...currentUser,
-    displayName: cleanDisplayName(nameInput.value),
-    avatarUrl: typeof avatarInput?.value === "string" ? avatarInput.value.trim().slice(0, 240) : ""
-  };
-  saveCurrentUser();
-  lists.forEach((listData) => {
-    const member = memberFor(listData, currentUser.userId);
-    if (member) {
-      member.displayName = currentUser.displayName;
-      member.avatarUrl = currentUser.avatarUrl;
-    }
-    listData.items.forEach((item) => {
-      if (item.addedByUserId === currentUser.userId) {
-        item.addedByDisplayName = currentUser.displayName;
-        item.addedByAvatarUrl = currentUser.avatarUrl;
-      }
-    });
-  });
-  const profileResult = await collaborationService.upsertProfile?.(currentUser);
-  if (profileResult?.ok === false) {
-    window.alert("Der Name konnte gerade nicht mit dem Account synchronisiert werden.");
-  }
-  save();
-  updatePresence();
-  closeSideRegisters();
-  render();
 }
 
 function showAccountDeletionConfirmation(error = "", deletionCommitted = false) {
@@ -6574,6 +6607,23 @@ elements.profileRegisterContent.addEventListener("click", (event) => {
     loadProfilePairing();
     return;
   }
+  if (event.target.closest("[data-edit-profile-name]")) {
+    setProfileNameEditing(true);
+    return;
+  }
+  if (event.target.closest("[data-save-profile-name]")) {
+    saveProfileName();
+    return;
+  }
+  if (event.target.closest("[data-cancel-profile-name]")) {
+    setProfileNameEditing(false);
+    return;
+  }
+  if (event.target.closest("[data-toggle-account-protection]")) {
+    const toggle = elements.profileRegisterContent.querySelector("[data-toggle-account-protection]");
+    setAccountProtectionExpanded(toggle?.getAttribute("aria-expanded") !== "true");
+    return;
+  }
   if (event.target.closest("[data-open-devices]")) {
     showDevices();
     return;
@@ -6614,10 +6664,12 @@ elements.profileRegisterContent.addEventListener("click", (event) => {
     approveDevicePairing(approvePairingButton.dataset.approveDevicePairing, profileRegisterSessionVersion);
     return;
   }
-  if (event.target.closest("[data-save-profile]")) saveProfile();
 });
 elements.profileRegisterContent.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && event.target.id === "profileNameInput") saveProfile();
+  if (event.key === "Enter" && event.target.id === "profileNameInput") {
+    event.preventDefault();
+    saveProfileName();
+  }
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;

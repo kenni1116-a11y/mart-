@@ -479,10 +479,112 @@ test("profile register exposes account controls at 44px targets", async ({ brows
     const undersized = await visitor.page.locator("#profileRegisterContent button, #profileRegisterContent input").evaluateAll((controls) => controls
       .map((control) => {
         const box = control.getBoundingClientRect();
-        return { label: control.getAttribute("aria-label") || control.textContent.trim() || control.id, width: box.width, height: box.height };
+        return {
+          label: control.getAttribute("aria-label") || control.textContent.trim() || control.id,
+          width: box.width,
+          height: box.height,
+          visible: control.getClientRects().length > 0
+        };
       })
-      .filter((control) => control.width < 44 || control.height < 44));
+      .filter((control) => control.visible && (control.width < 44 || control.height < 44)));
     expect(undersized).toEqual([]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("compact account editor saves with check or Enter and cancels without changing the name", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    await expect(page.locator("#profileAvatarInput")).toHaveCount(0);
+    await expect(page.locator("#profileNameInput")).toHaveCount(0);
+    await expect(page.locator("[data-profile-display-name]")).toHaveText("Test 1");
+    await expect(page.locator("[data-profile-username]")).toContainText("test-1");
+
+    await page.locator("[data-edit-profile-name]").click();
+    const nameInput = page.locator("#profileNameInput");
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill("Ken Neu");
+    await page.locator("[data-save-profile-name]").click();
+    await expect(page.locator("[data-profile-display-name]")).toHaveText("Ken Neu");
+    await expect(page.locator("#profileRegister")).toBeVisible();
+
+    await page.locator("[data-edit-profile-name]").click();
+    await nameInput.fill("Ken Fertig");
+    await nameInput.press("Enter");
+    await expect(page.locator("[data-profile-display-name]")).toHaveText("Ken Fertig");
+
+    await page.locator("[data-edit-profile-name]").click();
+    await nameInput.fill("Nicht speichern");
+    await page.locator("[data-cancel-profile-name]").click();
+    await expect(page.locator("#profileNameInput")).toBeHidden();
+    await expect(page.locator("[data-profile-display-name]")).toHaveText("Ken Fertig");
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("compact account editor retains the input and shows an inline error when sync fails", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: null, error: { message: "sync_failed", code: "server_error" } })
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-profile-name]").click();
+    const nameInput = page.locator("#profileNameInput");
+    await nameInput.fill("Ken Offline");
+    await page.locator("[data-save-profile-name]").click();
+
+    await expect(nameInput).toHaveValue("Ken Offline");
+    await expect(page.locator("[data-profile-name-status]")).toContainText("Der Name konnte gerade nicht synchronisiert werden.");
+    await expect(page.locator("[data-profile-display-name]")).toHaveText("Test 1");
+    await expect(page.locator("#profileRegister")).toBeVisible();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("account protection expands recovery actions without closing the profile register", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    const toggle = page.locator("[data-toggle-account-protection]");
+    const actions = page.locator("[data-account-protection-actions]");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(actions).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(actions).toBeVisible();
+    await expect(actions.locator("[data-create-recovery-code]")).toBeVisible();
+    await expect(actions.locator("[data-open-account-recovery]")).toBeVisible();
+    await expect(page.locator("#profileRegister")).toBeVisible();
   } finally {
     await visitor.context.close();
     await server.close();
@@ -835,6 +937,7 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
 
     await visitor.page.locator("#accountButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Profil" })).toBeVisible();
+    await visitor.page.locator("[data-toggle-account-protection]").click();
     await expect(visitor.page.getByRole("button", { name: /Account sichern|Neuen Wiederherstellungscode erzeugen/ })).toBeVisible();
     const deleteButton = visitor.page.getByRole("button", { name: "Account löschen", exact: true });
     await expect(deleteButton).toBeVisible();

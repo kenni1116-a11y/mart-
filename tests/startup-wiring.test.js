@@ -153,6 +153,28 @@ test("account deletion is confirmed, retryable, and isolated from pairing", () =
   assert.doesNotMatch(pairingBody, /delete_current_account_v3|deleteCurrentAccount|data-delete-account/);
 });
 
+test("profile register wires compact identity editing and expandable account protection", () => {
+  const app = read("app.js");
+  const profileStart = app.indexOf("function profileRegisterMarkup");
+  const profileEnd = app.indexOf("function accountDeviceRowsMarkup", profileStart);
+  const profileBody = app.slice(profileStart, profileEnd);
+  const saveStart = app.indexOf("async function saveProfileName");
+  const saveEnd = app.indexOf("function showAccountDeletionConfirmation", saveStart);
+  const saveBody = app.slice(saveStart, saveEnd);
+
+  assert.match(profileBody, /data-profile-display-name/);
+  assert.match(profileBody, /data-profile-username/);
+  assert.match(profileBody, /data-edit-profile-name/);
+  assert.match(profileBody, /data-profile-name-editor hidden/);
+  assert.match(profileBody, /data-toggle-account-protection[^>]*aria-expanded="false"/);
+  assert.match(profileBody, /data-account-protection-actions hidden/);
+  assert.match(app, /function setProfileNameEditing\(isEditing\)/);
+  assert.match(app, /function setAccountProtectionExpanded\(isExpanded\)/);
+  assert.match(saveBody, /collaborationService\.upsertProfile/);
+  assert.match(saveBody, /data-profile-name-status/);
+  assert.doesNotMatch(saveBody, /closeSideRegisters\(\)/);
+});
+
 test("list deletion and the zero-list state cannot resurrect cached notes", () => {
   const app = read("app.js");
   const styles = read("styles.css");
