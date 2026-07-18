@@ -1166,10 +1166,9 @@ test("failed avatar object removal restores the old server profile", async ({ br
   }
 });
 
-test("rejected avatar removal rolls the cleared profile back", async ({ browser }) => {
+test("committed avatar removal with a rejected response reconciles to the cleared server profile", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
-  let rejected = false;
   try {
     const page = visitor.page;
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
@@ -1182,26 +1181,20 @@ test("rejected avatar removal rolls the cleared profile back", async ({ browser 
     const oldUrl = await avatarImage.getAttribute("src");
     const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
     server.state.avatarEvents.length = 0;
-    await page.route("**/__test__/collaboration-api", async (route) => {
-      const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "storage-remove" && !rejected) {
-        rejected = true;
-        await route.abort("failed");
-        return;
-      }
-      await route.continue();
-    });
+    server.state.avatarFailures.storageRemoveResponse.push("reject_after_commit");
 
     await page.locator("[data-edit-avatar]").click();
     await page.locator("[data-remove-avatar]").click();
 
-    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
-    await expect(avatarImage).toHaveAttribute("src", oldUrl);
-    expect(server.state.accounts.values().next().value.avatarUrl).toBe(oldUrl);
-    expect(server.state.avatarObjects.has(`avatars:${oldPath}`)).toBe(true);
+    await expect(page.locator("[data-avatar-status]")).toContainText("Serverstand wurde geprüft");
+    await expect(avatarImage).toHaveCount(0);
+    expect(server.state.accounts.values().next().value.avatarUrl).toBe("");
+    expect(server.state.avatarObjects.has(`avatars:${oldPath}`)).toBe(false);
+    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe("");
     expect(server.state.avatarEvents).toEqual([
       { type: "profile-update", avatarUrl: "", ok: true },
-      { type: "profile-update", avatarUrl: oldUrl, ok: true }
+      { type: "storage-remove", path: oldPath, ok: true },
+      { type: "profile-fetch", avatarUrl: "", ok: true }
     ]);
   } finally {
     await visitor.context.close();
@@ -1246,10 +1239,9 @@ test("failed removal rollback keeps local avatar aligned with the cleared server
   }
 });
 
-test("rejected removal rollback keeps local avatar aligned with the cleared server profile", async ({ browser }) => {
+test("committed rollback with a rejected response reconciles to the restored server profile", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
-  let profileWrites = 0;
   try {
     const page = visitor.page;
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
@@ -1259,33 +1251,56 @@ test("rejected removal rollback keeps local avatar aligned with the cleared serv
     await page.locator("[data-edit-avatar]").click();
     await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
     const avatarImage = page.locator("[data-edit-avatar] img");
-    const oldPath = new URL(await avatarImage.getAttribute("src")).pathname.replace("/__test__/avatar/", "");
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
     server.state.avatarEvents.length = 0;
     server.state.avatarFailures.storageRemove.push("storage_remove_failed");
-    await page.route("**/__test__/collaboration-api", async (route) => {
-      const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
-        profileWrites += 1;
-        if (profileWrites === 2) {
-          await route.abort("failed");
-          return;
-        }
-      }
-      await route.continue();
-    });
+    server.state.avatarFailures.profileUpdateResponse.push(null, "reject_after_commit");
 
     await page.locator("[data-edit-avatar]").click();
     await page.locator("[data-remove-avatar]").click();
 
-    await expect(page.locator("[data-avatar-status]")).toContainText("nicht vollständig gelöscht");
-    await expect(avatarImage).toHaveCount(0);
-    expect(server.state.accounts.values().next().value.avatarUrl).toBe("");
+    await expect(page.locator("[data-avatar-status]")).toContainText("Serverstand wurde geprüft");
+    await expect(avatarImage).toHaveAttribute("src", oldUrl);
+    expect(server.state.accounts.values().next().value.avatarUrl).toBe(oldUrl);
     expect(server.state.avatarObjects.has(`avatars:${oldPath}`)).toBe(true);
-    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe("");
+    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe(oldUrl);
     expect(server.state.avatarEvents).toEqual([
       { type: "profile-update", avatarUrl: "", ok: true },
-      { type: "storage-remove", path: oldPath, ok: false }
+      { type: "storage-remove", path: oldPath, ok: false },
+      { type: "profile-update", avatarUrl: oldUrl, ok: true },
+      { type: "profile-fetch", avatarUrl: oldUrl, ok: true }
     ]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("ambiguous avatar removal keeps an uncertain retry state when confirmation also fails", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldUrl = await avatarImage.getAttribute("src");
+    server.state.avatarFailures.storageRemoveResponse.push("reject_after_commit");
+    server.state.avatarFailures.accountFetch.push("account_fetch_failed");
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("Ausgang ist noch unklar");
+    await expect(avatarImage).toHaveAttribute("src", oldUrl);
+    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe(oldUrl);
+    await expect(page.locator("[data-remove-avatar]")).toBeEnabled();
+    expect(server.state.accounts.values().next().value.avatarUrl).toBe("");
   } finally {
     await visitor.context.close();
     await server.close();
@@ -2213,14 +2228,14 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.5 · Build 75", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.6 · Build 76", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.5");
-    expect(report).toContain("Build: 75");
+    expect(report).toContain("App-Version: 0.7.6");
+    expect(report).toContain("Build: 76");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 

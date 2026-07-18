@@ -1387,6 +1387,18 @@ class SupabaseRealtimeService {
     return data;
   }
 
+  async fetchCurrentAccount() {
+    if (!this.client) return { ok: false, error: "account_unavailable" };
+    const authUser = await this.ensureAuthenticated();
+    if (!this.userIdValue(authUser?.id)) return { ok: false, error: "authentication_required" };
+    const { data, error } = await this.client.rpc("get_current_account");
+    if (error) return { ok: false, error: error.message || "account_fetch_failed" };
+    if (!this.userIdValue(data?.id) || data?.authUserId !== authUser.id) {
+      return { ok: false, error: "account_mismatch" };
+    }
+    return { ok: true, account: data, authUserId: authUser.id };
+  }
+
   onAuthStateChange(listener) {
     if (!this.client) return () => {};
     const { data } = this.client.auth.onAuthStateChange((event, session) => {
@@ -4909,7 +4921,13 @@ async function removeProfileAvatar() {
     if (!oldObjectPath || typeof collaborationService.removeAvatarObject !== "function") {
       throw new Error("avatar_remove_unavailable");
     }
-    const clearResult = await collaborationService.upsertProfile?.(clearedUser);
+    let clearResult;
+    try {
+      clearResult = await collaborationService.upsertProfile?.(clearedUser);
+    } catch {
+      await reconcileAmbiguousAvatarWrite(identityAtStart, status);
+      return;
+    }
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (clearResult?.ok !== true) throw new Error("avatar_profile_sync_failed");
 
@@ -4920,7 +4938,8 @@ async function removeProfileAvatar() {
         identityAtStart.userId
       );
     } catch {
-      removeResult = { ok: false, error: "avatar_remove_rejected" };
+      await reconcileAmbiguousAvatarWrite(identityAtStart, status);
+      return;
     }
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (removeResult?.ok === true) {
@@ -4934,7 +4953,8 @@ async function removeProfileAvatar() {
     try {
       rollbackResult = await collaborationService.upsertProfile?.(userAtStart);
     } catch {
-      rollbackResult = { ok: false, error: "avatar_rollback_rejected" };
+      await reconcileAmbiguousAvatarWrite(identityAtStart, status);
+      return;
     }
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (rollbackResult?.ok === true) {
@@ -4953,6 +4973,50 @@ async function removeProfileAvatar() {
   } finally {
     endProfileWrite("avatar");
   }
+}
+
+async function reconcileAmbiguousAvatarWrite(identityAtStart, status) {
+  const setStatus = (message) => {
+    const currentStatus = elements.profileRegisterContent.querySelector("[data-avatar-status]");
+    const target = currentStatus ?? status;
+    if (target) target.textContent = message;
+  };
+  if (!isProfileWriteIdentityCurrent(identityAtStart)) {
+    setStatus("Der Account wurde gewechselt. Der Avatar wurde nicht übernommen.");
+    return false;
+  }
+
+  let confirmedResult;
+  try {
+    confirmedResult = await collaborationService.fetchCurrentAccount?.();
+  } catch {
+    confirmedResult = { ok: false, error: "account_fetch_rejected" };
+  }
+  if (!isProfileWriteIdentityCurrent(identityAtStart)) {
+    setStatus("Der Account wurde gewechselt. Der Avatar wurde nicht übernommen.");
+    return false;
+  }
+
+  const confirmedAccount = confirmedResult?.account;
+  if (
+    confirmedResult?.ok !== true
+    || confirmedAccount?.id !== identityAtStart.userId
+    || confirmedResult.authUserId !== identityAtStart.authUserId
+  ) {
+    setStatus("Der Ausgang ist noch unklar. Bitte versuche die Synchronisierung erneut.");
+    return false;
+  }
+
+  const confirmedAvatarUrl = typeof confirmedAccount.avatarUrl === "string"
+    ? confirmedAccount.avatarUrl
+    : "";
+  if (!isProfileWriteIdentityCurrent(identityAtStart)) {
+    setStatus("Der Account wurde gewechselt. Der Avatar wurde nicht übernommen.");
+    return false;
+  }
+  commitProfileAvatarLocally({ ...currentUser, avatarUrl: confirmedAvatarUrl }, { closeEditor: false });
+  setStatus("Der Serverstand wurde geprüft und der Avatar synchronisiert.");
+  return true;
 }
 
 function commitProfileAvatarLocally(nextUser, options = {}) {

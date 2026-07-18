@@ -7,10 +7,10 @@ const root = path.resolve(__dirname, "..");
 
 test("browser entrypoint loads the tested app logic before app.js", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const releaseIndex = html.indexOf('<script src="./app-version.js?v=75"></script>');
-  const logicIndex = html.indexOf('<script src="./app-logic.js?v=75"></script>');
-  const avatarLogicIndex = html.indexOf('<script src="./avatar-logic.js?v=75"></script>');
-  const appIndex = html.indexOf('<script src="./app.js?v=75"></script>');
+  const releaseIndex = html.indexOf('<script src="./app-version.js?v=76"></script>');
+  const logicIndex = html.indexOf('<script src="./app-logic.js?v=76"></script>');
+  const avatarLogicIndex = html.indexOf('<script src="./avatar-logic.js?v=76"></script>');
+  const appIndex = html.indexOf('<script src="./app.js?v=76"></script>');
 
   assert.notEqual(releaseIndex, -1);
   assert.notEqual(logicIndex, -1);
@@ -19,7 +19,7 @@ test("browser entrypoint loads the tested app logic before app.js", () => {
   assert.ok(releaseIndex < appIndex);
   assert.ok(logicIndex < appIndex);
   assert.ok(avatarLogicIndex < appIndex);
-  assert.match(html, /styles\.css\?v=75/);
+  assert.match(html, /styles\.css\?v=76/);
 });
 
 test("service worker derives its cache version from the central release metadata", () => {

@@ -56,7 +56,10 @@ function createState() {
     avatarEvents: [],
     avatarFailures: {
       profileUpdate: [],
-      storageRemove: []
+      profileUpdateResponse: [],
+      storageRemove: [],
+      storageRemoveResponse: [],
+      accountFetch: []
     },
     tombstones: new Map(),
     pairingRequests: new Map(),
@@ -105,6 +108,10 @@ function isAllowedAvatarUploadPath(path, accountId, authUserId) {
 
 function apiError(message, code = "server_error") {
   return { data: null, error: { message, code } };
+}
+
+function rejectCommittedResponse() {
+  return { __rejectCommittedResponse: true };
 }
 
 function accountPayload(account) {
@@ -309,6 +316,17 @@ function rpc(state, token, name, args) {
   const account = accountFor(state, token);
   if (!account) return apiError("Account unavailable", "account_unavailable");
 
+  if (name === "get_current_account") {
+    const queuedFailure = state.avatarFailures.accountFetch.length
+      ? state.avatarFailures.accountFetch.shift()
+      : null;
+    if (queuedFailure) return apiError(queuedFailure, "account_fetch_failed");
+    state.avatarEvents.push({ type: "profile-fetch", avatarUrl: account.avatarUrl, ok: true });
+    return {
+      data: { ...accountPayload(account), authUserId: session.user.id },
+      error: null
+    };
+  }
   if (name === "apply_list_mutation_v3") return applyMutation(state, account, args);
   if (name === "transfer_list_ownership_v3") {
     const list = state.lists.get(args.target_list_id);
@@ -335,6 +353,10 @@ function rpc(state, token, name, args) {
     account.avatarUrl = args.avatar_url || "";
     state.avatarEvents.push({ type: "profile-update", avatarUrl: account.avatarUrl, ok: true });
     bump(state);
+    const rejectResponse = state.avatarFailures.profileUpdateResponse.length
+      ? state.avatarFailures.profileUpdateResponse.shift()
+      : null;
+    if (rejectResponse) return rejectCommittedResponse();
     return { data: { ok: true }, error: null };
   }
   if (name === "touch_current_device") return { data: { ok: true }, error: null };
@@ -543,6 +565,10 @@ async function handleApi(state, payload) {
     }
     paths.forEach((path) => state.avatarObjects.delete(avatarObjectKey(bucket, path)));
     paths.forEach((path) => state.avatarEvents.push({ type: "storage-remove", path, ok: true }));
+    const rejectResponse = state.avatarFailures.storageRemoveResponse.length
+      ? state.avatarFailures.storageRemoveResponse.shift()
+      : null;
+    if (rejectResponse) return rejectCommittedResponse();
     return { data: paths.map((path) => ({ name: path })), error: null };
   }
   if (action === "version") return { version: state.version };
@@ -561,7 +587,12 @@ export async function startTestServer({ root = rootDirectory } = {}) {
     }
     if (url.pathname === "/__test__/collaboration-api" && request.method === "POST") {
       try {
-        json(response, 200, await handleApi(state, await readRequest(request)));
+        const result = await handleApi(state, await readRequest(request));
+        if (result?.__rejectCommittedResponse) {
+          response.destroy();
+          return;
+        }
+        json(response, 200, result);
       } catch (error) {
         json(response, 400, apiError(error instanceof Error ? error.message : "Invalid request", "invalid_request"));
       }

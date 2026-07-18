@@ -3,8 +3,8 @@
   if (typeof module !== "undefined" && module.exports) module.exports = release;
   root.MartRelease = release;
 }(typeof globalThis !== "undefined" ? globalThis : self, () => {
-  const version = "0.7.5";
-  const build = 75;
+  const version = "0.7.6";
+  const build = 76;
 
   function text(value, fallback = "Nicht verfügbar") {
     const normalized = String(value ?? "").trim();

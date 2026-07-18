@@ -235,6 +235,8 @@ test("avatar service uses authenticated account-scoped storage paths", () => {
   assert.match(serviceBody, /\?v=\$\{Date\.now\(\)\}/);
   assert.match(serviceBody, /currentUser\.userId !== accountId/);
   assert.doesNotMatch(serviceBody, /\$\{accountId\}\/avatar-[ab]\.webp/);
+  assert.match(serviceBody, /async fetchCurrentAccount\(\)/);
+  assert.match(serviceBody, /rpc\("get_current_account"\)/);
 });
 
 test("list deletion and the zero-list state cannot resurrect cached notes", () => {

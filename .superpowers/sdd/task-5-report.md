@@ -100,3 +100,27 @@
 - Full unit suite: 80 passed.
 - Full WebKit suite: 40 passed.
 - `pnpm verify`: passed, including syntax checks, release-cache wiring, and `git diff --check`.
+
+## Ambiguous Network Reconciliation
+
+### RED
+
+- Added test-server hooks that commit an avatar object deletion or rollback profile update and then terminate the HTTP response before the client can observe the result.
+- Added browser regressions for committed deletion with a lost response, committed rollback with a lost response, and a failed confirmation fetch.
+- Confirmed the former client incorrectly inferred failure: it could restore a deleted avatar URL or keep a locally cleared avatar after the rollback had actually committed.
+
+### GREEN
+
+- Reused the existing read-only `get_current_account` RPC through `fetchCurrentAccount()`; no SQL or migration change was required.
+- Any rejected profile-clear, storage-removal, or rollback Promise now triggers a confirmed durable-account re-fetch instead of inferring an outcome.
+- After account and auth-session identity checks, the confirmed `avatarUrl` is propagated to `currentUser`, local members and items, saved account state, and the visible profile avatar.
+- If confirmation also fails, local state is left untouched, the profile editor remains retryable after the existing write lock is released, and the inline message explicitly states that the outcome is still uncertain.
+- Bumped the release cache to `0.7.6` / build `76`.
+
+### Verification
+
+- Focused startup/service wiring: 14 passed.
+- Focused avatar and reconciliation browser regressions: 12 passed.
+- Full unit suite: 80 passed.
+- Full WebKit suite: 41 passed.
+- `pnpm verify`: passed, including syntax checks, release-cache wiring, and `git diff --check`.
