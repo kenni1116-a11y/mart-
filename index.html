@@ -42,8 +42,8 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.8-4 3-6 6.5-6s5.7 2 6.5 6"/></svg>
         </button>
       </header>
-      <button class="top-options-scrim is-hidden" id="topOptionsScrim" type="button" aria-label="Optionen schließen" tabindex="-1"></button>
-      <nav class="top-options is-hidden" id="topOptions" aria-label="Optionen">
+      <button class="top-options-scrim" id="topOptionsScrim" type="button" aria-label="Optionen schließen" tabindex="-1" aria-hidden="true"></button>
+      <nav class="top-options" id="topOptions" aria-label="Optionen" aria-hidden="true">
         <button class="top-options-close" id="topOptionsCloseButton" type="button" aria-label="Optionen schließen">&times;</button>
         <h2>Optionen</h2>
         <div class="top-options-list">
@@ -123,9 +123,7 @@
           <div class="notes-board-actions">
             <div class="new-note-action">
               <span>Neuer Zettel</span>
-              <button class="add-note-button" id="addListButton" type="button" aria-label="Neuer Zettel">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-              </button>
+              <button class="add-note-button" id="addListButton" type="button" aria-label="Neuer Zettel">+</button>
             </div>
           </div>
           <div class="notes-stack" id="notesStack"></div>

@@ -352,8 +352,13 @@ test("options register exposes direct tools and keeps profile separate", async (
     await visitor.page.goto(server.origin);
     await waitForReady(visitor.page);
 
-    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     const register = visitor.page.locator("#topOptions");
+    const closedTranslation = await register.evaluate((element) => {
+      const transform = getComputedStyle(element).transform;
+      return transform === "none" ? 0 : new DOMMatrix(transform).m41;
+    });
+    expect(closedTranslation).toBeLessThanOrEqual(-100);
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await expect(register).toBeVisible();
     await expect(register.getByRole("heading", { name: "Optionen" })).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: "Hintergrund anpassen" })).toBeVisible();
@@ -361,6 +366,10 @@ test("options register exposes direct tools and keeps profile separate", async (
     await expect(visitor.page.getByRole("button", { name: "Impressum" })).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: "Bugreport" })).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: "Mehr", exact: true })).toHaveCount(0);
+    await expect.poll(() => register.evaluate((element) => {
+      const transform = getComputedStyle(element).transform;
+      return Math.abs(transform === "none" ? 0 : new DOMMatrix(transform).m41);
+    })).toBeLessThanOrEqual(1);
 
     const presentation = await register.evaluate((element) => {
       const style = getComputedStyle(element);
@@ -376,7 +385,11 @@ test("options register exposes direct tools and keeps profile separate", async (
         closeFontSize: Number.parseFloat(closeStyle.fontSize),
         closeWidth: closeBox.width,
         closeHeight: closeBox.height,
-        scrimBlur: getComputedStyle(document.querySelector("#topOptionsScrim")).backdropFilter
+        scrimBlur: getComputedStyle(document.querySelector("#topOptionsScrim")).backdropFilter,
+        openTranslation: style.transform === "none" ? 0 : new DOMMatrix(style.transform).m41,
+        borderRightWidth: Number.parseFloat(style.borderRightWidth),
+        boxShadow: style.boxShadow,
+        edgeMask: style.maskImage || style.webkitMaskImage
       };
     });
     expect(presentation.position).toBe("fixed");
@@ -387,6 +400,10 @@ test("options register exposes direct tools and keeps profile separate", async (
     expect(presentation.closeWidth).toBeGreaterThanOrEqual(44);
     expect(presentation.closeHeight).toBeGreaterThanOrEqual(44);
     expect(presentation.scrimBlur).toContain("blur");
+    expect(Math.abs(presentation.openTranslation)).toBeLessThanOrEqual(1);
+    expect(presentation.borderRightWidth).toBe(0);
+    expect(presentation.boxShadow).toBe("none");
+    expect(presentation.edgeMask).toContain("linear-gradient");
 
     await visitor.page.locator("#topOptionsCloseButton").click();
     await expect(register).toBeHidden();
@@ -449,7 +466,36 @@ test("Pinnwand controls center add actions and integrate the active notch", asyn
   try {
     await visitor.page.goto(server.origin);
     await waitForReady(visitor.page);
+    const shell = await visitor.page.locator(".topbar").evaluate((topbar) => {
+      const topbarBox = topbar.getBoundingClientRect();
+      const menuBox = topbar.querySelector("#topMenuButton").getBoundingClientRect();
+      const profileBox = topbar.querySelector("#accountButton").getBoundingClientRect();
+      return {
+        menuOffset: Math.abs(menuBox.left - topbarBox.left),
+        profileOffset: Math.abs(profileBox.right - topbarBox.right)
+      };
+    });
+    expect(shell.menuOffset).toBeLessThanOrEqual(1);
+    expect(shell.profileOffset).toBeLessThanOrEqual(1);
     await expectCentered(".empty-notes-state .new-note-action");
+    const emptyAction = await visitor.page.locator(".empty-notes-state .new-note-action").evaluate((action) => {
+      const button = action.querySelector(".add-note-button");
+      const style = getComputedStyle(button);
+      return {
+        direction: getComputedStyle(action).flexDirection,
+        glyph: button.textContent.trim(),
+        border: style.borderTopStyle,
+        backgroundClip: style.backgroundClip || style.webkitBackgroundClip,
+        width: button.getBoundingClientRect().width,
+        height: button.getBoundingClientRect().height
+      };
+    });
+    expect(emptyAction.direction).toBe("column");
+    expect(emptyAction.glyph).toBe("+");
+    expect(emptyAction.border).toBe("none");
+    expect(emptyAction.backgroundClip).toContain("text");
+    expect(emptyAction.width).toBeGreaterThanOrEqual(44);
+    expect(emptyAction.height).toBeGreaterThanOrEqual(44);
     await visitor.page.locator("[data-empty-add-list]").click();
     await expect(visitor.page.locator(".note-card")).toHaveCount(1);
     await expect(visitor.page.locator(".note-card")).toBeVisible();
@@ -490,6 +536,47 @@ test("Pinnwand controls center add actions and integrate the active notch", asyn
       expect(control.height).toBeGreaterThanOrEqual(44);
       expect(Number.parseFloat(control.radius)).toBeGreaterThanOrEqual(20);
     }
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("manual item suggestions show product names on dark Graphite material", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.locator("[data-empty-add-list]").click();
+    const input = visitor.page.locator("[data-manual-input]");
+    await input.fill("apf");
+
+    const suggestions = visitor.page.locator("[data-manual-suggestions]");
+    await expect(suggestions).toBeVisible();
+    await expect(suggestions.getByText("Äpfel", { exact: true })).toBeVisible();
+    await expect(suggestions.getByRole("option", { name: "Äpfel Obst" })).toBeVisible();
+
+    const material = await suggestions.evaluate((container) => {
+      const parseColor = (value) => value.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [255, 255, 255];
+      const luminance = (channels) => channels
+        .map((channel) => {
+          const value = channel / 255;
+          return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+      const background = parseColor(getComputedStyle(container).backgroundColor);
+      const name = container.querySelector("button span");
+      const foreground = parseColor(getComputedStyle(name).color);
+      const [lighter, darker] = [luminance(foreground), luminance(background)].sort((left, right) => right - left);
+      return {
+        background,
+        contrast: (lighter + 0.05) / (darker + 0.05)
+      };
+    });
+    expect(Math.max(...material.background)).toBeLessThanOrEqual(45);
+    expect(material.contrast).toBeGreaterThanOrEqual(4.5);
   } finally {
     await visitor.context.close();
     await server.close();

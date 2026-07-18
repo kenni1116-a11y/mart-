@@ -320,18 +320,27 @@ svg {
   height: 20px;
 }
 
+#topMenuButton {
+  grid-column: 1;
+  justify-self: start;
+}
+
+#accountButton {
+  grid-column: 3;
+  justify-self: end;
+}
+
 .top-options {
   position: fixed;
   z-index: 42;
   inset: 0 auto 0 0;
   display: block;
   width: min(84vw, 360px);
-  padding: calc(env(safe-area-inset-top, 0px) + 58px) 22px calc(env(safe-area-inset-bottom, 0px) + 28px);
+  padding: calc(env(safe-area-inset-top, 0px) + 58px) 54px calc(env(safe-area-inset-bottom, 0px) + 28px) 22px;
   overflow-y: auto;
-  border: 1px solid rgba(173, 190, 206, 0.16);
-  border-left: 0;
-  border-top: 0;
-  border-radius: 0 0 28px 0;
+  visibility: hidden;
+  border: 0;
+  border-radius: 0;
   background: linear-gradient(
     180deg,
     rgba(17, 22, 29, 0.03) 0%,
@@ -339,9 +348,21 @@ svg {
     rgba(17, 22, 29, 0.84) 46%,
     rgba(11, 15, 21, 0.98) 100%
   );
-  box-shadow: 20px 0 52px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(30px) saturate(0.56);
-  -webkit-backdrop-filter: blur(30px) saturate(0.56);
+  box-shadow: none;
+  backdrop-filter: blur(42px) saturate(0.46);
+  -webkit-backdrop-filter: blur(42px) saturate(0.46);
+  transform: translateX(calc(-100% - 12px));
+  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 340ms;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
+}
+
+.top-options.is-open {
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s;
+  pointer-events: auto;
 }
 
 .top-options-scrim {
@@ -354,8 +375,19 @@ svg {
   border: 0;
   border-radius: 0;
   background: rgba(3, 6, 10, 0.32);
-  backdrop-filter: blur(18px) saturate(0.42);
-  -webkit-backdrop-filter: blur(18px) saturate(0.42);
+  backdrop-filter: blur(28px) saturate(0.36);
+  -webkit-backdrop-filter: blur(28px) saturate(0.36);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 260ms ease, visibility 0s linear 260ms;
+  pointer-events: none;
+}
+
+.top-options-scrim.is-open {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+  pointer-events: auto;
 }
 
 .top-options h2 {
@@ -370,7 +402,7 @@ svg {
 .top-options-close {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 8px);
-  right: 14px;
+  right: 38px;
   display: grid;
   width: 44px;
   height: 44px;
@@ -536,12 +568,14 @@ h2 {
 
 .new-note-action {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 6px;
   color: var(--gm-text);
   font-size: 0.82rem;
   font-weight: 620;
+  text-align: center;
 }
 
 .add-note-button {
@@ -552,15 +586,18 @@ h2 {
   min-height: 44px;
   place-items: center;
   padding: 0;
-  border: 1px solid rgba(218, 228, 238, 0.2);
-  border-radius: 50%;
+  border: 0;
+  border-radius: 0;
   background: var(--gm-titanium);
-  color: #15191e;
-}
-
-.add-note-button svg {
-  width: 17px;
-  height: 17px;
+  color: transparent;
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 44px;
+  font-weight: 220;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 18px rgba(0, 0, 0, 0.36);
+  -webkit-background-clip: text;
+  background-clip: text;
+  box-shadow: none;
 }
 
 .notes-stack {
@@ -595,17 +632,13 @@ h2 {
   height: 54px;
   min-width: 54px;
   min-height: 54px;
-  box-shadow: 0 18px 34px rgba(72, 63, 42, 0.12);
+  font-size: 52px;
+  box-shadow: none;
 }
 
 .new-note-action-large {
-  gap: 14px;
+  gap: 7px;
   font-size: 1rem;
-}
-
-.add-note-button-large svg {
-  width: 21px;
-  height: 21px;
 }
 
 .list-panel {
@@ -885,10 +918,10 @@ h2 {
   max-height: 220px;
   margin-top: 5px;
   overflow: auto;
-  border: 1px solid rgba(119, 106, 64, 0.24);
+  border: 1px solid var(--gm-line);
   border-radius: 11px;
-  background: rgba(255, 254, 246, 0.98);
-  box-shadow: 0 12px 25px rgba(64, 54, 31, 0.14);
+  background: rgba(12, 17, 23, 0.98);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
 }
 
 .manual-suggestions[hidden] {
@@ -903,9 +936,9 @@ h2 {
   min-height: 43px;
   padding: 7px 10px;
   border: 0;
-  border-bottom: 1px solid rgba(119, 106, 64, 0.12);
+  border-bottom: 1px solid var(--gm-line);
   background: transparent;
-  color: var(--ink);
+  color: var(--gm-text);
   text-align: left;
 }
 
@@ -917,7 +950,7 @@ h2 {
 .manual-suggestions button:focus-visible,
 .manual-suggestions button.is-active {
   outline: 0;
-  background: rgba(214, 241, 252, 0.68);
+  background: rgba(75, 117, 153, 0.3);
 }
 
 .manual-suggestions button span {
@@ -925,12 +958,13 @@ h2 {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: 0.8rem;
   font-weight: 690;
+  color: var(--gm-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .manual-suggestions button small {
-  color: var(--muted);
+  color: var(--gm-muted);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: 0.62rem;
   white-space: nowrap;

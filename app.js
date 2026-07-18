@@ -6104,9 +6104,7 @@ function emptyNotesMarkup() {
     <div class="empty-notes-state">
       <div class="new-note-action new-note-action-large">
         <span>Neuer Zettel</span>
-        <button class="add-note-button add-note-button-large" type="button" ${isActivationReady() ? "" : "disabled"} aria-label="Neuer Zettel" data-empty-add-list>
-          ${icon("plus")}
-        </button>
+        <button class="add-note-button add-note-button-large" type="button" ${isActivationReady() ? "" : "disabled"} aria-label="Neuer Zettel" data-empty-add-list>+</button>
       </div>
     </div>
   `;
@@ -6255,8 +6253,10 @@ function schedulePriceSearchRender(query) {
 }
 
 function setOptionsRegisterOpen(isOpen) {
-  elements.topOptions.classList.toggle("is-hidden", !isOpen);
-  elements.topOptionsScrim.classList.toggle("is-hidden", !isOpen);
+  elements.topOptions.classList.toggle("is-open", isOpen);
+  elements.topOptionsScrim.classList.toggle("is-open", isOpen);
+  elements.topOptions.setAttribute("aria-hidden", String(!isOpen));
+  elements.topOptionsScrim.setAttribute("aria-hidden", String(!isOpen));
   elements.topMenuButton.setAttribute("aria-expanded", String(isOpen));
   elements.body.classList.toggle("has-open-options", isOpen);
 }
@@ -6265,7 +6265,7 @@ elements.authRetryButton?.addEventListener("click", connectDeviceAccount);
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 elements.workspaceTabs.forEach((tab) => tab.addEventListener("click", () => setWorkspace(tab.dataset.workspace)));
 elements.layout.addEventListener("scroll", syncWorkspaceFromScroll, { passive: true });
-elements.topMenuButton.addEventListener("click", () => setOptionsRegisterOpen(elements.topOptions.classList.contains("is-hidden")));
+elements.topMenuButton.addEventListener("click", () => setOptionsRegisterOpen(!elements.topOptions.classList.contains("is-open")));
 elements.topOptionsCloseButton.addEventListener("click", () => setOptionsRegisterOpen(false));
 elements.topOptionsScrim.addEventListener("click", () => setOptionsRegisterOpen(false));
 elements.accountButton.addEventListener("click", showProfile);
@@ -6532,7 +6532,7 @@ elements.modalContent.addEventListener("keydown", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (!elements.topOptions.classList.contains("is-hidden")) {
+  if (elements.topOptions.classList.contains("is-open")) {
     setOptionsRegisterOpen(false);
     return;
   }
