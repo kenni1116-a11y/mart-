@@ -53,6 +53,11 @@ function createState() {
     members: new Map(),
     items: new Map(),
     avatarObjects: new Map(),
+    avatarEvents: [],
+    avatarFailures: {
+      profileUpdate: [],
+      storageRemove: []
+    },
     tombstones: new Map(),
     pairingRequests: new Map(),
     version: 0
@@ -84,8 +89,8 @@ function avatarObjectKey(bucket, path) {
   return `${bucket}:${path}`;
 }
 
-function accountAvatarPath(accountId) {
-  return `${accountId}/avatar.webp`;
+function isAllowedAvatarPath(path, accountId) {
+  return path === `${accountId}/avatar-a.webp` || path === `${accountId}/avatar-b.webp`;
 }
 
 function apiError(message, code = "server_error") {
@@ -309,8 +314,16 @@ function rpc(state, token, name, args) {
     return { data: { ok: true, listId: list.id, ownerId: target.user_id, previousOwnerId: account.id }, error: null };
   }
   if (name === "update_account_profile") {
+    const queuedFailure = state.avatarFailures.profileUpdate.length
+      ? state.avatarFailures.profileUpdate.shift()
+      : null;
+    if (queuedFailure) {
+      state.avatarEvents.push({ type: "profile-update", avatarUrl: args.avatar_url || "", ok: false });
+      return apiError(queuedFailure, "profile_sync_failed");
+    }
     account.displayName = args.display_name || account.displayName;
     account.avatarUrl = args.avatar_url || "";
+    state.avatarEvents.push({ type: "profile-update", avatarUrl: account.avatarUrl, ok: true });
     bump(state);
     return { data: { ok: true }, error: null };
   }
@@ -494,11 +507,12 @@ async function handleApi(state, payload) {
     const path = args.path;
     const contentType = args.contentType;
     if (!account) return apiError("Account unavailable", "account_unavailable");
-    if (bucket !== "avatars" || path !== accountAvatarPath(account.id)) return apiError("Forbidden", "forbidden");
+    if (bucket !== "avatars" || !isAllowedAvatarPath(path, account.id)) return apiError("Forbidden", "forbidden");
     if (!/^image\/(webp|jpeg|png)$/.test(contentType ?? "")) return apiError("Unsupported avatar type", "unsupported_media_type");
     const bytes = Buffer.from(String(args.base64 ?? ""), "base64");
     if (!bytes.length || bytes.length > 204800) return apiError("Invalid avatar size", "invalid_avatar_size");
     state.avatarObjects.set(avatarObjectKey(bucket, path), { bytes, contentType });
+    state.avatarEvents.push({ type: "storage-upload", path, ok: true });
     return { data: { path }, error: null };
   }
   if (action === "storage-remove") {
@@ -506,8 +520,16 @@ async function handleApi(state, payload) {
     const bucket = args.bucket;
     const paths = Array.isArray(args.paths) ? args.paths : [];
     if (!account) return apiError("Account unavailable", "account_unavailable");
-    if (bucket !== "avatars" || paths.some((path) => path !== accountAvatarPath(account.id))) return apiError("Forbidden", "forbidden");
+    if (bucket !== "avatars" || paths.some((path) => !isAllowedAvatarPath(path, account.id))) return apiError("Forbidden", "forbidden");
+    const queuedFailure = state.avatarFailures.storageRemove.length
+      ? state.avatarFailures.storageRemove.shift()
+      : null;
+    if (queuedFailure) {
+      paths.forEach((path) => state.avatarEvents.push({ type: "storage-remove", path, ok: false }));
+      return apiError(queuedFailure, "storage_remove_failed");
+    }
     paths.forEach((path) => state.avatarObjects.delete(avatarObjectKey(bucket, path)));
+    paths.forEach((path) => state.avatarEvents.push({ type: "storage-remove", path, ok: true }));
     return { data: paths.map((path) => ({ name: path })), error: null };
   }
   if (action === "version") return { version: state.version };

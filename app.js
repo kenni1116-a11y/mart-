@@ -1464,13 +1464,36 @@ class SupabaseRealtimeService {
     return isUuid(value) ? value : null;
   }
 
-  async uploadAvatar(blob, accountId) {
+  isAllowedAvatarObjectPath(path, accountId) {
+    return path === `${accountId}/avatar-a.webp` || path === `${accountId}/avatar-b.webp`;
+  }
+
+  avatarObjectPathFromUrl(avatarUrl, accountId) {
+    if (!this.userIdValue(accountId) || typeof avatarUrl !== "string" || !avatarUrl) return "";
+    try {
+      const segments = new URL(avatarUrl, window.location.origin).pathname
+        .split("/")
+        .filter(Boolean)
+        .map((segment) => decodeURIComponent(segment));
+      const filename = segments.at(-1) ?? "";
+      const parent = segments.at(-2) ?? "";
+      const path = `${parent}/${filename}`;
+      return parent === accountId && this.isAllowedAvatarObjectPath(path, accountId) ? path : "";
+    } catch {
+      return "";
+    }
+  }
+
+  async uploadAvatar(blob, accountId, currentAvatarUrl = "") {
     if (!this.client || !blob || !this.userIdValue(accountId) || currentUser.userId !== accountId) {
       return { ok: false, error: "account_mismatch" };
     }
     const authUser = await this.ensureAuthenticated();
     if (!authUser?.id) return { ok: false, error: "authentication_required" };
-    const path = `${accountId}/avatar.webp`;
+    const previousObjectPath = this.avatarObjectPathFromUrl(currentAvatarUrl, accountId);
+    const path = previousObjectPath === `${accountId}/avatar-a.webp`
+      ? `${accountId}/avatar-b.webp`
+      : `${accountId}/avatar-a.webp`;
     const storage = this.client.storage;
     if (!storage) return { ok: false, error: "storage_unavailable" };
     const bucket = storage.from("avatars");
@@ -1481,16 +1504,25 @@ class SupabaseRealtimeService {
     if (error) return { ok: false, error: error.message || "avatar_upload_failed" };
     const { data } = bucket.getPublicUrl(path);
     if (!data?.publicUrl) return { ok: false, error: "avatar_url_unavailable" };
-    return { ok: true, avatarUrl: `${data.publicUrl}?v=${Date.now()}` };
+    return {
+      ok: true,
+      avatarUrl: `${data.publicUrl}?v=${Date.now()}`,
+      objectPath: path,
+      previousObjectPath
+    };
   }
 
-  async removeAvatar(accountId) {
-    if (!this.client || !this.userIdValue(accountId) || currentUser.userId !== accountId) {
+  async removeAvatarObject(path, accountId) {
+    if (
+      !this.client
+      || !this.userIdValue(accountId)
+      || currentUser.userId !== accountId
+      || (path !== `${accountId}/avatar-a.webp` && path !== `${accountId}/avatar-b.webp`)
+    ) {
       return { ok: false, error: "account_mismatch" };
     }
     const authUser = await this.ensureAuthenticated();
     if (!authUser?.id) return { ok: false, error: "authentication_required" };
-    const path = `${accountId}/avatar.webp`;
     const storage = this.client.storage;
     if (!storage) return { ok: false, error: "storage_unavailable" };
     const bucket = storage.from("avatars");
@@ -4758,9 +4790,15 @@ async function saveProfileAvatar(resolveAvatarUrl) {
   if (!beginProfileWrite("avatar")) return false;
   const identityAtStart = captureProfileWriteIdentity();
   const userAtStart = { ...currentUser };
+  let avatarChange = null;
+  let profileCommitted = false;
   if (status) status.textContent = "Avatar wird gespeichert …";
   try {
-    const avatarUrl = await resolveAvatarUrl(identityAtStart);
+    const resolvedAvatar = await resolveAvatarUrl(identityAtStart, userAtStart);
+    avatarChange = typeof resolvedAvatar === "string"
+      ? { avatarUrl: resolvedAvatar }
+      : resolvedAvatar;
+    const avatarUrl = avatarChange?.avatarUrl;
     if (typeof avatarUrl !== "string") throw new Error("avatar_upload_unavailable");
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     const nextUser = { ...userAtStart, avatarUrl };
@@ -4772,24 +4810,23 @@ async function saveProfileAvatar(resolveAvatarUrl) {
     }
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (profileResult?.ok !== true) throw new Error("avatar_profile_sync_failed");
+    profileCommitted = true;
 
-    currentUser = nextUser;
-    saveCurrentUser();
-    lists.forEach((listData) => {
-      const member = memberFor(listData, currentUser.userId);
-      if (member) member.avatarUrl = currentUser.avatarUrl;
-      listData.items.forEach((item) => {
-        if (item.addedByUserId === currentUser.userId) item.addedByAvatarUrl = currentUser.avatarUrl;
-      });
-    });
-    save();
-    updatePresence();
-    render();
-    const avatarButton = elements.profileRegisterContent.querySelector("[data-edit-avatar]");
-    if (avatarButton) avatarButton.innerHTML = memberAvatarMarkup(currentUser, "is-current");
-    setAvatarEditorOpen(false);
+    commitProfileAvatarLocally(nextUser);
+    try {
+      await avatarChange.afterCommit?.();
+    } catch {
+      // The inactive slot is bounded and will be reused on the next replacement.
+    }
     return true;
   } catch (error) {
+    if (!profileCommitted) {
+      try {
+        await avatarChange?.rollback?.();
+      } catch {
+        // A staged slot is never referenced and can be overwritten on the next attempt.
+      }
+    }
     if (status) status.textContent = avatarStatusMessage(error);
     return false;
   } finally {
@@ -4799,31 +4836,108 @@ async function saveProfileAvatar(resolveAvatarUrl) {
 
 async function selectAvatarPhoto(file) {
   if (!file) return;
-  await saveProfileAvatar(async (identityAtStart) => {
+  await saveProfileAvatar(async (identityAtStart, userAtStart) => {
     const avatarFile = await MartAvatarLogic.resizeAvatarFile(file);
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (typeof collaborationService.uploadAvatar !== "function") {
       throw new Error("avatar_upload_unavailable");
     }
-    const uploadResult = await collaborationService.uploadAvatar(avatarFile, identityAtStart.userId);
-    if (!uploadResult?.ok || typeof uploadResult.avatarUrl !== "string") {
+    const uploadResult = await collaborationService.uploadAvatar(
+      avatarFile,
+      identityAtStart.userId,
+      userAtStart.avatarUrl
+    );
+    if (
+      !uploadResult?.ok
+      || typeof uploadResult.avatarUrl !== "string"
+      || typeof uploadResult.objectPath !== "string"
+    ) {
       throw new Error("avatar_upload_failed");
     }
-    return uploadResult.avatarUrl;
+    return {
+      avatarUrl: uploadResult.avatarUrl,
+      rollback: () => collaborationService.removeAvatarObject?.(
+        uploadResult.objectPath,
+        identityAtStart.userId
+      ),
+      afterCommit: () => uploadResult.previousObjectPath
+        ? collaborationService.removeAvatarObject?.(
+          uploadResult.previousObjectPath,
+          identityAtStart.userId
+        )
+        : Promise.resolve({ ok: true })
+    };
   });
 }
 
 async function removeProfileAvatar() {
-  const avatarUrl = typeof currentUser.avatarUrl === "string" ? currentUser.avatarUrl : "";
-  await saveProfileAvatar(async (identityAtStart) => {
-    if (!avatarUrl || avatarColorChoiceFor(avatarUrl)) return "";
-    if (typeof collaborationService.removeAvatar !== "function") {
+  const oldAvatarUrl = typeof currentUser.avatarUrl === "string" ? currentUser.avatarUrl : "";
+  if (!oldAvatarUrl || avatarColorChoiceFor(oldAvatarUrl)) {
+    await saveProfileAvatar(async () => "");
+    return;
+  }
+  const status = elements.profileRegisterContent.querySelector("[data-avatar-status]");
+  if (!beginProfileWrite("avatar")) return;
+  const identityAtStart = captureProfileWriteIdentity();
+  const userAtStart = { ...currentUser };
+  const clearedUser = { ...userAtStart, avatarUrl: "" };
+  const oldObjectPath = collaborationService.avatarObjectPathFromUrl?.(
+    oldAvatarUrl,
+    identityAtStart.userId
+  );
+  if (status) status.textContent = "Avatar wird entfernt …";
+  try {
+    if (!oldObjectPath || typeof collaborationService.removeAvatarObject !== "function") {
       throw new Error("avatar_remove_unavailable");
     }
-    const removeResult = await collaborationService.removeAvatar(identityAtStart.userId);
-    if (!removeResult?.ok) throw new Error("avatar_remove_failed");
-    return "";
+    const clearResult = await collaborationService.upsertProfile?.(clearedUser);
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
+    if (clearResult?.ok !== true) throw new Error("avatar_profile_sync_failed");
+
+    const removeResult = await collaborationService.removeAvatarObject(
+      oldObjectPath,
+      identityAtStart.userId
+    );
+    if (removeResult?.ok === true) {
+      commitProfileAvatarLocally(clearedUser);
+      return;
+    }
+
+    const rollbackResult = await collaborationService.upsertProfile?.(userAtStart);
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
+    if (rollbackResult?.ok === true) {
+      if (status) status.textContent = "Der Avatar konnte gerade nicht synchronisiert werden.";
+      return;
+    }
+
+    commitProfileAvatarLocally(clearedUser, { closeEditor: false });
+    const currentStatus = elements.profileRegisterContent.querySelector("[data-avatar-status]");
+    if (currentStatus) {
+      currentStatus.textContent = "Der Avatar wurde aus dem Profil entfernt, das Bild aber nicht vollständig gelöscht.";
+    }
+  } catch (error) {
+    if (status) status.textContent = avatarStatusMessage(error);
+  } finally {
+    endProfileWrite("avatar");
+  }
+}
+
+function commitProfileAvatarLocally(nextUser, options = {}) {
+  currentUser = nextUser;
+  saveCurrentUser();
+  lists.forEach((listData) => {
+    const member = memberFor(listData, currentUser.userId);
+    if (member) member.avatarUrl = currentUser.avatarUrl;
+    listData.items.forEach((item) => {
+      if (item.addedByUserId === currentUser.userId) item.addedByAvatarUrl = currentUser.avatarUrl;
+    });
   });
+  save();
+  updatePresence();
+  render();
+  const avatarButton = elements.profileRegisterContent.querySelector("[data-edit-avatar]");
+  if (avatarButton) avatarButton.innerHTML = memberAvatarMarkup(currentUser, "is-current");
+  if (options.closeEditor !== false) setAvatarEditorOpen(false);
 }
 
 function setAccountProtectionExpanded(isExpanded) {

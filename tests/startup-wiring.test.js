@@ -211,14 +211,17 @@ test("avatar service uses authenticated account-scoped storage paths", () => {
   const serviceEnd = app.indexOf("function sanitizeMarket", serviceStart);
   const serviceBody = app.slice(serviceStart, serviceEnd);
 
-  assert.match(serviceBody, /async uploadAvatar\(blob, accountId\)/);
-  assert.match(serviceBody, /async removeAvatar\(accountId\)/);
+  assert.match(serviceBody, /async uploadAvatar\(blob, accountId, currentAvatarUrl = ""\)/);
+  assert.match(serviceBody, /async removeAvatarObject\(path, accountId\)/);
   assert.match(serviceBody, /storage\.from\("avatars"\)/);
-  assert.match(serviceBody, /\$\{accountId\}\/avatar\.webp/);
+  assert.match(serviceBody, /avatar-a\.webp/);
+  assert.match(serviceBody, /avatar-b\.webp/);
   assert.match(serviceBody, /upsert:\s*true/);
   assert.match(serviceBody, /getPublicUrl\(path\)/);
   assert.match(serviceBody, /\?v=\$\{Date\.now\(\)\}/);
   assert.match(serviceBody, /currentUser\.userId !== accountId/);
+  assert.match(serviceBody, /path !== `\$\{accountId\}\/avatar-a\.webp`/);
+  assert.match(serviceBody, /path !== `\$\{accountId\}\/avatar-b\.webp`/);
 });
 
 test("list deletion and the zero-list state cannot resurrect cached notes", () => {

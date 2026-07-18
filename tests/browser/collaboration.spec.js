@@ -889,7 +889,7 @@ test("avatar photo upload persists through profile reopen and removal restores i
 
     const avatarImage = page.locator("[data-edit-avatar] img");
     await expect(avatarImage).toBeVisible();
-    await expect(avatarImage).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar\.webp\?v=/);
+    await expect(avatarImage).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar-[ab]\.webp\?v=/);
     await expect.poll(() => server.state.avatarObjects.size).toBe(1);
     const storedAvatar = [...server.state.avatarObjects.values()][0];
     expect(storedAvatar.contentType).toMatch(/^image\/(webp|png)$/);
@@ -898,13 +898,188 @@ test("avatar photo upload persists through profile reopen and removal restores i
 
     await page.locator("#profileRegisterCloseButton").click();
     await page.getByRole("button", { name: "Profil öffnen" }).click();
-    await expect(page.locator("[data-edit-avatar] img")).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar\.webp\?v=/);
+    await expect(page.locator("[data-edit-avatar] img")).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar-[ab]\.webp\?v=/);
 
     await page.locator("[data-edit-avatar]").click();
     await page.locator("[data-remove-avatar]").click();
     await expect(page.locator("[data-edit-avatar] img")).toHaveCount(0);
     await expect(page.locator("[data-edit-avatar]")).toContainText("T1");
     await expect.poll(() => server.state.avatarObjects.size).toBe(0);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("avatar replacement switches profile before deleting the old slot", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "first.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    await expect(avatarImage).toBeVisible();
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "second.png", mimeType: "image/png", buffer: png });
+
+    await expect.poll(async () => avatarImage.getAttribute("src")).not.toBe(oldUrl);
+    const newUrl = await avatarImage.getAttribute("src");
+    const newPath = new URL(newUrl).pathname.replace("/__test__/avatar/", "");
+    expect(newPath).not.toBe(oldPath);
+    expect(server.state.avatarEvents).toEqual([
+      { type: "storage-upload", path: newPath, ok: true },
+      { type: "profile-update", avatarUrl: newUrl, ok: true },
+      { type: "storage-remove", path: oldPath, ok: true }
+    ]);
+    expect([...server.state.avatarObjects.keys()]).toEqual([`avatars:${newPath}`]);
+    expect([...server.state.accounts.values()][0].avatarUrl).toBe(newUrl);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("failed profile sync removes the staged slot and preserves the old avatar", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "first.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+    server.state.avatarFailures.profileUpdate.push("profile_sync_failed");
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "second.png", mimeType: "image/png", buffer: png });
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
+    await expect(avatarImage).toHaveAttribute("src", oldUrl);
+    expect([...server.state.avatarObjects.keys()]).toEqual([`avatars:${oldPath}`]);
+    expect([...server.state.accounts.values()][0].avatarUrl).toBe(oldUrl);
+    expect(server.state.avatarEvents.map(({ type, ok }) => ({ type, ok }))).toEqual([
+      { type: "storage-upload", ok: true },
+      { type: "profile-update", ok: false },
+      { type: "storage-remove", ok: true }
+    ]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("failed profile clear leaves the stored avatar untouched", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+    server.state.avatarFailures.profileUpdate.push("profile_sync_failed");
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
+    await expect(avatarImage).toHaveAttribute("src", oldUrl);
+    expect([...server.state.avatarObjects.keys()]).toEqual([`avatars:${oldPath}`]);
+    expect([...server.state.accounts.values()][0].avatarUrl).toBe(oldUrl);
+    expect(server.state.avatarEvents).toEqual([{ type: "profile-update", avatarUrl: "", ok: false }]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("failed avatar object removal restores the old server profile", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+    server.state.avatarFailures.storageRemove.push("storage_remove_failed");
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
+    await expect(avatarImage).toHaveAttribute("src", oldUrl);
+    expect([...server.state.avatarObjects.keys()]).toEqual([`avatars:${oldPath}`]);
+    expect([...server.state.accounts.values()][0].avatarUrl).toBe(oldUrl);
+    expect(server.state.avatarEvents).toEqual([
+      { type: "profile-update", avatarUrl: "", ok: true },
+      { type: "storage-remove", path: oldPath, ok: false },
+      { type: "profile-update", avatarUrl: oldUrl, ok: true }
+    ]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("failed removal rollback keeps local avatar aligned with the cleared server profile", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+    server.state.avatarFailures.profileUpdate.push(null, "rollback_failed");
+    server.state.avatarFailures.storageRemove.push("storage_remove_failed");
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("nicht vollständig gelöscht");
+    await expect(avatarImage).toHaveCount(0);
+    expect([...server.state.avatarObjects.keys()]).toEqual([`avatars:${oldPath}`]);
+    expect([...server.state.accounts.values()][0].avatarUrl).toBe("");
+    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe("");
+    expect(server.state.avatarEvents).toEqual([
+      { type: "profile-update", avatarUrl: "", ok: true },
+      { type: "storage-remove", path: oldPath, ok: false },
+      { type: "profile-update", avatarUrl: oldUrl, ok: false }
+    ]);
   } finally {
     await visitor.context.close();
     await server.close();
@@ -1832,14 +2007,14 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.3 · Build 73", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.4 · Build 74", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.3");
-    expect(report).toContain("Build: 73");
+    expect(report).toContain("App-Version: 0.7.4");
+    expect(report).toContain("Build: 74");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 
