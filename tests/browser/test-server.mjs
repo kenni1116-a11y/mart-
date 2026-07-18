@@ -89,8 +89,18 @@ function avatarObjectKey(bucket, path) {
   return `${bucket}:${path}`;
 }
 
-function isAllowedAvatarPath(path, accountId) {
-  return path === `${accountId}/avatar-a.webp` || path === `${accountId}/avatar-b.webp`;
+const avatarFilenamePattern = /^avatar-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})-([ab])\.webp$/i;
+
+function avatarPathDetails(path, accountId) {
+  if (typeof path !== "string" || !path.startsWith(`${accountId}/`)) return null;
+  const filename = path.slice(accountId.length + 1);
+  const match = filename.match(avatarFilenamePattern);
+  return match ? { authUserId: match[1], slot: match[2] } : null;
+}
+
+function isAllowedAvatarUploadPath(path, accountId, authUserId) {
+  const details = avatarPathDetails(path, accountId);
+  return Boolean(details && details.authUserId.toLowerCase() === authUserId.toLowerCase());
 }
 
 function apiError(message, code = "server_error") {
@@ -502,12 +512,15 @@ async function handleApi(state, payload) {
     return account ? tableRows(state, account.id, args.table, args.filters) : apiError("Account unavailable", "account_unavailable");
   }
   if (action === "storage-upload") {
+    const session = sessionFor(state, token);
     const account = accountFor(state, token);
     const bucket = args.bucket;
     const path = args.path;
     const contentType = args.contentType;
     if (!account) return apiError("Account unavailable", "account_unavailable");
-    if (bucket !== "avatars" || !isAllowedAvatarPath(path, account.id)) return apiError("Forbidden", "forbidden");
+    if (bucket !== "avatars" || !session || !isAllowedAvatarUploadPath(path, account.id, session.user.id)) {
+      return apiError("Forbidden", "forbidden");
+    }
     if (!/^image\/(webp|jpeg|png)$/.test(contentType ?? "")) return apiError("Unsupported avatar type", "unsupported_media_type");
     const bytes = Buffer.from(String(args.base64 ?? ""), "base64");
     if (!bytes.length || bytes.length > 204800) return apiError("Invalid avatar size", "invalid_avatar_size");
@@ -520,7 +533,7 @@ async function handleApi(state, payload) {
     const bucket = args.bucket;
     const paths = Array.isArray(args.paths) ? args.paths : [];
     if (!account) return apiError("Account unavailable", "account_unavailable");
-    if (bucket !== "avatars" || paths.some((path) => !isAllowedAvatarPath(path, account.id))) return apiError("Forbidden", "forbidden");
+    if (bucket !== "avatars" || paths.some((path) => !avatarPathDetails(path, account.id))) return apiError("Forbidden", "forbidden");
     const queuedFailure = state.avatarFailures.storageRemove.length
       ? state.avatarFailures.storageRemove.shift()
       : null;

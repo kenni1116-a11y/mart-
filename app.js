@@ -1464,8 +1464,17 @@ class SupabaseRealtimeService {
     return isUuid(value) ? value : null;
   }
 
+  avatarObjectPathDetails(path, accountId) {
+    if (!this.userIdValue(accountId) || typeof path !== "string" || !path.startsWith(`${accountId}/`)) {
+      return null;
+    }
+    const filename = path.slice(accountId.length + 1);
+    const match = filename.match(/^avatar-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})-([ab])\.webp$/i);
+    return match ? { authUserId: match[1], slot: match[2].toLowerCase() } : null;
+  }
+
   isAllowedAvatarObjectPath(path, accountId) {
-    return path === `${accountId}/avatar-a.webp` || path === `${accountId}/avatar-b.webp`;
+    return Boolean(this.avatarObjectPathDetails(path, accountId));
   }
 
   avatarObjectPathFromUrl(avatarUrl, accountId) {
@@ -1489,11 +1498,18 @@ class SupabaseRealtimeService {
       return { ok: false, error: "account_mismatch" };
     }
     const authUser = await this.ensureAuthenticated();
-    if (!authUser?.id) return { ok: false, error: "authentication_required" };
-    const previousObjectPath = this.avatarObjectPathFromUrl(currentAvatarUrl, accountId);
-    const path = previousObjectPath === `${accountId}/avatar-a.webp`
-      ? `${accountId}/avatar-b.webp`
-      : `${accountId}/avatar-a.webp`;
+    if (!this.userIdValue(authUser?.id)) return { ok: false, error: "authentication_required" };
+    if (currentUser.authUserId && currentUser.authUserId !== authUser.id) {
+      return { ok: false, error: "account_mismatch" };
+    }
+    const currentObjectPath = this.avatarObjectPathFromUrl(currentAvatarUrl, accountId);
+    const currentDetails = this.avatarObjectPathDetails(currentObjectPath, accountId);
+    const previousObjectPath = currentDetails?.authUserId.toLowerCase() === authUser.id.toLowerCase()
+      ? currentObjectPath
+      : "";
+    const slotAPath = `${accountId}/avatar-${authUser.id}-a.webp`;
+    const slotBPath = `${accountId}/avatar-${authUser.id}-b.webp`;
+    const path = previousObjectPath === slotAPath ? slotBPath : slotAPath;
     const storage = this.client.storage;
     if (!storage) return { ok: false, error: "storage_unavailable" };
     const bucket = storage.from("avatars");
@@ -1517,12 +1533,15 @@ class SupabaseRealtimeService {
       !this.client
       || !this.userIdValue(accountId)
       || currentUser.userId !== accountId
-      || (path !== `${accountId}/avatar-a.webp` && path !== `${accountId}/avatar-b.webp`)
+      || !this.isAllowedAvatarObjectPath(path, accountId)
     ) {
       return { ok: false, error: "account_mismatch" };
     }
     const authUser = await this.ensureAuthenticated();
-    if (!authUser?.id) return { ok: false, error: "authentication_required" };
+    if (!this.userIdValue(authUser?.id)) return { ok: false, error: "authentication_required" };
+    if (currentUser.authUserId && currentUser.authUserId !== authUser.id) {
+      return { ok: false, error: "account_mismatch" };
+    }
     const storage = this.client.storage;
     if (!storage) return { ok: false, error: "storage_unavailable" };
     const bucket = storage.from("avatars");
@@ -4820,7 +4839,7 @@ async function saveProfileAvatar(resolveAvatarUrl) {
     }
     return true;
   } catch (error) {
-    if (!profileCommitted) {
+    if (!profileCommitted && isProfileWriteIdentityCurrent(identityAtStart)) {
       try {
         await avatarChange?.rollback?.();
       } catch {
@@ -4894,22 +4913,36 @@ async function removeProfileAvatar() {
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (clearResult?.ok !== true) throw new Error("avatar_profile_sync_failed");
 
-    const removeResult = await collaborationService.removeAvatarObject(
-      oldObjectPath,
-      identityAtStart.userId
-    );
+    let removeResult;
+    try {
+      removeResult = await collaborationService.removeAvatarObject(
+        oldObjectPath,
+        identityAtStart.userId
+      );
+    } catch {
+      removeResult = { ok: false, error: "avatar_remove_rejected" };
+    }
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (removeResult?.ok === true) {
+      if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
       commitProfileAvatarLocally(clearedUser);
       return;
     }
 
-    const rollbackResult = await collaborationService.upsertProfile?.(userAtStart);
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
+    let rollbackResult;
+    try {
+      rollbackResult = await collaborationService.upsertProfile?.(userAtStart);
+    } catch {
+      rollbackResult = { ok: false, error: "avatar_rollback_rejected" };
+    }
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (rollbackResult?.ok === true) {
       if (status) status.textContent = "Der Avatar konnte gerade nicht synchronisiert werden.";
       return;
     }
 
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     commitProfileAvatarLocally(clearedUser, { closeEditor: false });
     const currentStatus = elements.profileRegisterContent.querySelector("[data-avatar-status]");
     if (currentStatus) {

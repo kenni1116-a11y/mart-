@@ -66,3 +66,37 @@
 - Full unit suite: 80 passed.
 - Full WebKit suite: 37 passed.
 - `pnpm verify`: passed, including syntax, release-cache wiring, and `git diff --check`.
+
+## Per-Device Slot Hardening
+
+### RED
+
+- Tightened the test storage facade before changing production code so the previous account-global A/B paths were rejected.
+- Added one concurrent browser regression with two distinct authenticated device identities mapped to the same durable account.
+- Added network-rejection regressions for object removal and profile rollback, in addition to the existing `{ ok: false }` cases.
+- Confirmed RED through two startup-policy failures and browser upload failures caused by the rejected legacy slot names.
+
+### GREEN
+
+- Avatar objects now use two bounded slots per authenticated device: `<accountId>/avatar-<authUserId>-a.webp` and `-b.webp`.
+- The Supabase service obtains the authenticated user ID from its current session and never accepts it from the caller. A device alternates only its own slots; an avatar owned by another device selects the current device's default A slot.
+- Simultaneous device uploads therefore stage distinct objects. The durable profile still follows last confirmed write wins, without either device overwriting the object currently referenced before its own profile update succeeds.
+- Object-removal and profile-rollback Promise rejections are handled independently. Account/session identity is rechecked before rollback and before every local avatar mutation.
+- The test server enforces current-device filenames for upload while allowing account devices to remove any strictly valid per-device slot in their durable account.
+- Bumped the release cache to `0.7.5` / build `75`.
+
+### Security Review
+
+- INSERT and UPDATE policies require both the caller's durable account folder and one of the two filenames derived from `auth.uid()`.
+- SELECT and DELETE require the caller's durable account folder plus a strict UUID-shaped per-device avatar filename. DELETE can clean an old device slot but cannot target arbitrary account objects.
+- Client and test-server validators mirror the same account folder, UUID, and bounded-slot constraints.
+- Current Supabase Storage guidance was rechecked: upsert still requires SELECT, INSERT, and UPDATE policies; no relevant Storage/RLS breaking change was identified.
+- No service-role credential or public write/list access was introduced. The migration remains unapplied.
+
+### Verification
+
+- Focused startup/storage wiring: 14 passed.
+- Focused avatar and compensation browser regressions: 11 passed.
+- Full unit suite: 80 passed.
+- Full WebKit suite: 40 passed.
+- `pnpm verify`: passed, including syntax checks, release-cache wiring, and `git diff --check`.

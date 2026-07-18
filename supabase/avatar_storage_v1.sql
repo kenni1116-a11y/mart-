@@ -23,6 +23,7 @@ to authenticated
 using (
   bucket_id = 'avatars'
   and (storage.foldername(name))[1] = (select private.current_account_id()::text)
+  and storage.filename(name) ~ '^avatar-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[ab][.]webp$'
 );
 
 create policy "avatars account insert"
@@ -32,6 +33,10 @@ to authenticated
 with check (
   bucket_id = 'avatars'
   and (storage.foldername(name))[1] = (select private.current_account_id()::text)
+  and storage.filename(name) in (
+    'avatar-' || (select auth.uid())::text || '-a.webp',
+    'avatar-' || (select auth.uid())::text || '-b.webp'
+  )
 );
 
 create policy "avatars account update"
@@ -41,10 +46,18 @@ to authenticated
 using (
   bucket_id = 'avatars'
   and (storage.foldername(name))[1] = (select private.current_account_id()::text)
+  and storage.filename(name) in (
+    'avatar-' || (select auth.uid())::text || '-a.webp',
+    'avatar-' || (select auth.uid())::text || '-b.webp'
+  )
 )
 with check (
   bucket_id = 'avatars'
   and (storage.foldername(name))[1] = (select private.current_account_id()::text)
+  and storage.filename(name) in (
+    'avatar-' || (select auth.uid())::text || '-a.webp',
+    'avatar-' || (select auth.uid())::text || '-b.webp'
+  )
 );
 
 create policy "avatars account delete"
@@ -54,4 +67,5 @@ to authenticated
 using (
   bucket_id = 'avatars'
   and (storage.foldername(name))[1] = (select private.current_account_id()::text)
+  and storage.filename(name) ~ '^avatar-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[ab][.]webp$'
 );

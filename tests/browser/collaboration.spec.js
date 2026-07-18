@@ -7,6 +7,7 @@ test.beforeAll(async () => {
 });
 
 const viewport = { width: 402, height: 874 };
+const avatarFilenameSource = "avatar-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[ab]\\.webp";
 
 async function createIsolatedPage(browser, server) {
   const context = await browser.newContext({ viewport });
@@ -35,6 +36,31 @@ async function addManualItem(page, name) {
   await expect(input).toBeVisible();
   await input.fill(name);
   await input.press("Enter");
+}
+
+async function connectVisitorToAccount(server, visitor, accountId) {
+  const token = await visitor.page.evaluate(() => localStorage.getItem("__mart_test_session"));
+  const session = server.state.sessions.get(token);
+  if (!session) throw new Error("Test session missing");
+  session.accountId = accountId;
+  const device = [...server.state.devices.values()].find((entry) => entry.authUserId === session.user.id);
+  if (device) device.accountId = accountId;
+  await visitor.page.reload();
+  await waitForReady(visitor.page);
+  return session.user.id;
+}
+
+async function coloredPng(page, color) {
+  const base64 = await page.evaluate((fillStyle) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 4;
+    canvas.height = 4;
+    const context = canvas.getContext("2d");
+    context.fillStyle = fillStyle;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }, color);
+  return Buffer.from(base64, "base64");
 }
 
 async function waitForStableElement(page, selector, stableFor = 250) {
@@ -889,7 +915,7 @@ test("avatar photo upload persists through profile reopen and removal restores i
 
     const avatarImage = page.locator("[data-edit-avatar] img");
     await expect(avatarImage).toBeVisible();
-    await expect(avatarImage).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar-[ab]\.webp\?v=/);
+    await expect(avatarImage).toHaveAttribute("src", new RegExp(`__test__/avatar/[^/]+/${avatarFilenameSource}\\?v=`, "i"));
     await expect.poll(() => server.state.avatarObjects.size).toBe(1);
     const storedAvatar = [...server.state.avatarObjects.values()][0];
     expect(storedAvatar.contentType).toMatch(/^image\/(webp|png)$/);
@@ -898,7 +924,7 @@ test("avatar photo upload persists through profile reopen and removal restores i
 
     await page.locator("#profileRegisterCloseButton").click();
     await page.getByRole("button", { name: "Profil öffnen" }).click();
-    await expect(page.locator("[data-edit-avatar] img")).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar-[ab]\.webp\?v=/);
+    await expect(page.locator("[data-edit-avatar] img")).toHaveAttribute("src", new RegExp(`__test__/avatar/[^/]+/${avatarFilenameSource}\\?v=`, "i"));
 
     await page.locator("[data-edit-avatar]").click();
     await page.locator("[data-remove-avatar]").click();
@@ -944,6 +970,97 @@ test("avatar replacement switches profile before deleting the old slot", async (
     expect([...server.state.accounts.values()][0].avatarUrl).toBe(newUrl);
   } finally {
     await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("two authenticated devices stage distinct avatar slots before last profile write wins", async ({ browser }) => {
+  const server = await startTestServer();
+  const first = await createIsolatedPage(browser, server);
+  const second = await createIsolatedPage(browser, server);
+  let releaseFirstProfile;
+  let releaseSecondProfile;
+  try {
+    await first.page.goto(server.origin);
+    await waitForReady(first.page);
+    await second.page.goto(server.origin);
+    await waitForReady(second.page);
+
+    const firstAccountId = await first.page.evaluate(() => currentUser.userId);
+    const firstAuthUserId = await first.page.evaluate(() => currentUser.authUserId);
+    const secondAuthUserId = await connectVisitorToAccount(server, second, firstAccountId);
+    expect(secondAuthUserId).not.toBe(firstAuthUserId);
+    await expect.poll(() => second.page.evaluate(() => currentUser.userId)).toBe(firstAccountId);
+
+    const baselinePng = await coloredPng(first.page, "#20a060");
+    await first.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await first.page.locator("[data-edit-avatar]").click();
+    await first.page.locator("[data-avatar-file]").setInputFiles({ name: "baseline.png", mimeType: "image/png", buffer: baselinePng });
+    const baselineUrl = await first.page.locator("[data-edit-avatar] img").getAttribute("src");
+    const baselinePath = new URL(baselineUrl).pathname.replace("/__test__/avatar/", "");
+    const baselineObject = server.state.avatarObjects.get(`avatars:${baselinePath}`);
+    expect(baselinePath).toBe(`${firstAccountId}/avatar-${firstAuthUserId}-a.webp`);
+    expect(baselineObject).toBeTruthy();
+
+    await second.page.reload();
+    await waitForReady(second.page);
+    await second.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await expect(second.page.locator("[data-edit-avatar] img")).toHaveAttribute("src", baselineUrl);
+    server.state.avatarEvents.length = 0;
+
+    await first.page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        await new Promise((resolve) => { releaseFirstProfile = resolve; });
+      }
+      await route.continue();
+    });
+    await second.page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        await new Promise((resolve) => { releaseSecondProfile = resolve; });
+      }
+      await route.continue();
+    });
+
+    const firstPng = await coloredPng(first.page, "#d34242");
+    const secondPng = await coloredPng(second.page, "#3268d8");
+    await first.page.locator("[data-edit-avatar]").click();
+    await second.page.locator("[data-edit-avatar]").click();
+    const firstSelection = first.page.locator("[data-avatar-file]").setInputFiles({ name: "first.png", mimeType: "image/png", buffer: firstPng });
+    const secondSelection = second.page.locator("[data-avatar-file]").setInputFiles({ name: "second.png", mimeType: "image/png", buffer: secondPng });
+
+    await expect.poll(() => server.state.avatarEvents.filter((event) => event.type === "storage-upload").length).toBe(2);
+    await expect.poll(() => Boolean(releaseFirstProfile && releaseSecondProfile)).toBe(true);
+    const stagedPaths = server.state.avatarEvents.filter((event) => event.type === "storage-upload").map((event) => event.path);
+    const firstPath = `${firstAccountId}/avatar-${firstAuthUserId}-b.webp`;
+    const secondPath = `${firstAccountId}/avatar-${secondAuthUserId}-a.webp`;
+    expect(new Set(stagedPaths)).toEqual(new Set([firstPath, secondPath]));
+    expect(server.state.accounts.get(firstAccountId).avatarUrl).toBe(baselineUrl);
+    expect(server.state.avatarObjects.get(`avatars:${baselinePath}`).bytes.equals(baselineObject.bytes)).toBe(true);
+    expect(server.state.avatarObjects.get(`avatars:${firstPath}`).bytes.equals(baselineObject.bytes)).toBe(false);
+    expect(server.state.avatarObjects.get(`avatars:${secondPath}`).bytes.equals(baselineObject.bytes)).toBe(false);
+    const firstStagedBytes = Buffer.from(server.state.avatarObjects.get(`avatars:${firstPath}`).bytes);
+    const secondStagedBytes = Buffer.from(server.state.avatarObjects.get(`avatars:${secondPath}`).bytes);
+    expect(firstStagedBytes.equals(secondStagedBytes)).toBe(false);
+
+    releaseFirstProfile();
+    await firstSelection;
+    await expect.poll(() => server.state.accounts.get(firstAccountId).avatarUrl.includes(firstPath)).toBe(true);
+    await expect.poll(() => server.state.avatarObjects.has(`avatars:${baselinePath}`)).toBe(false);
+    expect(server.state.avatarObjects.has(`avatars:${secondPath}`)).toBe(true);
+
+    releaseSecondProfile();
+    await secondSelection;
+    await expect.poll(() => server.state.accounts.get(firstAccountId).avatarUrl.includes(secondPath)).toBe(true);
+    expect(server.state.avatarObjects.has(`avatars:${firstPath}`)).toBe(true);
+    expect(server.state.avatarObjects.has(`avatars:${secondPath}`)).toBe(true);
+    expect(server.state.avatarObjects.get(`avatars:${firstPath}`).bytes.equals(firstStagedBytes)).toBe(true);
+    expect(server.state.avatarObjects.get(`avatars:${secondPath}`).bytes.equals(secondStagedBytes)).toBe(true);
+  } finally {
+    releaseFirstProfile?.();
+    releaseSecondProfile?.();
+    await Promise.all([first.context.close(), second.context.close()]);
     await server.close();
   }
 });
@@ -1049,6 +1166,49 @@ test("failed avatar object removal restores the old server profile", async ({ br
   }
 });
 
+test("rejected avatar removal rolls the cleared profile back", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let rejected = false;
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldUrl = await avatarImage.getAttribute("src");
+    const oldPath = new URL(oldUrl).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "storage-remove" && !rejected) {
+        rejected = true;
+        await route.abort("failed");
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
+    await expect(avatarImage).toHaveAttribute("src", oldUrl);
+    expect(server.state.accounts.values().next().value.avatarUrl).toBe(oldUrl);
+    expect(server.state.avatarObjects.has(`avatars:${oldPath}`)).toBe(true);
+    expect(server.state.avatarEvents).toEqual([
+      { type: "profile-update", avatarUrl: "", ok: true },
+      { type: "profile-update", avatarUrl: oldUrl, ok: true }
+    ]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
 test("failed removal rollback keeps local avatar aligned with the cleared server profile", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
@@ -1079,6 +1239,52 @@ test("failed removal rollback keeps local avatar aligned with the cleared server
       { type: "profile-update", avatarUrl: "", ok: true },
       { type: "storage-remove", path: oldPath, ok: false },
       { type: "profile-update", avatarUrl: oldUrl, ok: false }
+    ]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("rejected removal rollback keeps local avatar aligned with the cleared server profile", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let profileWrites = 0;
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    const oldPath = new URL(await avatarImage.getAttribute("src")).pathname.replace("/__test__/avatar/", "");
+    server.state.avatarEvents.length = 0;
+    server.state.avatarFailures.storageRemove.push("storage_remove_failed");
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        profileWrites += 1;
+        if (profileWrites === 2) {
+          await route.abort("failed");
+          return;
+        }
+      }
+      await route.continue();
+    });
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("nicht vollständig gelöscht");
+    await expect(avatarImage).toHaveCount(0);
+    expect(server.state.accounts.values().next().value.avatarUrl).toBe("");
+    expect(server.state.avatarObjects.has(`avatars:${oldPath}`)).toBe(true);
+    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe("");
+    expect(server.state.avatarEvents).toEqual([
+      { type: "profile-update", avatarUrl: "", ok: true },
+      { type: "storage-remove", path: oldPath, ok: false }
     ]);
   } finally {
     await visitor.context.close();
@@ -2007,14 +2213,14 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.4 · Build 74", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.5 · Build 75", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.4");
-    expect(report).toContain("Build: 74");
+    expect(report).toContain("App-Version: 0.7.5");
+    expect(report).toContain("Build: 75");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 
