@@ -52,6 +52,8 @@ Tapping the avatar opens a compact choice surface with:
 
 Photo selection uses the native device photo picker. The image is resized and compressed before storage. Initials offer a small curated set of muted Graphite-compatible colors. Removing the avatar restores the initials representation. Avatar actions must not require users to enter or see a URL.
 
+The selected initials color is synchronized through the existing avatar URL field as a short internal token such as `initials:graphite`. Rendering recognizes these tokens and never treats them as image URLs. This keeps initials consistent across connected devices without adding a profile column.
+
 Selected photos are converted to a maximum 512 by 512 pixel WebP image with a target size below 200 KB and uploaded to a dedicated Supabase Storage avatar bucket. The object path is scoped to the current account. Public read access allows existing list badges to render the image by URL; authenticated write and delete policies allow only devices connected to that account to change it. Removing an avatar deletes the stored object and clears the existing avatar URL field.
 
 ## Account Protection
