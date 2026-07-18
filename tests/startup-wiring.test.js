@@ -191,6 +191,36 @@ test("avatar profile writes require explicit success and use the Task 5 upload c
   assert.ok(saveBody.indexOf("profileResult?.ok !== true") < saveBody.indexOf("currentUser = nextUser"));
 });
 
+test("avatar storage policy migration is account-scoped and supports safe upserts", () => {
+  const sql = read("supabase/avatar_storage_v1.sql");
+
+  assert.match(sql, /insert into storage\.buckets[\s\S]*'avatars'[\s\S]*204800[\s\S]*image\/webp[\s\S]*image\/jpeg[\s\S]*image\/png/i);
+  assert.match(sql, /drop policy if exists "avatars account select" on storage\.objects/i);
+  assert.match(sql, /create policy "avatars account select"[\s\S]*for select[\s\S]*to authenticated/i);
+  assert.match(sql, /create policy "avatars account insert"[\s\S]*for insert[\s\S]*to authenticated/i);
+  assert.match(sql, /create policy "avatars account update"[\s\S]*for update[\s\S]*to authenticated[\s\S]*using[\s\S]*with check/i);
+  assert.match(sql, /create policy "avatars account delete"[\s\S]*for delete[\s\S]*to authenticated/i);
+  assert.match(sql, /\(storage\.foldername\(name\)\)\[1\]/i);
+  assert.match(sql, /public\.account_devices/i);
+  assert.doesNotMatch(sql, /to public[\s\S]*for (?:insert|update|delete)/i);
+});
+
+test("avatar service uses authenticated account-scoped storage paths", () => {
+  const app = read("app.js");
+  const serviceStart = app.indexOf("class SupabaseRealtimeService");
+  const serviceEnd = app.indexOf("function sanitizeMarket", serviceStart);
+  const serviceBody = app.slice(serviceStart, serviceEnd);
+
+  assert.match(serviceBody, /async uploadAvatar\(blob, accountId\)/);
+  assert.match(serviceBody, /async removeAvatar\(accountId\)/);
+  assert.match(serviceBody, /storage\.from\("avatars"\)/);
+  assert.match(serviceBody, /\$\{accountId\}\/avatar\.webp/);
+  assert.match(serviceBody, /upsert:\s*true/);
+  assert.match(serviceBody, /getPublicUrl\(path\)/);
+  assert.match(serviceBody, /\?v=\$\{Date\.now\(\)\}/);
+  assert.match(serviceBody, /currentUser\.userId !== accountId/);
+});
+
 test("list deletion and the zero-list state cannot resurrect cached notes", () => {
   const app = read("app.js");
   const styles = read("styles.css");

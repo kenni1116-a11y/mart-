@@ -1464,6 +1464,43 @@ class SupabaseRealtimeService {
     return isUuid(value) ? value : null;
   }
 
+  async uploadAvatar(blob, accountId) {
+    if (!this.client || !blob || !this.userIdValue(accountId) || currentUser.userId !== accountId) {
+      return { ok: false, error: "account_mismatch" };
+    }
+    const authUser = await this.ensureAuthenticated();
+    if (!authUser?.id) return { ok: false, error: "authentication_required" };
+    const path = `${accountId}/avatar.webp`;
+    const storage = this.client.storage;
+    if (!storage) return { ok: false, error: "storage_unavailable" };
+    const bucket = storage.from("avatars");
+    const { error } = await bucket.upload(path, blob, {
+      contentType: blob.type || "image/webp",
+      upsert: true
+    });
+    if (error) return { ok: false, error: error.message || "avatar_upload_failed" };
+    const { data } = bucket.getPublicUrl(path);
+    if (!data?.publicUrl) return { ok: false, error: "avatar_url_unavailable" };
+    return { ok: true, avatarUrl: `${data.publicUrl}?v=${Date.now()}` };
+  }
+
+  async removeAvatar(accountId) {
+    if (!this.client || !this.userIdValue(accountId) || currentUser.userId !== accountId) {
+      return { ok: false, error: "account_mismatch" };
+    }
+    const authUser = await this.ensureAuthenticated();
+    if (!authUser?.id) return { ok: false, error: "authentication_required" };
+    const path = `${accountId}/avatar.webp`;
+    const storage = this.client.storage;
+    if (!storage) return { ok: false, error: "storage_unavailable" };
+    const bucket = storage.from("avatars");
+    const { error } = await bucket.remove([path]);
+    if (error && !/not[ _-]?found|does not exist|404/i.test(error.message ?? "")) {
+      return { ok: false, error: error.message || "avatar_remove_failed" };
+    }
+    return { ok: true };
+  }
+
   async upsertProfile(user) {
     if (!this.client) return { ok: false, offline: true };
     const authUser = await this.ensureAuthenticated();
@@ -4776,6 +4813,19 @@ async function selectAvatarPhoto(file) {
   });
 }
 
+async function removeProfileAvatar() {
+  const avatarUrl = typeof currentUser.avatarUrl === "string" ? currentUser.avatarUrl : "";
+  await saveProfileAvatar(async (identityAtStart) => {
+    if (!avatarUrl || avatarColorChoiceFor(avatarUrl)) return "";
+    if (typeof collaborationService.removeAvatar !== "function") {
+      throw new Error("avatar_remove_unavailable");
+    }
+    const removeResult = await collaborationService.removeAvatar(identityAtStart.userId);
+    if (!removeResult?.ok) throw new Error("avatar_remove_failed");
+    return "";
+  });
+}
+
 function setAccountProtectionExpanded(isExpanded) {
   const toggle = elements.profileRegisterContent.querySelector("[data-toggle-account-protection]");
   const actions = elements.profileRegisterContent.querySelector("[data-account-protection-actions]");
@@ -6806,7 +6856,7 @@ elements.profileRegisterContent.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("[data-remove-avatar]")) {
-    saveProfileAvatar(async () => "");
+    removeProfileAvatar();
     return;
   }
   if (event.target.closest("[data-retry-profile-pairing]")) {

@@ -9,6 +9,9 @@ const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
   ".svg": "image/svg+xml"
 };
 
@@ -49,6 +52,7 @@ function createState() {
     lists: new Map(),
     members: new Map(),
     items: new Map(),
+    avatarObjects: new Map(),
     tombstones: new Map(),
     pairingRequests: new Map(),
     version: 0
@@ -74,6 +78,14 @@ function sessionFor(state, token) {
 function accountFor(state, token) {
   const session = sessionFor(state, token);
   return session?.accountId ? state.accounts.get(session.accountId) ?? null : null;
+}
+
+function avatarObjectKey(bucket, path) {
+  return `${bucket}:${path}`;
+}
+
+function accountAvatarPath(accountId) {
+  return `${accountId}/avatar.webp`;
 }
 
 function apiError(message, code = "server_error") {
@@ -353,6 +365,14 @@ const adapterSource = String.raw`(function () {
     return response.json();
   };
   const userFrom = (session) => session ? session.user : null;
+  const toBase64 = (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+    }
+    return btoa(binary);
+  };
   const makeQuery = (table) => {
     const filters = {};
     const query = {
@@ -395,6 +415,29 @@ const adapterSource = String.raw`(function () {
       auth,
       rpc: (name, args) => api("rpc", { name, args }),
       from: (table) => makeQuery(table),
+      storage: {
+        from(bucket) {
+          return {
+            async upload(path, file, options = {}) {
+              const base64 = toBase64(await file.arrayBuffer());
+              const result = await api("storage-upload", {
+                bucket,
+                path,
+                contentType: options.contentType || file.type || "application/octet-stream",
+                base64
+              });
+              return { data: result.data ?? null, error: result.error ?? null };
+            },
+            async remove(paths) {
+              const result = await api("storage-remove", { bucket, paths });
+              return { data: result.data ?? null, error: result.error ?? null };
+            },
+            getPublicUrl(path) {
+              return { data: { publicUrl: location.origin + "/__test__/avatar/" + path } };
+            }
+          };
+        }
+      },
       channel() {
         const handlers = [];
         let timer = 0;
@@ -445,6 +488,28 @@ async function handleApi(state, payload) {
     const account = accountFor(state, token);
     return account ? tableRows(state, account.id, args.table, args.filters) : apiError("Account unavailable", "account_unavailable");
   }
+  if (action === "storage-upload") {
+    const account = accountFor(state, token);
+    const bucket = args.bucket;
+    const path = args.path;
+    const contentType = args.contentType;
+    if (!account) return apiError("Account unavailable", "account_unavailable");
+    if (bucket !== "avatars" || path !== accountAvatarPath(account.id)) return apiError("Forbidden", "forbidden");
+    if (!/^image\/(webp|jpeg|png)$/.test(contentType ?? "")) return apiError("Unsupported avatar type", "unsupported_media_type");
+    const bytes = Buffer.from(String(args.base64 ?? ""), "base64");
+    if (!bytes.length || bytes.length > 204800) return apiError("Invalid avatar size", "invalid_avatar_size");
+    state.avatarObjects.set(avatarObjectKey(bucket, path), { bytes, contentType });
+    return { data: { path }, error: null };
+  }
+  if (action === "storage-remove") {
+    const account = accountFor(state, token);
+    const bucket = args.bucket;
+    const paths = Array.isArray(args.paths) ? args.paths : [];
+    if (!account) return apiError("Account unavailable", "account_unavailable");
+    if (bucket !== "avatars" || paths.some((path) => path !== accountAvatarPath(account.id))) return apiError("Forbidden", "forbidden");
+    paths.forEach((path) => state.avatarObjects.delete(avatarObjectKey(bucket, path)));
+    return { data: paths.map((path) => ({ name: path })), error: null };
+  }
   if (action === "version") return { version: state.version };
   return apiError(`Unsupported action: ${action}`, "unsupported_action");
 }
@@ -465,6 +530,20 @@ export async function startTestServer({ root = rootDirectory } = {}) {
       } catch (error) {
         json(response, 400, apiError(error instanceof Error ? error.message : "Invalid request", "invalid_request"));
       }
+      return;
+    }
+    if (url.pathname.startsWith("/__test__/avatar/") && request.method === "GET") {
+      const path = decodeURIComponent(url.pathname.slice("/__test__/avatar/".length));
+      const avatar = state.avatarObjects.get(avatarObjectKey("avatars", path));
+      if (!avatar) {
+        response.writeHead(404).end();
+        return;
+      }
+      response.writeHead(200, {
+        "content-type": avatar.contentType,
+        "cache-control": "no-store"
+      });
+      response.end(avatar.bytes);
       return;
     }
 

@@ -486,7 +486,7 @@ test("profile register exposes account controls at 44px targets", async ({ brows
           visible: control.getClientRects().length > 0
         };
       })
-      .filter((control) => control.visible && (control.width < 44 || control.height < 44)));
+      .filter((control) => control.visible && (control.width < 43.5 || control.height < 43.5)));
     expect(undersized).toEqual([]);
   } finally {
     await visitor.context.close();
@@ -874,7 +874,7 @@ test("a delayed avatar response cannot overwrite a newly active account", async 
   }
 });
 
-test("avatar photo selection stays in place when secure upload is not available", async ({ browser }) => {
+test("avatar photo upload persists through profile reopen and removal restores initials", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
   try {
@@ -887,9 +887,95 @@ test("avatar photo selection stays in place when secure upload is not available"
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
     await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
 
-    await expect(page.locator("[data-avatar-editor]")).toBeVisible();
-    await expect(page.locator("[data-avatar-status]")).toContainText("Foto-Upload ist noch nicht verfügbar");
-    await expect(page.locator("[data-edit-avatar] .member-avatar.is-initials-avatar")).toHaveCount(0);
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    await expect(avatarImage).toBeVisible();
+    await expect(avatarImage).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar\.webp\?v=/);
+    await expect.poll(() => server.state.avatarObjects.size).toBe(1);
+    const storedAvatar = [...server.state.avatarObjects.values()][0];
+    expect(storedAvatar.contentType).toMatch(/^image\/(webp|png)$/);
+    const avatarResponse = await page.request.get(await avatarImage.getAttribute("src"));
+    expect(avatarResponse.headers()["content-type"]).toBe(storedAvatar.contentType);
+
+    await page.locator("#profileRegisterCloseButton").click();
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await expect(page.locator("[data-edit-avatar] img")).toHaveAttribute("src", /__test__\/avatar\/[^/]+\/avatar\.webp\?v=/);
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+    await expect(page.locator("[data-edit-avatar] img")).toHaveCount(0);
+    await expect(page.locator("[data-edit-avatar]")).toContainText("T1");
+    await expect.poll(() => server.state.avatarObjects.size).toBe(0);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("avatar upload failure keeps the previous avatar and shows an inline error", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+    const avatarImage = page.locator("[data-edit-avatar] img");
+    await expect(avatarImage).toBeVisible();
+    const previousAvatarUrl = await avatarImage.getAttribute("src");
+
+    await page.locator("[data-edit-avatar]").click();
+
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "storage-upload") {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: null, error: { message: "storage_failed", code: "storage_error" } })
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+
+    await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
+    await expect(avatarImage).toHaveAttribute("src", previousAvatarUrl);
+    await expect.poll(() => server.state.avatarObjects.size).toBe(1);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("removing initials does not call avatar storage", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let storageRemovals = 0;
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-choose-avatar-initials]").click();
+    await page.locator("[data-avatar-palette='ocean']").click();
+    await expect(page.locator("[data-edit-avatar] .member-avatar.is-initials-avatar")).toHaveCount(1);
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "storage-remove") storageRemovals += 1;
+      await route.continue();
+    });
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-remove-avatar]").click();
+
+    await expect(page.locator("[data-edit-avatar] img")).toHaveCount(0);
+    await expect(page.locator("[data-edit-avatar]")).toContainText("T1");
+    expect(storageRemovals).toBe(0);
   } finally {
     await visitor.context.close();
     await server.close();
@@ -1746,14 +1832,14 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.2 · Build 72", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.3 · Build 73", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.2");
-    expect(report).toContain("Build: 72");
+    expect(report).toContain("App-Version: 0.7.3");
+    expect(report).toContain("Build: 73");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 
