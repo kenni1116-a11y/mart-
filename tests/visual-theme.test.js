@@ -38,6 +38,20 @@ test("the shell exposes the centered lowercase brand and Pinnwand workspace", ()
   assert.doesNotMatch(html, /data-workspace="pinnwand"[^>]*>\s*Einkaufszettel\s*</);
 });
 
+test("the shell exposes a direct options register and a separate profile action", () => {
+  const html = fs.readFileSync("index.html", "utf8");
+
+  assert.match(html, /id="topMenuButton"/);
+  assert.match(html, /id="accountButton"/);
+  assert.match(html, /id="topOptionsCloseButton"/);
+  assert.match(html, /id="openBackgroundButton"/);
+  assert.match(html, /id="openDataToolsButton"/);
+  assert.match(html, /id="imprintButton"/);
+  assert.match(html, /id="bugreportButton"/);
+  assert.doesNotMatch(html, /id="moreButton"/);
+  assert.doesNotMatch(html, />Mehr</);
+});
+
 test("auth surface keeps readable contrast on the dark foundation", () => {
   const css = fs.readFileSync("styles.css", "utf8");
   const authSheet = css.match(/\.auth-sheet\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";

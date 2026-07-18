@@ -24,7 +24,10 @@ async function createIsolatedPage(browser, server) {
 
 async function waitForReady(page) {
   await expect(page.locator("#authGate")).toHaveClass(/is-hidden/);
+  await expect(page.locator("#appShell")).toBeVisible();
+  await expect(page.locator(".notes-board")).toBeVisible();
   await expect(page.locator("#notesStack [data-empty-add-list]")).toHaveCount(1);
+  await expect(page.locator("#notesStack [data-empty-add-list]")).toBeVisible();
 }
 
 async function addManualItem(page, name) {
@@ -341,6 +344,158 @@ test("Graphite Midnight workspace follows taps and horizontal swipes", async ({ 
   }
 });
 
+test("options register exposes direct tools and keeps profile separate", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
+    const register = visitor.page.locator("#topOptions");
+    await expect(register).toBeVisible();
+    await expect(register.getByRole("heading", { name: "Optionen" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Hintergrund anpassen" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Daten hinzufügen" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Impressum" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Bugreport" })).toBeVisible();
+    await expect(visitor.page.getByRole("button", { name: "Mehr", exact: true })).toHaveCount(0);
+
+    const presentation = await register.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const close = element.querySelector("#topOptionsCloseButton");
+      const closeStyle = getComputedStyle(close);
+      const box = element.getBoundingClientRect();
+      const closeBox = close.getBoundingClientRect();
+      return {
+        position: style.position,
+        topRightRadius: style.borderTopRightRadius,
+        contained: box.left >= 0 && box.right < window.innerWidth,
+        closeBorder: closeStyle.borderTopStyle,
+        closeFontSize: Number.parseFloat(closeStyle.fontSize),
+        closeWidth: closeBox.width,
+        closeHeight: closeBox.height,
+        scrimBlur: getComputedStyle(document.querySelector("#topOptionsScrim")).backdropFilter
+      };
+    });
+    expect(presentation.position).toBe("fixed");
+    expect(presentation.topRightRadius).toBe("0px");
+    expect(presentation.contained).toBe(true);
+    expect(presentation.closeBorder).toBe("none");
+    expect(presentation.closeFontSize).toBeGreaterThanOrEqual(43);
+    expect(presentation.closeWidth).toBeGreaterThanOrEqual(44);
+    expect(presentation.closeHeight).toBeGreaterThanOrEqual(44);
+    expect(presentation.scrimBlur).toContain("blur");
+
+    await visitor.page.locator("#topOptionsCloseButton").click();
+    await expect(register).toBeHidden();
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
+    await visitor.page.getByRole("button", { name: "Hintergrund anpassen" }).click();
+    await expect(visitor.page.getByRole("heading", { name: "Hintergrund" })).toBeVisible();
+    await expect(register).toBeHidden();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("full-screen profile loads pairing QR and devices directly", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    await expect(visitor.page.locator("[data-profile-page]")).toBeVisible();
+    await expect(visitor.page.getByRole("heading", { name: "Profil" })).toBeVisible();
+    await expect(visitor.page.locator("[data-profile-pairing] .device-qr svg")).toBeVisible();
+    await expect(visitor.page.locator("[data-profile-devices] .account-device-row")).toHaveCount(1);
+    await expect(visitor.page.getByRole("button", { name: "Account löschen", exact: true })).toBeVisible();
+    await expect(visitor.page.getByRole("heading", { name: "Mehr" })).toHaveCount(0);
+
+    const profile = await visitor.page.locator(".modal-card").evaluate((card) => {
+      const box = card.getBoundingClientRect();
+      return {
+        nearlyFullWidth: box.width >= window.innerWidth - 2,
+        nearlyFullHeight: box.height >= window.innerHeight - 2,
+        horizontalOverflow: card.scrollWidth > card.clientWidth + 1
+      };
+    });
+    expect(profile.nearlyFullWidth).toBe(true);
+    expect(profile.nearlyFullHeight).toBe(true);
+    expect(profile.horizontalOverflow).toBe(false);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("Pinnwand controls center add actions and integrate the active notch", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+
+  const expectCentered = async (selector) => {
+    const offset = await visitor.page.locator(selector).evaluate((action) => {
+      const actionBox = action.getBoundingClientRect();
+      const boardBox = document.querySelector(".notes-board").getBoundingClientRect();
+      return Math.abs((actionBox.left + actionBox.width / 2) - (boardBox.left + boardBox.width / 2));
+    });
+    expect(offset).toBeLessThanOrEqual(3);
+  };
+
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await expectCentered(".empty-notes-state .new-note-action");
+    await visitor.page.locator("[data-empty-add-list]").click();
+    await expect(visitor.page.locator(".note-card")).toHaveCount(1);
+    await expect(visitor.page.locator(".note-card")).toBeVisible();
+    await waitForStableElement(visitor.page, ".note-card");
+    await expectCentered(".notes-board-actions .new-note-action");
+
+    const metrics = await visitor.page.locator(".note-card").evaluate((card) => {
+      const rect = (element) => element.getBoundingClientRect();
+      const activation = card.querySelector(".list-activation-button");
+      const cardBox = rect(card);
+      const activationBox = rect(activation);
+      const controls = [
+        card.querySelector(".edit-note-button"),
+        card.querySelector(".share-button"),
+        card.querySelector(".manual-add button"),
+        card.querySelector(".note-delete-button")
+      ];
+      return {
+        activeText: activation.textContent.trim(),
+        notchTopOffset: Math.abs(activationBox.top - cardBox.top),
+        notchWidth: activationBox.width,
+        notchHeight: activationBox.height,
+        shareText: card.querySelector(".share-button").textContent.trim(),
+        controls: controls.map((control) => ({
+          width: rect(control).width,
+          height: rect(control).height,
+          radius: getComputedStyle(control).borderRadius
+        }))
+      };
+    });
+    expect(metrics.activeText).toBe("Aktiv");
+    expect(metrics.notchTopOffset).toBeLessThanOrEqual(1);
+    expect(metrics.notchWidth).toBeGreaterThanOrEqual(120);
+    expect(metrics.notchHeight).toBeGreaterThanOrEqual(42);
+    expect(metrics.shareText).toBe("");
+    for (const control of metrics.controls) {
+      expect(control.width).toBeGreaterThanOrEqual(44);
+      expect(control.height).toBeGreaterThanOrEqual(44);
+      expect(Number.parseFloat(control.radius)).toBeGreaterThanOrEqual(20);
+    }
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
 test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices readable", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
@@ -371,11 +526,12 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
     await visitor.page.locator("[data-empty-add-list]").click();
     await expect(visitor.page.locator("[data-share-list]")).toBeVisible();
 
-    await visitor.page.getByRole("button", { name: "Menü öffnen" }).click();
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#imprintButton").click();
     await expectModalPresentation("Impressum");
     await visitor.page.locator("#modalCloseButton").click();
 
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     await expectModalPresentation("Bugreport");
     const bugInput = visitor.page.locator("#bugReportText");
@@ -391,15 +547,12 @@ test("Graphite Midnight dialogs keep auth, support, sharing, market, and prices 
     await visitor.page.locator("#modalCloseButton").click();
 
     await visitor.page.locator("#accountButton").click();
-    await expectModalPresentation("Mehr");
-    expect(await visitor.page.getByRole("button", { name: "Account", exact: true }).evaluate((button) => getComputedStyle(button).backgroundImage)).toContain("rgb(237, 240, 242)");
-    await visitor.page.getByRole("button", { name: "Account", exact: true }).click();
-    await expectModalPresentation("Account");
+    await expect(visitor.page.getByRole("heading", { name: "Profil" })).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: /Account sichern|Neuen Wiederherstellungscode erzeugen/ })).toBeVisible();
     const deleteButton = visitor.page.getByRole("button", { name: "Account löschen", exact: true });
     await expect(deleteButton).toBeVisible();
     expect(await deleteButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgb(157, 87, 88)");
-    await visitor.page.locator("#modalCloseButton").click();
+    await visitor.page.getByRole("button", { name: "Profil schließen" }).click();
 
     for (const width of [393, 430, 1280]) {
       const marketVisitor = await createIsolatedPage(browser, server);
@@ -740,14 +893,17 @@ test("isolated contexts converge item mutations, preserve owner/member deletion 
     await waitForReady(owner.page);
     await expect(owner.page.locator("[data-empty-add-list]")).toHaveCount(1);
     await expect(owner.page.getByRole("button", { name: "Neuer Zettel" })).toHaveCount(1);
+    await expect(owner.page.locator(".notes-board.is-empty")).toBeVisible();
+    await waitForStableElement(owner.page, ".notes-board.is-empty");
+    await waitForStableElement(owner.page, ".empty-notes-state .new-note-action");
     const emptyState = await owner.page.locator(".notes-board.is-empty").evaluate((board) => {
-      const button = board.querySelector("[data-empty-add-list]");
+      const action = board.querySelector(".empty-notes-state .new-note-action");
       const boardBox = board.getBoundingClientRect();
-      const buttonBox = button.getBoundingClientRect();
+      const actionBox = action.getBoundingClientRect();
       return {
         count: board.querySelectorAll("[data-empty-add-list]").length,
-        horizontalOffset: Math.abs((buttonBox.left + buttonBox.width / 2) - (boardBox.left + boardBox.width / 2)),
-        verticalOffset: Math.abs((buttonBox.top + buttonBox.height / 2) - (boardBox.top + boardBox.height / 2))
+        horizontalOffset: Math.abs((actionBox.left + actionBox.width / 2) - (boardBox.left + boardBox.width / 2)),
+        verticalOffset: Math.abs((actionBox.top + actionBox.height / 2) - (boardBox.top + boardBox.height / 2))
       };
     });
     expect(emptyState.count).toBe(1);
@@ -832,15 +988,15 @@ test("compact shared iPhone note layout stays readable and touchable at both wid
       expect(metrics.headerOverlap, `${width}px header`).toBe(false);
       expect(metrics.collaborationOverlap, `${width}px collaboration`).toBe(false);
       expect(metrics.controlOverlap, `${width}px controls`).toBe(false);
-      expect(metrics.manualHeight, `${width}px manual input`).toBeLessThanOrEqual(48);
+      expect(metrics.manualHeight, `${width}px manual input`).toBeLessThanOrEqual(56);
       expect(Math.max(...metrics.itemHeights), `${width}px item rows`).toBeLessThanOrEqual(46);
       expect(metrics.valueHeight, `${width}px value row`).toBeLessThanOrEqual(34);
       expect(metrics.valueBorderTopStyle, `${width}px value separator`).toBe("solid");
       expect(metrics.valueBorderRightWidth, `${width}px value box`).toBe(0);
       expect(metrics.shareFontFamily, `${width}px share font`).not.toMatch(/Noteworthy|Bradley|Chancery/i);
       expect(metrics.countFontFamily, `${width}px count font`).not.toMatch(/Noteworthy|Bradley|Chancery/i);
-      expect(metrics.footerHeight, `${width}px footer`).toBeLessThanOrEqual(40);
-      expect(metrics.cardHeight, `${width}px card height`).toBeLessThanOrEqual(390);
+      expect(metrics.footerHeight, `${width}px footer`).toBeLessThanOrEqual(56);
+      expect(metrics.cardHeight, `${width}px card height`).toBeLessThanOrEqual(420);
       metrics.touchSizes.forEach(({ label, width: controlWidth, height }) => {
         expect(controlWidth, `${width}px ${label} width`).toBeGreaterThanOrEqual(28);
         expect(height, `${width}px ${label} height`).toBeGreaterThanOrEqual(28);
@@ -866,17 +1022,18 @@ test("imprint and bugreport show the central app version and device context", as
     await visitor.page.goto(server.origin);
     await waitForReady(visitor.page);
 
-    await visitor.page.getByRole("button", { name: "Menü öffnen" }).click();
-    await expect(visitor.page.getByRole("button", { name: "Menü öffnen" })).toHaveAttribute("aria-expanded", "true");
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
+    await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.0 · Build 70", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.1 · Build 71", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
+    await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.0");
-    expect(report).toContain("Build: 70");
+    expect(report).toContain("App-Version: 0.7.1");
+    expect(report).toContain("Build: 71");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 

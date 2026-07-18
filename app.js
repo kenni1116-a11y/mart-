@@ -963,6 +963,7 @@ const iconPaths = {
   refresh: '<path d="M20 12a8 8 0 0 1-14 5M4 12a8 8 0 0 1 14-5M18 3v4h-4M6 21v-4h4"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"/>',
   logout: '<path d="M10 5H5v14h5m4-4 4-3-4-3m4 3H9"/>',
+  share: '<path d="M12 3v12m0-12L8 7m4-4 4 4M5 12v8h14v-8"/>',
   database: '<path d="M4 6c0-2 4-3 8-3s8 1 8 3-4 3-8 3-8-1-8-3Zm0 0v6c0 2 4 3 8 3s8-1 8-3V6M4 12v6c0 2 4 3 8 3s8-1 8-3v-6"/>'
 };
 
@@ -2118,10 +2119,13 @@ const elements = {
   marketPanel: document.querySelector(".market-panel"),
   topMenuButton: document.querySelector("#topMenuButton"),
   topOptions: document.querySelector("#topOptions"),
+  topOptionsScrim: document.querySelector("#topOptionsScrim"),
+  topOptionsCloseButton: document.querySelector("#topOptionsCloseButton"),
   accountButton: document.querySelector("#accountButton"),
+  openBackgroundButton: document.querySelector("#openBackgroundButton"),
+  openDataToolsButton: document.querySelector("#openDataToolsButton"),
   imprintButton: document.querySelector("#imprintButton"),
   bugreportButton: document.querySelector("#bugreportButton"),
-  moreButton: document.querySelector("#moreButton"),
   searchInput: document.querySelector("#searchInput"),
   marketView: document.querySelector("#marketView"),
   productsView: document.querySelector("#productsView"),
@@ -2435,10 +2439,9 @@ async function openExistingAccountForPairing(authUser) {
   if (!isDeviceAuthUser(authUser)) return false;
   try {
     if (!(await activateAccount(authUser, { force: true, handlePairing: false }))) return false;
-    window.alert("Dieses Gerät hat bereits einen eigenen Account. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.");
-    showMore();
+    window.alert("Dieses Gerät hat bereits einen eigenen Account. Öffne das Profil, bevor du erneut ein Gerät verbindest.");
     showProfile();
-    const reachedAccount = elements.modalContent.querySelector("#modalTitle")?.textContent?.trim() === "Account";
+    const reachedAccount = elements.modalContent.querySelector("#modalTitle")?.textContent?.trim() === "Profil";
     if (!reachedAccount) return false;
     clearPendingDevicePairing();
     return true;
@@ -4170,8 +4173,9 @@ async function leaveSharedList(listData, index) {
   renderNotes();
 }
 
-function openModal(content) {
+function openModal(content, { presentation = "dialog" } = {}) {
   elements.modalContent.innerHTML = content;
+  elements.modalLayer.classList.toggle("is-profile-page", presentation === "profile");
   elements.modalLayer.classList.remove("is-hidden");
   elements.modalLayer.setAttribute("aria-hidden", "false");
 }
@@ -4186,6 +4190,7 @@ function closeModal() {
     devicePairingPollTimer = 0;
   }
   elements.modalLayer.classList.add("is-hidden");
+  elements.modalLayer.classList.remove("is-profile-page");
   elements.modalLayer.setAttribute("aria-hidden", "true");
   elements.modalContent.innerHTML = "";
   flushPendingNotesRender();
@@ -4514,56 +4519,140 @@ function showProductMarketPrices(productId) {
   window.setTimeout(() => elements.modalContent.querySelector("#priceMarketSearchInput")?.focus(), 0);
 }
 
-function showMore() {
-  openModal(`
-    <h2 id="modalTitle">Mehr</h2>
-    <div class="modal-actions modal-actions-stack">
-      <button type="button" data-open-profile>Account</button>
-      <button type="button" data-open-background>Hintergrund anpassen</button>
-      <button type="button" data-open-data-tools>Daten hinzufügen</button>
-    </div>
-  `);
-}
-
 function showProfile() {
   openModal(`
-    <h2 id="modalTitle">Account</h2>
-    <div class="profile-form account-panel">
-      <div class="profile-preview account-identity">
-        ${memberAvatarMarkup(currentUser, "is-current")}
-        <span>
-          <strong>${escapeText(currentUser.displayName)}</strong>
-          <small>${escapeText(currentUser.username)}</small>
-        </span>
-      </div>
-      <label class="account-field" for="profileNameInput">
-        <span>Anzeigename</span>
-        <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
-      </label>
-      <label class="account-field" for="profileAvatarInput">
-        <span>Avatar-Link</span>
-        <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Optional">
-      </label>
-      <div class="modal-actions">
-        <button type="button" data-save-profile>Speichern</button>
-        <button type="button" data-open-devices>Geräte</button>
-      </div>
-      <div class="account-security-row ${currentUser.recoveryReady ? "is-secured" : ""}">
-        <span>${currentUser.recoveryReady ? icon("check") : icon("warning")}</span>
-        <div>
-          <strong>${currentUser.recoveryReady ? "Account gesichert" : "Noch nicht gesichert"}</strong>
-          <small>${currentUser.recoveryReady ? "Ein Wiederherstellungscode ist aktiv." : "Ohne Code ist der Account nach einer Neuinstallation nicht wiederherstellbar."}</small>
-        </div>
-      </div>
-      <div class="modal-actions modal-actions-stack account-secondary-actions">
-        <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
-        <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
-      </div>
-      <div class="modal-actions modal-actions-stack">
-        <button type="button" class="is-danger" data-delete-account>Account löschen</button>
+    <div class="profile-page" data-profile-page>
+      <header class="profile-page-header">
+        <button class="profile-back-button" type="button" data-close-profile aria-label="Profil schließen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"/></svg>
+        </button>
+        <h2 id="modalTitle">Profil</h2>
+        <span aria-hidden="true"></span>
+      </header>
+      <div class="profile-page-content">
+        <section class="profile-section profile-form account-panel" aria-labelledby="profileIdentityTitle">
+          <h3 id="profileIdentityTitle">Dein Account</h3>
+          <div class="profile-preview account-identity">
+            ${memberAvatarMarkup(currentUser, "is-current")}
+            <span>
+              <strong>${escapeText(currentUser.displayName)}</strong>
+              <small>${escapeText(currentUser.username)}</small>
+            </span>
+          </div>
+          <label class="account-field" for="profileNameInput">
+            <span>Anzeigename</span>
+            <input id="profileNameInput" type="text" maxlength="24" value="${escapeText(currentUser.displayName)}" placeholder="Name">
+          </label>
+          <label class="account-field" for="profileAvatarInput">
+            <span>Avatar-Link</span>
+            <input id="profileAvatarInput" type="url" maxlength="240" value="${escapeText(currentUser.avatarUrl)}" placeholder="Optional">
+          </label>
+          <div class="modal-actions">
+            <button type="button" data-save-profile>Speichern</button>
+          </div>
+        </section>
+        <section class="profile-section" aria-labelledby="profilePairingTitle">
+          <h3 id="profilePairingTitle">Gerät verbinden</h3>
+          <div class="profile-pairing" data-profile-pairing>
+            <p class="account-loading">QR-Code wird vorbereitet …</p>
+          </div>
+        </section>
+        <section class="profile-section" aria-labelledby="profileDevicesTitle">
+          <div class="profile-section-heading">
+            <h3 id="profileDevicesTitle">Deine Geräte</h3>
+            <button type="button" class="profile-section-action" data-open-devices>Verwalten</button>
+          </div>
+          <div data-profile-devices>
+            <p class="account-loading">Geräte werden geladen …</p>
+          </div>
+        </section>
+        <section class="profile-section" aria-labelledby="profileSecurityTitle">
+          <h3 id="profileSecurityTitle">Sicherheit</h3>
+          <div class="account-security-row ${currentUser.recoveryReady ? "is-secured" : ""}">
+            <span>${currentUser.recoveryReady ? icon("check") : icon("warning")}</span>
+            <div>
+              <strong>${currentUser.recoveryReady ? "Account gesichert" : "Noch nicht gesichert"}</strong>
+              <small>${currentUser.recoveryReady ? "Ein Wiederherstellungscode ist aktiv." : "Ohne Code ist der Account nach einer Neuinstallation nicht wiederherstellbar."}</small>
+            </div>
+          </div>
+          <div class="modal-actions modal-actions-stack account-secondary-actions">
+            <button type="button" data-create-recovery-code>${currentUser.recoveryReady ? "Neuen Wiederherstellungscode erzeugen" : "Account sichern"}</button>
+            <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
+          </div>
+        </section>
+        <section class="profile-section profile-danger-zone" aria-labelledby="profileDangerTitle">
+          <h3 id="profileDangerTitle">Account entfernen</h3>
+          <button type="button" class="is-danger" data-delete-account>Account löschen</button>
+        </section>
       </div>
     </div>
-  `);
+  `, { presentation: "profile" });
+  loadProfilePairing();
+  loadProfileDevices();
+}
+
+function accountDeviceRowsMarkup(devices) {
+  return `
+    <div class="account-device-list">
+      ${devices.map((device) => `
+        <div class="account-device-row ${device.is_current ? "is-current" : ""}">
+          <span class="account-device-icon">${icon("phone")}</span>
+          <span class="account-device-copy">
+            <strong>${escapeText(device.label || "Gerät")}${device.is_current ? " · dieses Gerät" : ""}</strong>
+            <small>${escapeText(device.platform || "Web-App")} · zuletzt ${escapeText(formatDateTime(device.last_seen_at))}</small>
+          </span>
+          <button type="button" title="Gerät benennen" aria-label="Gerät benennen" data-rename-account-device="${escapeText(device.device_id)}" data-device-label="${escapeText(device.label || "Gerät")}">${icon("pencil")}</button>
+          ${device.is_current ? "" : `<button class="is-danger" type="button" title="Gerät entfernen" aria-label="Gerät entfernen" data-remove-account-device="${escapeText(device.device_id)}">${icon("trash")}</button>`}
+        </div>
+      `).join("") || '<p class="empty-state">Keine Geräte gefunden.</p>'}
+    </div>
+  `;
+}
+
+async function loadProfileDevices() {
+  const panel = elements.modalContent.querySelector("[data-profile-devices]");
+  if (!panel) return;
+  try {
+    const devices = await collaborationService.listDevices?.() ?? [];
+    if (!panel.isConnected) return;
+    panel.innerHTML = accountDeviceRowsMarkup(devices);
+  } catch (error) {
+    if (panel.isConnected) panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(error))}</p>`;
+  }
+}
+
+async function loadProfilePairing() {
+  const panel = elements.modalContent.querySelector("[data-profile-pairing]");
+  if (!panel) return;
+  try {
+    const result = await collaborationService.createDevicePairing?.();
+    if (!panel.isConnected) return;
+    if (!result?.ok) {
+      panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(result))}</p><button type="button" class="profile-section-action" data-retry-profile-pairing>Erneut versuchen</button>`;
+      return;
+    }
+    const pairingUrl = devicePairingUrl(result);
+    const qrMarkup = qrSvgMarkup(pairingUrl);
+    panel.innerHTML = `
+      <div class="device-pairing-panel" data-device-pairing="${escapeText(result.pairingId)}" data-pairing-url="${escapeText(pairingUrl)}">
+        <p>Scanne diesen QR-Code mit dem neuen Gerät. Er ist fünf Minuten gültig.</p>
+        <div class="device-qr">${qrMarkup || icon("link")}</div>
+        ${result.confirmationCode ? `
+          <div class="pairing-compare-code">
+            <span>Vergleichscode</span>
+            <strong>${escapeText(result.confirmationCode)}</strong>
+          </div>
+        ` : ""}
+        <div class="pairing-status" data-pairing-status>Warte auf das neue Gerät …</div>
+        <div class="modal-actions">
+          <button type="button" data-copy-pairing-link>${icon("copy")} Link kopieren</button>
+        </div>
+      </div>
+    `;
+    pollOwnerPairing(result.pairingId);
+  } catch (error) {
+    if (panel.isConnected) panel.innerHTML = `<p class="empty-state">${escapeText(accountFlowError(error))}</p><button type="button" class="profile-section-action" data-retry-profile-pairing>Erneut versuchen</button>`;
+  }
 }
 
 async function saveProfile() {
@@ -4699,19 +4788,7 @@ async function showDevices() {
     const panel = elements.modalContent.querySelector("[data-account-devices]");
     if (!panel) return;
     panel.innerHTML = `
-      <div class="account-device-list">
-        ${devices.map((device) => `
-          <div class="account-device-row ${device.is_current ? "is-current" : ""}">
-            <span class="account-device-icon">${icon("phone")}</span>
-            <span class="account-device-copy">
-              <strong>${escapeText(device.label || "Gerät")}${device.is_current ? " · dieses Gerät" : ""}</strong>
-              <small>${escapeText(device.platform || "Web-App")} · zuletzt ${escapeText(formatDateTime(device.last_seen_at))}</small>
-            </span>
-            <button type="button" title="Gerät benennen" aria-label="Gerät benennen" data-rename-account-device="${escapeText(device.device_id)}" data-device-label="${escapeText(device.label || "Gerät")}">${icon("pencil")}</button>
-            ${device.is_current ? "" : `<button class="is-danger" type="button" title="Gerät entfernen" aria-label="Gerät entfernen" data-remove-account-device="${escapeText(device.device_id)}">${icon("trash")}</button>`}
-          </div>
-        `).join("") || '<p class="empty-state">Keine Geräte gefunden.</p>'}
-      </div>
+      ${accountDeviceRowsMarkup(devices)}
       <div class="modal-actions">
         <button type="button" data-add-account-device>${icon("plus")} Gerät hinzufügen</button>
         <button type="button" class="is-muted" data-open-profile>Zurück zum Account</button>
@@ -5057,7 +5134,7 @@ function updateWorkspaceTabs(workspace) {
   });
 }
 
-function setWorkspace(workspace, { smooth = true } = {}) {
+function setWorkspace(workspace, { smooth = false } = {}) {
   const target = workspace === "market" ? elements.marketPanel : elements.notesBoard;
   const left = target.offsetLeft - elements.layout.offsetLeft;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -5973,7 +6050,7 @@ function noteMarkup(listData) {
   return `
     <article class="list-panel note-card ${sharedClass} ${isActive ? "is-active" : ""}" data-note="${escapeText(listData.id)}">
       <button class="list-activation-button ${isActive ? "is-active" : ""}" type="button" aria-pressed="${isActive}" data-activate-list="${escapeText(listData.id)}">
-        ${isActive ? "Aktiv" : "Für Einkäufe aktivieren"}
+        ${isActive ? "Aktiv" : "Aktivieren"}
       </button>
       <div class="section-head list-head note-grip" data-note-grip="${escapeText(listData.id)}">
         <h2 class="list-title">
@@ -5985,7 +6062,7 @@ function noteMarkup(listData) {
         </h2>
         <div class="list-tools">
           <span>${count} Artikel</span>
-          <button class="share-button" type="button" ${canInvite ? "" : "disabled"} data-share-list="${escapeText(listData.id)}">Teilen</button>
+          <button class="share-button" type="button" ${canInvite ? "" : "disabled"} title="Zettel teilen" aria-label="Zettel teilen" data-share-list="${escapeText(listData.id)}">${icon("share")}</button>
         </div>
       </div>
       <div class="collab-row">
@@ -6011,10 +6088,12 @@ function noteMarkup(listData) {
         <div class="manual-suggestions" id="${escapeText(suggestionListId)}" role="listbox" data-manual-suggestions hidden></div>
       </div>
       <footer class="note-footer">
-        <button class="note-delete-button" type="button" ${canRemoveList ? "" : "disabled"} data-delete-list="${escapeText(listData.id)}">
-          ${icon(listData.ownerId === currentUser.userId ? "trash" : "logout")}
+        <div class="note-delete-action">
           <span>${listData.ownerId === currentUser.userId ? "Zettel löschen" : "Zettel verlassen"}</span>
-        </button>
+          <button class="note-delete-button" type="button" ${canRemoveList ? "" : "disabled"} title="${listData.ownerId === currentUser.userId ? "Zettel löschen" : "Zettel verlassen"}" aria-label="${listData.ownerId === currentUser.userId ? "Zettel löschen" : "Zettel verlassen"}" data-delete-list="${escapeText(listData.id)}">
+            ${icon(listData.ownerId === currentUser.userId ? "trash" : "logout")}
+          </button>
+        </div>
       </footer>
     </article>
   `;
@@ -6023,10 +6102,12 @@ function noteMarkup(listData) {
 function emptyNotesMarkup() {
   return `
     <div class="empty-notes-state">
-      <button class="add-note-button add-note-button-large" type="button" ${isActivationReady() ? "" : "disabled"} data-empty-add-list>
-        ${icon("plus")}
-        Neuer Zettel
-      </button>
+      <div class="new-note-action new-note-action-large">
+        <span>Neuer Zettel</span>
+        <button class="add-note-button add-note-button-large" type="button" ${isActivationReady() ? "" : "disabled"} aria-label="Neuer Zettel" data-empty-add-list>
+          ${icon("plus")}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -6173,27 +6254,54 @@ function schedulePriceSearchRender(query) {
   }, 140);
 }
 
+function setOptionsRegisterOpen(isOpen) {
+  elements.topOptions.classList.toggle("is-hidden", !isOpen);
+  elements.topOptionsScrim.classList.toggle("is-hidden", !isOpen);
+  elements.topMenuButton.setAttribute("aria-expanded", String(isOpen));
+  elements.body.classList.toggle("has-open-options", isOpen);
+}
+
 elements.authRetryButton?.addEventListener("click", connectDeviceAccount);
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
 elements.workspaceTabs.forEach((tab) => tab.addEventListener("click", () => setWorkspace(tab.dataset.workspace)));
 elements.layout.addEventListener("scroll", syncWorkspaceFromScroll, { passive: true });
-elements.topMenuButton.addEventListener("click", () => {
-  const isOpen = elements.topOptions.classList.toggle("is-hidden");
-  elements.topMenuButton.setAttribute("aria-expanded", String(!isOpen));
-});
-elements.accountButton.addEventListener("click", showMore);
+elements.topMenuButton.addEventListener("click", () => setOptionsRegisterOpen(elements.topOptions.classList.contains("is-hidden")));
+elements.topOptionsCloseButton.addEventListener("click", () => setOptionsRegisterOpen(false));
+elements.topOptionsScrim.addEventListener("click", () => setOptionsRegisterOpen(false));
+elements.accountButton.addEventListener("click", showProfile);
 elements.searchInput.addEventListener("input", scheduleMainSearchRender);
 elements.backButton.addEventListener("click", backToShelves);
 elements.addListButton.addEventListener("click", addList);
 elements.reorderDoneButton.addEventListener("click", exitShelfReorderMode);
-elements.imprintButton.addEventListener("click", showImprint);
-elements.bugreportButton.addEventListener("click", showBugreport);
-elements.moreButton.addEventListener("click", showMore);
+elements.openBackgroundButton.addEventListener("click", () => {
+  setOptionsRegisterOpen(false);
+  showBackgroundOptions();
+});
+elements.openDataToolsButton.addEventListener("click", () => {
+  setOptionsRegisterOpen(false);
+  showDataTools();
+});
+elements.imprintButton.addEventListener("click", () => {
+  setOptionsRegisterOpen(false);
+  showImprint();
+});
+elements.bugreportButton.addEventListener("click", () => {
+  setOptionsRegisterOpen(false);
+  showBugreport();
+});
 elements.modalCloseButton.addEventListener("click", closeModal);
 elements.modalLayer.addEventListener("click", (event) => {
   if (event.target === elements.modalLayer) closeModal();
 });
 elements.modalContent.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close-profile]")) {
+    closeModal();
+    return;
+  }
+  if (event.target.closest("[data-retry-profile-pairing]")) {
+    loadProfilePairing();
+    return;
+  }
   const backgroundButton = event.target.closest(".background-choice[data-background]");
   if (backgroundButton) {
     backgroundTheme = backgroundButton.dataset.background;
@@ -6421,6 +6529,14 @@ elements.modalContent.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.id === "recoveryCodeInput") {
     restoreAccountFromCode();
   }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!elements.topOptions.classList.contains("is-hidden")) {
+    setOptionsRegisterOpen(false);
+    return;
+  }
+  if (!elements.modalLayer.classList.contains("is-hidden")) closeModal();
 });
 
 function updatePresence() {

@@ -310,7 +310,7 @@ svg {
   place-items: center;
   padding: 0;
   border: 1px solid var(--gm-line);
-  border-radius: 8px;
+  border-radius: 50%;
   background: var(--gm-glass);
   color: var(--gm-text);
 }
@@ -321,39 +321,110 @@ svg {
 }
 
 .top-options {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 8px);
-  left: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: min(100%, 360px);
-  padding: 8px;
-  border: 1px solid var(--gm-line);
-  border-radius: 8px;
-  background: rgba(23, 28, 35, 0.94);
-  box-shadow: 0 12px 30px rgba(4, 8, 14, 0.28);
-  min-width: 0;
-  overflow: visible;
+  position: fixed;
+  z-index: 42;
+  inset: 0 auto 0 0;
+  display: block;
+  width: min(84vw, 360px);
+  padding: calc(env(safe-area-inset-top, 0px) + 58px) 22px calc(env(safe-area-inset-bottom, 0px) + 28px);
+  overflow-y: auto;
+  border: 1px solid rgba(173, 190, 206, 0.16);
+  border-left: 0;
+  border-top: 0;
+  border-radius: 0 0 28px 0;
+  background: linear-gradient(
+    180deg,
+    rgba(17, 22, 29, 0.03) 0%,
+    rgba(17, 22, 29, 0.14) 20%,
+    rgba(17, 22, 29, 0.84) 46%,
+    rgba(11, 15, 21, 0.98) 100%
+  );
+  box-shadow: 20px 0 52px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(30px) saturate(0.56);
+  -webkit-backdrop-filter: blur(30px) saturate(0.56);
 }
 
-.top-options button {
-  min-width: 0;
+.top-options-scrim {
+  position: fixed;
+  z-index: 41;
+  inset: 0;
   width: 100%;
-  min-height: 44px;
-  padding: 0 10px;
-  border: 1px solid rgba(204, 195, 179, 0.72);
-  border-radius: 999px;
-  background: rgba(255, 253, 246, 0.42);
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 560;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(3, 6, 10, 0.32);
+  backdrop-filter: blur(18px) saturate(0.42);
+  -webkit-backdrop-filter: blur(18px) saturate(0.42);
+}
+
+.top-options h2 {
+  margin: 0 56px 26px 0;
+  color: var(--gm-text);
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 420;
+  letter-spacing: 0;
+}
+
+.top-options-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 14px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(145deg, #f2f5f7 12%, #9faab4 52%, #e7ebee 88%);
+  background-clip: text;
+  color: transparent;
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 44px;
+  font-weight: 220;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 18px rgba(0, 0, 0, 0.36);
+  -webkit-background-clip: text;
+}
+
+.top-options-list {
+  left: 0;
+  display: grid;
+  gap: 0;
+}
+
+.top-options-list button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 58px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(218, 228, 238, 0.1);
+  border-radius: 0;
+  background: transparent;
+  color: var(--gm-text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 520;
+  text-align: left;
+}
+
+.top-options-list button svg {
+  width: 21px;
+  height: 21px;
+  color: var(--gm-muted);
+  stroke-width: 1.65;
+}
+
+.top-options-list button:hover,
+.top-options-list button:focus-visible {
+  outline: 0;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .workspace-tabs {
@@ -460,21 +531,31 @@ h2 {
 
 .notes-board-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
+}
+
+.new-note-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--gm-text);
+  font-size: 0.82rem;
+  font-weight: 620;
 }
 
 .add-note-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(204, 195, 179, 0.72);
-  border-radius: 999px;
-  background: rgba(255, 253, 246, 0.58);
-  color: var(--ink);
-  font-size: 0.78rem;
-  font-weight: 620;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(218, 228, 238, 0.2);
+  border-radius: 50%;
+  background: var(--gm-titanium);
+  color: #15191e;
 }
 
 .add-note-button svg {
@@ -510,12 +591,16 @@ h2 {
 }
 
 .add-note-button-large {
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
   min-height: 54px;
-  padding: 0 24px;
-  border-radius: 999px;
-  background: rgba(255, 253, 246, 0.72);
-  font-size: 1rem;
   box-shadow: 0 18px 34px rgba(72, 63, 42, 0.12);
+}
+
+.new-note-action-large {
+  gap: 14px;
+  font-size: 1rem;
 }
 
 .add-note-button-large svg {
@@ -575,11 +660,11 @@ h2 {
   top: 0;
   left: 50%;
   width: 124px;
-  height: 25px;
+  height: 44px;
   transform: translateX(-50%);
   border: 1px solid rgba(218, 228, 238, 0.1);
   border-top: 0;
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 18px 18px;
   background: rgba(218, 228, 238, 0.1);
 }
 
@@ -590,28 +675,30 @@ h2 {
 .list-activation-button {
   position: absolute;
   z-index: 3;
-  top: 9px;
+  top: 0;
   left: 50%;
-  min-width: 104px;
-  min-height: 29px;
-  padding: 0 14px;
-  transform: translateX(-50%) rotate(0.35deg);
-  border: 1px solid rgba(218, 228, 238, 0.16);
-  border-radius: 999px;
-  background: rgba(15, 20, 27, 0.52);
+  width: 124px;
+  height: 44px;
+  min-width: 124px;
+  min-height: 44px;
+  padding: 0 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(218, 228, 238, 0.1);
+  border-top: 0;
+  border-radius: 0 0 18px 18px;
+  background: transparent;
   color: var(--gm-muted);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-size: 0.66rem;
   font-weight: 720;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 .list-activation-button.is-active {
-  border-color: rgba(132, 199, 228, 0.45);
-  background: rgba(75, 117, 153, 0.38);
+  border-color: rgba(132, 199, 228, 0.2);
+  background: linear-gradient(180deg, rgba(104, 158, 198, 0.23), rgba(75, 117, 153, 0.36));
   color: #edf4fa;
   box-shadow:
-    0 5px 16px rgba(0, 0, 0, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
@@ -621,10 +708,10 @@ h2 {
 }
 
 .edit-note-button {
-  flex: 0 0 28px;
+  flex: 0 0 44px;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   place-items: center;
   border: 1px solid rgba(218, 228, 238, 0.14);
@@ -634,8 +721,8 @@ h2 {
 }
 
 .edit-note-button svg {
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 17px;
   stroke-width: 1.8;
 }
 
@@ -857,24 +944,35 @@ h2 {
   border-top: 1px solid rgba(218, 228, 238, 0.1);
 }
 
-.note-delete-button {
+.note-delete-action {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 8px;
+  gap: 8px;
+  color: rgba(221, 139, 134, 0.82);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.note-delete-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
   border: 1px solid rgba(154, 59, 51, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 253, 246, 0.42);
-  color: rgba(143, 49, 43, 0.76);
+  border-radius: 50%;
+  background: rgba(157, 87, 88, 0.17);
+  color: #e19892;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   font-size: 0.68rem;
   font-weight: 650;
 }
 
 .note-delete-button svg {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
 }
 
 .note-card.is-shared .note-footer {
@@ -882,17 +980,23 @@ h2 {
 }
 
 .manual-add button {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
 }
 
 .share-button {
-  min-height: 28px;
-  padding: 0 10px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
   border: 1px solid rgba(218, 228, 238, 0.16);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
@@ -901,6 +1005,11 @@ h2 {
   font-size: 0.66rem;
   font-weight: 680;
   line-height: 1;
+}
+
+.share-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .share-button:hover {
@@ -2812,17 +2921,11 @@ button.sync-chip:hover {
   }
 
   .top-options {
-    width: min(100%, 340px);
-  }
-
-  .top-options button {
-    min-width: 0;
-    padding: 0 6px;
-    font-size: 0.7rem;
+    width: min(84vw, 340px);
   }
 
   .list-panel {
-    padding: 42px 12px 9px;
+    padding: 48px 12px 9px;
   }
 
   .notes-board {
@@ -2834,9 +2937,10 @@ button.sync-chip:hover {
   }
 
   .add-note-button {
-    min-height: 32px;
-    padding: 0 10px;
-    font-size: 0.74rem;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
   }
 
   .list-panel h2 {
@@ -2872,9 +2976,8 @@ button.sync-chip:hover {
   }
 
   .share-button {
-    min-height: 28px;
-    padding: 0 7px;
-    font-size: 0.64rem;
+    min-height: 44px;
+    padding: 0;
   }
 
   .manual-add {
@@ -2884,9 +2987,9 @@ button.sync-chip:hover {
   }
 
   .manual-add button {
-    flex-basis: 36px;
-    width: 36px;
-    height: 36px;
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
   }
 
   .list-panel .manual-add input {
@@ -3194,4 +3297,134 @@ button.sync-chip:hover {
   border-color: rgba(191, 121, 122, 0.68);
   background: #9d5758;
   color: #fff8f8;
+}
+
+.modal-layer.is-profile-page {
+  display: block;
+  padding: 0;
+  background: #11161d;
+  backdrop-filter: none;
+}
+
+.modal-layer.is-profile-page .modal-card {
+  width: 100%;
+  max-width: none;
+  height: 100svh;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 50% -12%, rgba(111, 142, 168, 0.13), transparent 36%),
+    linear-gradient(180deg, #202730 0%, #151b22 45%, #0d1218 100%);
+  box-shadow: none;
+}
+
+.modal-layer.is-profile-page .modal-close {
+  display: none;
+}
+
+.profile-page {
+  min-height: 100%;
+  color: var(--gm-text);
+}
+
+.profile-page-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-height: calc(env(safe-area-inset-top, 0px) + 64px);
+  padding: env(safe-area-inset-top, 0px) 16px 0;
+  border-bottom: 1px solid rgba(218, 228, 238, 0.1);
+  background: rgba(20, 26, 34, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.profile-page-header h2 {
+  margin: 0;
+  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
+  font-size: 1.24rem;
+  font-weight: 420;
+  text-align: center;
+}
+
+.profile-back-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--gm-line);
+  border-radius: 50%;
+  background: var(--gm-glass);
+  color: var(--gm-text);
+}
+
+.profile-page-content {
+  display: grid;
+  width: min(680px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 14px 0 calc(env(safe-area-inset-bottom, 0px) + 32px);
+}
+
+.profile-section {
+  display: grid;
+  gap: 13px;
+  padding: 22px 0;
+  border-bottom: 1px solid rgba(218, 228, 238, 0.11);
+}
+
+.profile-section h3,
+.profile-section-heading h3 {
+  margin: 0;
+  color: var(--gm-text);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.profile-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-section-action {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--gm-line);
+  border-radius: 18px;
+  background: var(--gm-glass);
+  color: var(--gm-text);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+
+.profile-pairing .device-pairing-panel {
+  justify-items: center;
+  text-align: center;
+}
+
+.profile-pairing .device-qr {
+  width: min(238px, 68vw);
+}
+
+.profile-danger-zone {
+  border-bottom: 0;
+}
+
+.profile-danger-zone > button.is-danger {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(191, 121, 122, 0.68);
+  border-radius: 22px;
+  background: #9d5758;
+  color: #fff8f8;
+  font: inherit;
+  font-weight: 650;
 }

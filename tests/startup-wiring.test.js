@@ -116,7 +116,7 @@ test("retained pairing failures expose retry and cancel and clear only after Acc
   assert.match(app, /data-retry-pending-device-pairing/);
   assert.match(app, /data-cancel-pending-device-pairing/);
   assert.ok(openBody.indexOf("try {") < openBody.indexOf("activateAccount"));
-  assert.ok(openBody.indexOf("showMore()") < openBody.indexOf("showProfile()"));
+  assert.doesNotMatch(openBody, /showMore\(\)/);
   assert.ok(openBody.indexOf("showProfile()") < openBody.indexOf("clearPendingDevicePairing()"));
   assert.match(connectBody, /catch \(error\) \{[\s\S]*pendingDevicePairing[\s\S]*showRetainedPairingError/);
 });

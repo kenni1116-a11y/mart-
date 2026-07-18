@@ -12,7 +12,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=70">
+    <link rel="stylesheet" href="./styles.css?v=71">
   </head>
   <body>
     <section class="auth-gate" id="authGate" aria-labelledby="authTitle">
@@ -34,19 +34,37 @@
 
     <div class="app-shell is-hidden" id="appShell">
       <header class="topbar">
-        <button class="topbar-icon" id="topMenuButton" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="topOptions">
+        <button class="topbar-icon" id="topMenuButton" type="button" aria-label="Optionen öffnen" aria-expanded="false" aria-controls="topOptions">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
         </button>
         <div class="brand-zone"><h1>zettel</h1></div>
-        <button class="topbar-icon" id="accountButton" type="button" aria-label="Account öffnen">
+        <button class="topbar-icon" id="accountButton" type="button" aria-label="Profil öffnen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.8-4 3-6 6.5-6s5.7 2 6.5 6"/></svg>
         </button>
-        <nav class="top-options is-hidden" id="topOptions" aria-label="Optionen">
-          <button id="imprintButton" type="button">Impressum</button>
-          <button id="bugreportButton" type="button">Bugreport</button>
-          <button id="moreButton" type="button">Mehr</button>
-        </nav>
       </header>
+      <button class="top-options-scrim is-hidden" id="topOptionsScrim" type="button" aria-label="Optionen schließen" tabindex="-1"></button>
+      <nav class="top-options is-hidden" id="topOptions" aria-label="Optionen">
+        <button class="top-options-close" id="topOptionsCloseButton" type="button" aria-label="Optionen schließen">&times;</button>
+        <h2>Optionen</h2>
+        <div class="top-options-list">
+          <button id="openBackgroundButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a2 2 0 0 0 0-4H12a2 2 0 0 1 0-4h3a6 6 0 0 0 0-12h-3Z"/><path d="M7.5 10h.01M9 6.5h.01M14 6h.01"/></svg>
+            <span>Hintergrund anpassen</span>
+          </button>
+          <button id="openDataToolsButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+            <span>Daten hinzufügen</span>
+          </button>
+          <button id="imprintButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/></svg>
+            <span>Impressum</span>
+          </button>
+          <button id="bugreportButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h8v10H8V8Zm2-4h4l1 4H9l1-4ZM4 11h4m8 0h4M5 17l3-2m11 2-3-2"/></svg>
+            <span>Bugreport</span>
+          </button>
+        </div>
+      </nav>
       <nav class="workspace-tabs" aria-label="Hauptbereich">
         <button class="workspace-tab is-active" type="button" data-workspace="pinnwand" aria-current="page">Pinnwand</button>
         <button class="workspace-tab" type="button" data-workspace="market">Markt</button>
@@ -103,10 +121,12 @@
 
         <aside class="notes-board" aria-label="Einkaufszettel">
           <div class="notes-board-actions">
-            <button class="add-note-button" id="addListButton" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-              Neuer Zettel
-            </button>
+            <div class="new-note-action">
+              <span>Neuer Zettel</span>
+              <button class="add-note-button" id="addListButton" type="button" aria-label="Neuer Zettel">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+            </div>
           </div>
           <div class="notes-stack" id="notesStack"></div>
         </aside>
@@ -122,15 +142,15 @@
       </div>
     </div>
 
-    <script src="./app-version.js?v=70"></script>
-    <script src="./supabase-config.js?v=70"></script>
+    <script src="./app-version.js?v=71"></script>
+    <script src="./supabase-config.js?v=71"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
-    <script src="./account-logic.js?v=70"></script>
-    <script src="./sync-logic.js?v=70"></script>
-    <script src="./app-logic.js?v=70"></script>
-    <script src="./product-icon-assets.js?v=70"></script>
-    <script src="./app.js?v=70"></script>
+    <script src="./account-logic.js?v=71"></script>
+    <script src="./sync-logic.js?v=71"></script>
+    <script src="./app-logic.js?v=71"></script>
+    <script src="./product-icon-assets.js?v=71"></script>
+    <script src="./app.js?v=71"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
