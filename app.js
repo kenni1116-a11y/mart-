@@ -4981,8 +4981,8 @@ async function startDevicePairing() {
   pollOwnerPairing(result.pairingId);
 }
 
-async function copyPairingLink() {
-  const panel = elements.profileRegisterContent.querySelector("[data-pairing-url]") ?? elements.modalContent.querySelector("[data-pairing-url]");
+async function copyPairingLink(action) {
+  const panel = action?.closest("[data-pairing-url]");
   const url = panel?.dataset.pairingUrl;
   if (!url) return;
   try {
@@ -5037,14 +5037,15 @@ async function pollOwnerPairing(pairingId, profileSessionVersion = null) {
   schedulePairingPoll(() => pollOwnerPairing(pairingId, profileSessionVersion));
 }
 
-async function approveDevicePairing(pairingId) {
+async function approveDevicePairing(pairingId, profileSessionVersion = null) {
   if (!isActivationReady()) return;
   const result = await collaborationService.approveDevicePairing?.(pairingId);
+  if (profileSessionVersion !== null && !isProfileRegisterSessionActive(profileSessionVersion)) return;
   if (!result?.ok) {
     window.alert(accountFlowError(result));
     return;
   }
-  pollOwnerPairing(pairingId);
+  pollOwnerPairing(pairingId, profileSessionVersion);
 }
 
 async function cancelDevicePairing(pairingId) {
@@ -6465,8 +6466,9 @@ elements.modalContent.addEventListener("click", (event) => {
     startDevicePairing();
     return;
   }
-  if (event.target.closest("[data-copy-pairing-link]")) {
-    copyPairingLink();
+  const copyPairingButton = event.target.closest("[data-copy-pairing-link]");
+  if (copyPairingButton) {
+    copyPairingLink(copyPairingButton);
     return;
   }
   const cancelPairingButton = event.target.closest("[data-cancel-device-pairing]");
@@ -6602,13 +6604,14 @@ elements.profileRegisterContent.addEventListener("click", (event) => {
     startDevicePairing();
     return;
   }
-  if (event.target.closest("[data-copy-pairing-link]")) {
-    copyPairingLink();
+  const copyPairingButton = event.target.closest("[data-copy-pairing-link]");
+  if (copyPairingButton) {
+    copyPairingLink(copyPairingButton);
     return;
   }
   const approvePairingButton = event.target.closest("[data-approve-device-pairing]");
   if (approvePairingButton) {
-    approveDevicePairing(approvePairingButton.dataset.approveDevicePairing);
+    approveDevicePairing(approvePairingButton.dataset.approveDevicePairing, profileRegisterSessionVersion);
     return;
   }
   if (event.target.closest("[data-save-profile]")) saveProfile();

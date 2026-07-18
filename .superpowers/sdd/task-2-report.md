@@ -140,3 +140,57 @@ The final full-verification retry exited `0`. Output: `73` unit tests passed; sy
 - All buttons and inputs rendered inside `#profileRegisterContent` measure at least `44x44` CSS pixels. The device-row grid override is scoped to the profile register, leaving compact controls in other surfaces unchanged.
 - Closing or superseding the profile register increments a session version. Profile pairing checks that version and open state after each await before rendering or scheduling another poll. The modal pairing path uses its existing unguarded modal behavior and is exercised by browser coverage.
 - Browser coverage verifies QR, device rename/remove, and account deletion visibility; register exclusivity; close button, scrim, Escape, and modal transitions; safe-area/scrolling; target dimensions; and the delayed pairing-close race.
+
+## Second Review Findings Fixes (2026-07-18)
+
+### RED Evidence
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "modal pairing copy action"
+```
+
+Exit code `1`; `1 failed`. The clipboard assertion expected the modal pairing URL ending in `pair=6d5a9c46-4bba-45c6-82c0-a1962cd81a77` but received the stale hidden profile URL ending in `pair=3c903815-fba5-4a45-8903-fdd1137fa31b`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "delayed approval"
+```
+
+Exit code `1`; `1 failed`. After closing the profile register and releasing approval, `Gerät verbunden.` was rendered in the persistent hidden register (expected count `0`, received `1`).
+
+### GREEN Evidence
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "modal pairing copy action"
+```
+
+Exit code `0`; `1 passed (2.3s)`.
+
+```bash
+/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/@playwright/test/cli.js test tests/browser/collaboration.spec.js --project=webkit -g "delayed approval"
+```
+
+Exit code `0`; `1 passed (4.8s)`.
+
+```bash
+PATH=/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH /Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm verify
+```
+
+Exit code `0`; `73` unit tests passed and `21` WebKit browser tests passed in `50.1s`. The command also completed syntax checks and `git diff --check`.
+
+### Files Changed
+
+- `app.js`
+- `tests/browser/collaboration.spec.js`
+- `.superpowers/sdd/task-2-report.md`
+
+### Self-Review
+
+- `copyPairingLink()` now resolves the URL from the clicked copy action's nearest pairing panel, so persistent hidden register content cannot override the active modal surface.
+- Modal and profile event delegation both pass the clicked copy action. No fallback selection or unrelated copy behavior was added.
+- Profile approval captures the active `profileRegisterSessionVersion`, checks it after the approval await, and passes it into `pollOwnerPairing()`, whose existing scheduled continuations retain that generation.
+- Modal approval still passes `null`, preserving its existing polling behavior.
+- Browser coverage verifies the actual clipboard value and delays a successful approval across register closure while asserting both zero post-close status requests and no hidden-register rendering.
+
+### Concerns
+
+- No known implementation concerns.

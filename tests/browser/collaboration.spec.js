@@ -535,6 +535,88 @@ test("profile and options registers remain exclusive and close on every register
   }
 });
 
+test("modal pairing copy action copies its modal link instead of the hidden profile link", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    await visitor.page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async (value) => { window.__copiedPairingLink = value; } }
+      });
+    });
+    visitor.page.on("dialog", (dialog) => dialog.accept());
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    const profilePanel = visitor.page.locator("#profileRegisterContent [data-pairing-url]");
+    await expect(profilePanel).toBeVisible();
+    const profileLink = await profilePanel.getAttribute("data-pairing-url");
+
+    await visitor.page.getByRole("button", { name: "Verwalten", exact: true }).click();
+    await visitor.page.getByRole("button", { name: "Gerät hinzufügen", exact: true }).click();
+    const modalPanel = visitor.page.locator("#modalContent [data-pairing-url]");
+    await expect(modalPanel).toBeVisible();
+    const modalLink = await modalPanel.getAttribute("data-pairing-url");
+    expect(modalLink).not.toBe(profileLink);
+
+    await modalPanel.getByRole("button", { name: "Link kopieren", exact: true }).click();
+    await expect.poll(() => visitor.page.evaluate(() => window.__copiedPairingLink)).toBe(modalLink);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("closing profile during delayed approval prevents rendering and polling restart", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let releaseApproval;
+  let approvalReleased = false;
+  let pairingStatusRequestsAfterClose = 0;
+  try {
+    await visitor.page.goto(server.origin);
+    await waitForReady(visitor.page);
+    await visitor.page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      const rpcName = payload.action === "rpc" ? payload.args?.name : "";
+      if (rpcName === "approve_device_pairing_v3") {
+        await new Promise((resolve) => { releaseApproval = resolve; });
+        const pairingId = payload.args?.args?.target_pairing_id;
+        const pairing = server.state.pairingRequests.get(pairingId);
+        if (pairing) pairing.status = "approved";
+        approvalReleased = true;
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: { ok: true, status: "approved" }, error: null })
+        });
+        return;
+      }
+      if (rpcName === "get_device_pairing_status_v3" && approvalReleased) pairingStatusRequestsAfterClose += 1;
+      await route.continue();
+    });
+
+    await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
+    const approveButton = visitor.page.locator("#profileRegisterContent [data-approve-device-pairing]");
+    await expect(approveButton).toBeVisible();
+    await approveButton.click();
+    await expect.poll(() => Boolean(releaseApproval)).toBe(true);
+
+    await visitor.page.locator("#profileRegisterCloseButton").click();
+    await expect(visitor.page.locator("#profileRegister")).toBeHidden();
+    releaseApproval();
+
+    await visitor.page.waitForTimeout(1800);
+    await expect(visitor.page.locator("#profileRegisterContent").getByText("Gerät verbunden.", { exact: true })).toHaveCount(0);
+    expect(pairingStatusRequestsAfterClose).toBe(0);
+  } finally {
+    releaseApproval?.();
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
 test("closing the profile register prevents a delayed pairing from rendering or polling", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
