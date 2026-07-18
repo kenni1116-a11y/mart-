@@ -2199,6 +2199,7 @@ let currentAuthUser = null;
 let pendingDevicePairing = null;
 let accountDeletionFlow = null;
 let accountDeletionExpectedAccountId = "";
+let returnToProfileAfterModalClose = false;
 let accountSessionVersion = 0;
 let outboundSyncEnabled = false;
 let authState = {
@@ -4283,25 +4284,27 @@ async function leaveSharedList(listData, index) {
   renderNotes();
 }
 
-function openModal(content, { presentation = "dialog" } = {}) {
+function openModal(content, { returnToProfile = false } = {}) {
   closeSideRegisters();
+  returnToProfileAfterModalClose = returnToProfile;
   elements.modalContent.innerHTML = content;
-  elements.modalLayer.classList.toggle("is-profile-page", presentation === "profile");
   elements.modalLayer.classList.remove("is-hidden");
   elements.modalLayer.setAttribute("aria-hidden", "false");
 }
 
-function closeModal() {
+function closeModal({ returnToProfile = true } = {}) {
   if (modalSearchRenderTimer) {
     window.clearTimeout(modalSearchRenderTimer);
     modalSearchRenderTimer = 0;
   }
   stopProfilePairing();
+  const shouldReturnToProfile = returnToProfile && returnToProfileAfterModalClose;
+  returnToProfileAfterModalClose = false;
   elements.modalLayer.classList.add("is-hidden");
-  elements.modalLayer.classList.remove("is-profile-page");
   elements.modalLayer.setAttribute("aria-hidden", "true");
   elements.modalContent.innerHTML = "";
   flushPendingNotesRender();
+  if (shouldReturnToProfile && authState.accountReady) showProfile();
 }
 
 function showImprint() {
@@ -4628,7 +4631,7 @@ function showProductMarketPrices(productId) {
 }
 
 function showProfile() {
-  closeModal();
+  closeModal({ returnToProfile: false });
   const preservePendingProfile = Boolean(
     profileWriteInFlight
     && elements.profileRegisterContent.querySelector("[data-profile-page]")
@@ -4644,9 +4647,9 @@ function showProfile() {
 
 function profileRegisterMarkup() {
   return `
-    <div class="profile-page" data-profile-page>
-      <div class="profile-page-content">
-        <section class="profile-section profile-account" aria-labelledby="profileIdentityTitle">
+    <div class="profile-register-page" data-profile-page>
+      <div class="profile-register-page-content">
+        <section class="profile-section profile-account" data-profile-section="account" aria-labelledby="profileIdentityTitle">
           <h3 id="profileIdentityTitle">Dein Account</h3>
           <div class="profile-identity-row">
             <button class="profile-avatar-button" type="button" data-edit-avatar aria-label="Avatar ändern">
@@ -4673,13 +4676,13 @@ function profileRegisterMarkup() {
             <button type="button" class="is-muted" data-open-account-recovery>Account wiederherstellen</button>
           </div>
         </section>
-        <section class="profile-section" aria-labelledby="profilePairingTitle">
+        <section class="profile-section" data-profile-section="pairing" aria-labelledby="profilePairingTitle">
           <h3 id="profilePairingTitle">Gerät verbinden</h3>
           <div class="profile-pairing" data-profile-pairing>
             <p class="account-loading">QR-Code wird vorbereitet …</p>
           </div>
         </section>
-        <section class="profile-section" aria-labelledby="profileDevicesTitle">
+        <section class="profile-section" data-profile-section="devices" aria-labelledby="profileDevicesTitle">
           <div class="profile-section-heading">
             <h3 id="profileDevicesTitle">Deine Geräte</h3>
             <button type="button" class="profile-section-action" data-open-devices>Verwalten</button>
@@ -4688,7 +4691,7 @@ function profileRegisterMarkup() {
             <p class="account-loading">Geräte werden geladen …</p>
           </div>
         </section>
-        <section class="profile-section profile-danger-zone" aria-labelledby="profileDangerTitle">
+        <section class="profile-section profile-danger-zone" data-profile-section="danger" aria-labelledby="profileDangerTitle">
           <h3 id="profileDangerTitle">Account entfernen</h3>
           <button type="button" class="is-danger" data-delete-account>Account löschen</button>
         </section>
@@ -5177,7 +5180,7 @@ function showAccountDeletionConfirmation(error = "", deletionCommitted = false) 
         ${deletionCommitted ? "" : '<button type="button" class="is-muted" data-cancel-account-deletion>Abbrechen</button>'}
       </div>
     </div>
-  `);
+  `, { returnToProfile: true });
 }
 
 async function deleteCurrentAccount() {
@@ -5199,6 +5202,8 @@ async function deleteCurrentAccount() {
 }
 
 async function completeCurrentAccountDeletion() {
+  returnToProfileAfterModalClose = false;
+  closeSideRegisters();
   stopAccountActivity();
   outboundSyncEnabled = false;
   accountSessionVersion += 1;
@@ -5365,7 +5370,7 @@ function showAccountRecovery() {
         <button type="button" class="is-muted" data-open-profile>Abbrechen</button>
       </div>
     </div>
-  `);
+  `, { returnToProfile: true });
   window.setTimeout(() => elements.modalContent.querySelector("#recoveryCodeInput")?.focus(), 0);
 }
 

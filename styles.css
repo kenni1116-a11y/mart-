@@ -489,7 +489,7 @@ svg {
   -webkit-background-clip: text;
 }
 
-.profile-register-content .profile-page-content {
+.profile-register-content .profile-register-page-content {
   width: 100%;
   margin: 0;
   padding: 14px 0 calc(env(safe-area-inset-bottom, 0px) + 32px);
@@ -3422,72 +3422,12 @@ button.sync-chip:hover {
   color: #fff8f8;
 }
 
-.modal-layer.is-profile-page {
-  display: block;
-  padding: 0;
-  background: #11161d;
-  backdrop-filter: none;
-}
-
-.modal-layer.is-profile-page .modal-card {
-  width: 100%;
-  max-width: none;
-  height: 100svh;
-  max-height: none;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background:
-    radial-gradient(circle at 50% -12%, rgba(111, 142, 168, 0.13), transparent 36%),
-    linear-gradient(180deg, #202730 0%, #151b22 45%, #0d1218 100%);
-  box-shadow: none;
-}
-
-.modal-layer.is-profile-page .modal-close {
-  display: none;
-}
-
-.profile-page {
+.profile-register-page {
   min-height: 100%;
   color: var(--gm-text);
 }
 
-.profile-page-header {
-  position: sticky;
-  z-index: 2;
-  top: 0;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
-  align-items: center;
-  min-height: calc(env(safe-area-inset-top, 0px) + 64px);
-  padding: env(safe-area-inset-top, 0px) 16px 0;
-  border-bottom: 1px solid rgba(218, 228, 238, 0.1);
-  background: rgba(20, 26, 34, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-}
-
-.profile-page-header h2 {
-  margin: 0;
-  font-family: "Avenir Next", Avenir, -apple-system, sans-serif;
-  font-size: 1.24rem;
-  font-weight: 420;
-  text-align: center;
-}
-
-.profile-back-button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--gm-line);
-  border-radius: 50%;
-  background: var(--gm-glass);
-  color: var(--gm-text);
-}
-
-.profile-page-content {
+.profile-register-page-content {
   display: grid;
   width: min(680px, calc(100% - 32px));
   margin: 0 auto;

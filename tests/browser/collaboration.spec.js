@@ -496,7 +496,12 @@ test("profile register exposes account controls at 44px targets", async ({ brows
     await waitForReady(visitor.page);
     await visitor.page.getByRole("button", { name: "Profil öffnen" }).click();
 
+    const sectionOrder = await visitor.page.locator("#profileRegisterContent").evaluate((root) =>
+      [...root.querySelectorAll("[data-profile-section]")].map((section) => section.dataset.profileSection)
+    );
+    expect(sectionOrder).toEqual(["account", "pairing", "devices", "danger"]);
     await expect(visitor.page.locator("#profileRegister .device-qr")).toBeVisible();
+    await expect(visitor.page.locator("#profileRegister [data-pairing-status]")).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: "Verwalten", exact: true })).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: "Gerät benennen" })).toBeVisible();
     await expect(visitor.page.getByRole("button", { name: "Gerät entfernen" })).toBeVisible();
@@ -514,6 +519,31 @@ test("profile register exposes account controls at 44px targets", async ({ brows
       })
       .filter((control) => control.visible && (control.width < 43.5 || control.height < 43.5)));
     expect(undersized).toEqual([]);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("recovery and account deletion dialogs return to the open profile register", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+
+    await page.locator("[data-toggle-account-protection]").click();
+    await page.locator("[data-open-account-recovery]").click();
+    await expect(page.getByRole("heading", { name: "Account wiederherstellen" })).toBeVisible();
+    await page.locator("#modalCloseButton").click();
+    await expect(page.locator("#profileRegister")).toBeVisible();
+
+    await page.locator("[data-delete-account]").click();
+    await expect(page.getByRole("heading", { name: "Account löschen" })).toBeVisible();
+    await page.locator("#modalCloseButton").click();
+    await expect(page.locator("#profileRegister")).toBeVisible();
   } finally {
     await visitor.context.close();
     await server.close();

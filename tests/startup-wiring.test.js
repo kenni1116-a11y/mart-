@@ -179,6 +179,23 @@ test("profile register wires compact identity editing and expandable account pro
   assert.doesNotMatch(saveBody, /closeSideRegisters\(\)/);
 });
 
+test("profile register keeps the final account workflow order without full-screen profile presentation", () => {
+  const app = read("app.js");
+  const styles = read("styles.css");
+  const profileStart = app.indexOf("function profileRegisterMarkup");
+  const profileEnd = app.indexOf("function setProfileNameEditing", profileStart);
+  const profileBody = app.slice(profileStart, profileEnd);
+
+  ["account", "pairing", "devices", "danger"].forEach((section) => {
+    assert.match(profileBody, new RegExp(`data-profile-section=\\"${section}\\"`));
+  });
+  assert.ok(profileBody.indexOf('data-profile-section="account"') < profileBody.indexOf('data-profile-section="pairing"'));
+  assert.ok(profileBody.indexOf('data-profile-section="pairing"') < profileBody.indexOf('data-profile-section="devices"'));
+  assert.ok(profileBody.indexOf('data-profile-section="devices"') < profileBody.indexOf('data-profile-section="danger"'));
+  assert.doesNotMatch(app, /presentation:\s*["']profile["']/);
+  assert.doesNotMatch(styles, /\.modal-layer\.is-profile-page|\.profile-page-header|\.profile-back-button/);
+});
+
 test("avatar profile writes require explicit success and use the Task 5 upload contract", () => {
   const app = read("app.js");
   const saveStart = app.indexOf("async function saveProfileAvatar");

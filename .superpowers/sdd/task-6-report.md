@@ -1,23 +1,21 @@
-# Task 6 Bericht
+# Task 6 Bericht: Profil-Register Integration
 
-## Umsetzung
+### Umsetzung
 
-- Auth-Gate, Modal-Layer und Dialogkarten verwenden jetzt ein einheitliches Graphite-Glas.
-- Dialogtexte, Eingaben, Fokuszustand, Titanium-Primaraktionen, entsaettigte Gefahrenaktionen und 44-px-Schliessen sind vereinheitlicht.
-- Die vorhandenen Dialogtexte und Ablaufe bleiben unveraendert.
+- Das rechte Profil-Register hat jetzt stabile Abschnittsmarker in der Reihenfolge `account`, `pairing`, `devices`, `danger`.
+- QR-Verbindung, Vergleichsstatus, Kopieren, Wiederholen, Polling, Geraeteverwaltung, Wiederherstellung und Account-Loeschung bleiben im Registerablauf erhalten.
+- Wiederherstellungs- und Loeschdialoge kehren beim Schliessen wieder zum offenen Profil-Register zurueck. Nach einer erfolgreichen Account-Loeschung werden keine Oberflaechen wiederhergestellt.
+- Die alte Vollbild-Profilpraesentation wurde entfernt. Dialoge bleiben allgemeine Dialoge; das Profil erscheint ausschliesslich als rechtes, scrollbares Register.
+- Die vorhandene Sperr- und Identitaetslogik fuer Profilname und Avatar blieb unveraendert.
 
-## Tests
+### Tests
 
-- RED: `PATH=/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm test:browser --grep "Graphite Midnight dialogs"` schlug erwartungsgemaess am hellen Impressum-Dialog fehl.
-- GREEN: derselbe Dialogtest bestand nach den Style-Anpassungen.
-- Regression: `PATH=/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm test:browser --grep "Graphite Midnight dialogs|imprint and bugreport|ownership transfer"` bestand mit 3 Tests.
-- Vollstaendig: `PATH=/Users/ken/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm test:browser` bestand mit 9 Tests.
-- `git diff --check` ohne Befund.
+- RED: Die neuen Register-Tests schlugen erwartungsgemaess fehl, weil die Abschnittsmarker noch fehlten.
+- GREEN: Fokuspruefung mit Profilreihenfolge, QR-Status, Mindestgroessen, Register-Exklusivitaet sowie Modal-Rueckkehr: 3 WebKit-Tests bestanden.
+- Vollstaendig: `pnpm verify` bestand mit 81 Unit- und Release-Tests.
+- Vollstaendig: `pnpm test:browser -- --project=webkit` bestand mit 42 WebKit-Tests.
+- Syntax-, Cache- und `git diff --check`-Pruefungen bestanden.
 
-## Commit
+### Commit
 
-- `style: align dialogs with graphite midnight`
-
-## Restpunkte
-
-- Keine.
+- `feat: complete profile register workflows`
