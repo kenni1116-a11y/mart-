@@ -598,7 +598,10 @@ test("compact account editor locks and serializes an unresolved profile name sav
     const avatarEditButton = page.locator("[data-edit-avatar]");
     await avatarEditButton.click();
     await page.locator("[data-choose-avatar-initials]").click();
+    await page.locator("[data-toggle-account-protection]").click();
     const avatarSwatch = page.locator("[data-avatar-palette]").first();
+    const recoveryButton = page.locator("[data-open-account-recovery]");
+    const deleteButton = page.locator("#profileRegisterContent [data-delete-account]");
     await nameInput.fill("Ken Akzeptiert");
     await nameInput.evaluate((input) => { input.dataset.saveEditor = "original"; });
     await saveButton.click();
@@ -610,6 +613,20 @@ test("compact account editor locks and serializes an unresolved profile name sav
     await expect(editButton).toBeDisabled();
     await expect(avatarEditButton).toBeDisabled();
     await expect(avatarSwatch).toBeDisabled();
+    await expect(recoveryButton).toBeDisabled();
+    await expect(deleteButton).toBeDisabled();
+    await recoveryButton.dispatchEvent("click");
+    await deleteButton.dispatchEvent("click");
+    await expect(page.locator("#modalLayer")).not.toBeVisible();
+
+    await page.locator("#profileRegisterCloseButton").click();
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await expect(nameInput).toHaveAttribute("data-save-editor", "original");
+    await expect(nameInput).toHaveValue("Ken Akzeptiert");
+    await expect(nameInput).toBeDisabled();
+    await expect(page.locator("[data-profile-name-status]")).toContainText("Name wird gespeichert");
+    await expect(recoveryButton).toBeDisabled();
+    await expect(deleteButton).toBeDisabled();
     await nameInput.evaluate((input) => {
       input.value = "Ken Veraltet";
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -627,6 +644,8 @@ test("compact account editor locks and serializes an unresolved profile name sav
     await expect(editButton).toBeEnabled();
     await expect(avatarEditButton).toBeEnabled();
     await expect(avatarSwatch).toBeEnabled();
+    await expect(recoveryButton).toBeEnabled();
+    await expect(deleteButton).toBeEnabled();
     await expect(page.locator("[data-profile-name-status]")).toContainText("Der Name konnte gerade nicht synchronisiert werden.");
     await expect(page.locator("[data-profile-display-name]")).toHaveText("Test 1");
   } finally {
@@ -757,6 +776,99 @@ test("name and avatar changes share one pending profile write", async ({ browser
     await expect(page.locator("[data-avatar-status]")).toContainText("Der Avatar konnte gerade nicht synchronisiert werden.");
   } finally {
     releaseProfileResponses.forEach((release) => release());
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("a delayed name response cannot overwrite a newly active account", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let releaseProfileResponse;
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        await new Promise((resolve) => { releaseProfileResponse = resolve; });
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: null, error: null })
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-profile-name]").click();
+    await page.locator("#profileNameInput").fill("Alter Account Name");
+    await page.locator("[data-save-profile-name]").click();
+    await expect.poll(() => Boolean(releaseProfileResponse)).toBe(true);
+    await page.evaluate(() => {
+      currentUser = {
+        ...currentUser,
+        userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        authUserId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        displayName: "Neuer Account"
+      };
+    });
+
+    releaseProfileResponse();
+    await expect.poll(() => page.evaluate(() => currentUser.displayName)).toBe("Neuer Account");
+    await expect.poll(() => page.evaluate(() => currentUser.userId)).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    await expect(page.locator("[data-profile-name-status]")).toContainText("Account wurde gewechselt");
+  } finally {
+    releaseProfileResponse?.();
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("a delayed avatar response cannot overwrite a newly active account", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  let releaseProfileResponse;
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.route("**/__test__/collaboration-api", async (route) => {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+        await new Promise((resolve) => { releaseProfileResponse = resolve; });
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ data: null, error: null })
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-choose-avatar-initials]").click();
+    await page.locator("[data-avatar-palette='ocean']").click();
+    await expect.poll(() => Boolean(releaseProfileResponse)).toBe(true);
+    await page.evaluate(() => {
+      currentUser = {
+        ...currentUser,
+        userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        authUserId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        displayName: "Neuer Account",
+        avatarUrl: "initials:violet"
+      };
+    });
+
+    releaseProfileResponse();
+    await expect.poll(() => page.evaluate(() => currentUser.avatarUrl)).toBe("initials:violet");
+    await expect.poll(() => page.evaluate(() => currentUser.userId)).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    await expect(page.locator("[data-avatar-status]")).toContainText("Account wurde gewechselt");
+  } finally {
+    releaseProfileResponse?.();
     await visitor.context.close();
     await server.close();
   }

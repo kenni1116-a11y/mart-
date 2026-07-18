@@ -4529,8 +4529,15 @@ function showProductMarketPrices(productId) {
 
 function showProfile() {
   closeModal();
-  elements.profileRegisterContent.innerHTML = profileRegisterMarkup();
+  const preservePendingProfile = Boolean(
+    profileWriteInFlight
+    && elements.profileRegisterContent.querySelector("[data-profile-page]")
+  );
+  if (!preservePendingProfile) {
+    elements.profileRegisterContent.innerHTML = profileRegisterMarkup();
+  }
   setProfileRegisterOpen(true);
+  setProfileWriteControlsBusy(Boolean(profileWriteInFlight));
   loadProfilePairing();
   loadProfileDevices();
 }
@@ -4654,6 +4661,9 @@ function setProfileWriteControlsBusy(isBusy) {
   elements.profileRegisterContent.querySelectorAll([
     "[data-edit-profile-name]",
     "[data-edit-avatar]",
+    "[data-create-recovery-code]",
+    "[data-open-account-recovery]",
+    "[data-delete-account]",
     "[data-profile-name-editor] button",
     "[data-profile-name-editor] input",
     "[data-avatar-editor] button",
@@ -4676,7 +4686,27 @@ function endProfileWrite(kind) {
   setProfileWriteControlsBusy(false);
 }
 
+function captureProfileWriteIdentity() {
+  return Object.freeze({
+    userId: currentUser.userId,
+    authUserId: currentUser.authUserId,
+    accountSessionVersion
+  });
+}
+
+function isProfileWriteIdentityCurrent(identity) {
+  return Boolean(
+    identity
+    && identity.userId === currentUser.userId
+    && identity.authUserId === currentUser.authUserId
+    && identity.accountSessionVersion === accountSessionVersion
+  );
+}
+
 function avatarStatusMessage(error) {
+  if (error?.message === "profile_identity_changed") {
+    return "Der Account wurde gewechselt. Der Avatar wurde nicht übernommen.";
+  }
   if (error?.message === "avatar_upload_unavailable") {
     return "Foto-Upload ist noch nicht verfügbar. Das Bild wurde nicht gespeichert.";
   }
@@ -4689,17 +4719,21 @@ function avatarStatusMessage(error) {
 async function saveProfileAvatar(resolveAvatarUrl) {
   const status = elements.profileRegisterContent.querySelector("[data-avatar-status]");
   if (!beginProfileWrite("avatar")) return false;
+  const identityAtStart = captureProfileWriteIdentity();
+  const userAtStart = { ...currentUser };
   if (status) status.textContent = "Avatar wird gespeichert …";
   try {
-    const avatarUrl = await resolveAvatarUrl();
+    const avatarUrl = await resolveAvatarUrl(identityAtStart);
     if (typeof avatarUrl !== "string") throw new Error("avatar_upload_unavailable");
-    const nextUser = { ...currentUser, avatarUrl };
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
+    const nextUser = { ...userAtStart, avatarUrl };
     let profileResult;
     try {
       profileResult = await collaborationService.upsertProfile?.(nextUser);
     } catch {
       profileResult = { ok: false };
     }
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (profileResult?.ok !== true) throw new Error("avatar_profile_sync_failed");
 
     currentUser = nextUser;
@@ -4728,12 +4762,13 @@ async function saveProfileAvatar(resolveAvatarUrl) {
 
 async function selectAvatarPhoto(file) {
   if (!file) return;
-  await saveProfileAvatar(async () => {
+  await saveProfileAvatar(async (identityAtStart) => {
     const avatarFile = await MartAvatarLogic.resizeAvatarFile(file);
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     if (typeof collaborationService.uploadAvatar !== "function") {
       throw new Error("avatar_upload_unavailable");
     }
-    const uploadResult = await collaborationService.uploadAvatar(avatarFile, currentUser.userId);
+    const uploadResult = await collaborationService.uploadAvatar(avatarFile, identityAtStart.userId);
     if (!uploadResult?.ok || typeof uploadResult.avatarUrl !== "string") {
       throw new Error("avatar_upload_failed");
     }
@@ -4753,10 +4788,12 @@ async function saveProfileName() {
   const nameInput = elements.profileRegisterContent.querySelector("#profileNameInput");
   const status = elements.profileRegisterContent.querySelector("[data-profile-name-status]");
   if (!nameInput || !beginProfileWrite("name")) return;
+  const identityAtStart = captureProfileWriteIdentity();
+  const userAtStart = { ...currentUser };
 
   const nextUser = {
-    ...currentUser,
-    displayName: cleanDisplayName(nameInput.value, currentUser.displayName)
+    ...userAtStart,
+    displayName: cleanDisplayName(nameInput.value, userAtStart.displayName)
   };
   if (status) status.textContent = "Name wird gespeichert …";
   try {
@@ -4765,6 +4802,10 @@ async function saveProfileName() {
       profileResult = await collaborationService.upsertProfile?.(nextUser);
     } catch {
       profileResult = { ok: false };
+    }
+    if (!isProfileWriteIdentityCurrent(identityAtStart)) {
+      if (status) status.textContent = "Der Account wurde gewechselt. Der Name wurde nicht übernommen.";
+      return;
     }
     if (profileResult?.ok !== true) {
       if (status) status.textContent = "Der Name konnte gerade nicht synchronisiert werden.";
@@ -4858,6 +4899,7 @@ async function loadProfilePairing() {
 }
 
 function showAccountDeletionConfirmation(error = "", deletionCommitted = false) {
+  if (profileWriteInFlight) return;
   if (!error) {
     accountDeletionExpectedAccountId = currentUser.userId;
     accountDeletionFlow = null;
@@ -4878,7 +4920,7 @@ function showAccountDeletionConfirmation(error = "", deletionCommitted = false) 
 }
 
 async function deleteCurrentAccount() {
-  if (!isActivationReady()) return;
+  if (profileWriteInFlight || !isActivationReady()) return;
   const status = elements.modalContent.querySelector("[data-account-deletion-status]");
   const actions = elements.modalContent.querySelectorAll("[data-confirm-account-deletion], [data-retry-account-deletion], [data-cancel-account-deletion]");
   actions.forEach((button) => {
@@ -5026,7 +5068,7 @@ function showRecoveryCodeResult(code, title = "Account gesichert") {
 }
 
 async function createRecoveryCode() {
-  if (!isActivationReady()) return;
+  if (profileWriteInFlight || !isActivationReady()) return;
   const result = await collaborationService.rotateRecoveryCode?.();
   if (!result?.ok || !result.recoveryCode) {
     window.alert(accountFlowError(result));
@@ -5050,6 +5092,7 @@ async function copyRecoveryCode() {
 }
 
 function showAccountRecovery() {
+  if (profileWriteInFlight) return;
   openModal(`
     <h2 id="modalTitle">Account wiederherstellen</h2>
     <div class="recovery-form">
@@ -5066,7 +5109,7 @@ function showAccountRecovery() {
 }
 
 async function restoreAccountFromCode() {
-  if (!isActivationReady()) return;
+  if (profileWriteInFlight || !isActivationReady()) return;
   const input = elements.modalContent.querySelector("#recoveryCodeInput");
   const status = elements.modalContent.querySelector("#recoveryStatus");
   const code = input?.value.trim() ?? "";

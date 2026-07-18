@@ -58,3 +58,22 @@
 - Focused WebKit regression verification: 3 passed, 0 failed.
 - Full release verification: 78 unit/release tests and 28 WebKit browser tests passed.
 - Syntax checks, cache/release wiring checks, `git diff --check`, and the Pages artifact checks all passed through `pnpm verify`.
+
+## Final Review Fixes
+
+- `showProfile()` now preserves the existing profile register DOM while a profile write is pending, including the active editor, input value, busy state, and inline status across close and reopen.
+- Name and avatar writes capture account ID, authenticated user ID, and account session version before their first asynchronous step. A response can update local state only while all three still match.
+- Recovery-code creation, account recovery, and account deletion are guarded during profile writes. Their visible register controls remain disabled until the write finishes.
+- Photo upload preparation uses the captured account identity instead of reading a potentially changed current user after compression.
+
+## Final Review RED Evidence
+
+- The pending-name browser regression found recovery controls enabled and the editor replaced after reopening the profile register.
+- A delayed successful name response overwrote the newly active account name.
+- A delayed successful avatar response overwrote the newly active account avatar.
+
+## Final Review GREEN Evidence
+
+- Focused WebKit verification for DOM preservation, account-action gating, and both identity races: 3 passed, 0 failed.
+- Full release verification: 78 unit/release tests passed.
+- Full WebKit verification after the final fixes: 30 passed, 0 failed.
