@@ -10,6 +10,8 @@ SCHEMA_FILES=(
   "supabase/list_mutations_v3.sql"
   "supabase/list_ownership_v3.sql"
   "supabase/supabase_integrity_v3.sql"
+  "supabase/avatar_storage_v1.sql"
+  "supabase/profile_avatar_hardening_v2.sql"
 )
 
 cleanup() {

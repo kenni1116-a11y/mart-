@@ -648,11 +648,16 @@ test("successful account deletion never reopens the profile register", async ({ 
     await page.goto(server.origin);
     await waitForReady(page);
     await page.getByRole("button", { name: "Profil öffnen" }).click();
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "delete.png", mimeType: "image/png", buffer: png });
+    await expect.poll(() => server.state.avatarObjects.size).toBe(1);
     await page.locator("[data-delete-account]").click();
     await page.getByRole("button", { name: "Ja", exact: true }).click();
 
     await expect(page.locator("#modalLayer")).toBeHidden();
     await expect(profile).toBeHidden();
+    expect(server.state.avatarObjects.size).toBe(0);
     await page.waitForTimeout(500);
     await expect(profile).toBeHidden();
   } finally {
@@ -699,6 +704,43 @@ test("compact account editor saves with check or Enter and cancels without chang
   }
 });
 
+test("two devices update profile fields independently without reverting the other field", async ({ browser }) => {
+  const server = await startTestServer();
+  const first = await createIsolatedPage(browser, server);
+  const second = await createIsolatedPage(browser, server);
+  try {
+    await first.page.goto(server.origin);
+    await waitForReady(first.page);
+    const accountId = await first.page.evaluate(() => currentUser.userId);
+    await second.page.goto(server.origin);
+    await waitForReady(second.page);
+    await connectVisitorToAccount(server, second, accountId);
+
+    await first.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await second.page.getByRole("button", { name: "Profil öffnen" }).click();
+    await first.page.locator("[data-edit-avatar]").click();
+    await first.page.locator("[data-choose-avatar-initials]").click();
+    await first.page.locator("[data-avatar-palette='ocean']").click();
+    await expect.poll(() => server.state.accounts.get(accountId)?.avatarUrl).toBe("initials:ocean");
+
+    await second.page.locator("[data-edit-profile-name]").click();
+    await second.page.locator("#profileNameInput").fill("Gemeinsamer Name");
+    await second.page.locator("[data-save-profile-name]").click();
+    await expect.poll(() => server.state.accounts.get(accountId)?.displayName).toBe("Gemeinsamer Name");
+    expect(server.state.accounts.get(accountId)?.avatarUrl).toBe("initials:ocean");
+
+    await first.page.locator("[data-edit-avatar]").click();
+    await first.page.locator("[data-choose-avatar-initials]").click();
+    await first.page.locator("[data-avatar-palette='forest']").click();
+    await expect.poll(() => server.state.accounts.get(accountId)?.avatarUrl).toBe("initials:forest");
+    expect(server.state.accounts.get(accountId)?.displayName).toBe("Gemeinsamer Name");
+  } finally {
+    await first.context.close();
+    await second.context.close();
+    await server.close();
+  }
+});
+
 test("compact account editor retains the input and shows an inline error when sync fails", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
@@ -708,7 +750,7 @@ test("compact account editor retains the input and shows an inline error when sy
     await waitForReady(page);
     await page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_display_name") {
         await route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({ data: null, error: { message: "sync_failed", code: "server_error" } })
@@ -745,7 +787,7 @@ test("compact account editor locks and serializes an unresolved profile name sav
     await waitForReady(page);
     await page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_display_name") {
         profileRequestNames.push(payload.args.args?.display_name);
         await new Promise((resolve) => { releaseProfileResponses.push(resolve); });
         await route.fulfill({
@@ -902,7 +944,7 @@ test("name and avatar changes share one pending profile write", async ({ browser
     await waitForReady(page);
     await page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_avatar") {
         profileRequests.push(payload.args.args);
         await new Promise((resolve) => { releaseProfileResponses.push(resolve); });
         await route.fulfill({
@@ -958,7 +1000,7 @@ test("a delayed name response cannot overwrite a newly active account", async ({
     await waitForReady(page);
     await page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_display_name") {
         await new Promise((resolve) => { releaseProfileResponse = resolve; });
         await route.fulfill({
           contentType: "application/json",
@@ -1004,7 +1046,7 @@ test("a delayed avatar response cannot overwrite a newly active account", async 
     await waitForReady(page);
     await page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_avatar") {
         await new Promise((resolve) => { releaseProfileResponse = resolve; });
         await route.fulfill({
           contentType: "application/json",
@@ -1071,6 +1113,31 @@ test("avatar photo upload persists through profile reopen and removal restores i
     await page.locator("[data-remove-avatar]").click();
     await expect(page.locator("[data-edit-avatar] img")).toHaveCount(0);
     await expect(page.locator("[data-edit-avatar]")).toContainText("T1");
+    await expect.poll(() => server.state.avatarObjects.size).toBe(0);
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("switching a photo avatar to initials removes the previous storage object", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL7dgAAAABJRU5ErkJggg==", "base64");
+    await page.goto(server.origin);
+    await waitForReady(page);
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-avatar-file]").setInputFiles({ name: "photo.png", mimeType: "image/png", buffer: png });
+    await expect.poll(() => server.state.avatarObjects.size).toBe(1);
+
+    await page.locator("[data-edit-avatar]").click();
+    await page.locator("[data-choose-avatar-initials]").click();
+    await page.locator("[data-avatar-palette='amber']").click();
+
+    await expect.poll(() => server.state.accounts.values().next().value.avatarUrl).toBe("initials:amber");
     await expect.poll(() => server.state.avatarObjects.size).toBe(0);
   } finally {
     await visitor.context.close();
@@ -1151,14 +1218,14 @@ test("two authenticated devices stage distinct avatar slots before last profile 
 
     await first.page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_avatar") {
         await new Promise((resolve) => { releaseFirstProfile = resolve; });
       }
       await route.continue();
     });
     await second.page.route("**/__test__/collaboration-api", async (route) => {
       const payload = JSON.parse(route.request().postData() || "{}");
-      if (payload.action === "rpc" && payload.args?.name === "update_account_profile") {
+      if (payload.action === "rpc" && payload.args?.name === "update_account_avatar") {
         await new Promise((resolve) => { releaseSecondProfile = resolve; });
       }
       await route.continue();
@@ -1584,6 +1651,62 @@ test("profile and options registers remain exclusive and close on every register
     await visitor.page.getByRole("button", { name: "Gerät hinzufügen", exact: true }).click();
     await expect(visitor.page.getByRole("heading", { name: "Gerät hinzufügen" })).toBeVisible();
     await expect(visitor.page.locator("#modalContent [data-device-pairing]")).toBeVisible();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("profile register contains keyboard focus and restores it to the profile button", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+    const profileButton = page.getByRole("button", { name: "Profil öffnen" });
+    await profileButton.click();
+    await expect(page.locator("#profileRegisterCloseButton")).toBeFocused();
+
+    await page.keyboard.press("Shift+Tab");
+    expect(await page.evaluate(() => document.querySelector("#profileRegister")?.contains(document.activeElement))).toBe(true);
+    for (let index = 0; index < 18; index += 1) {
+      await page.keyboard.press("Tab");
+      const focusState = await page.evaluate(() => ({
+        inside: document.querySelector("#profileRegister")?.contains(document.activeElement),
+        element: document.activeElement?.outerHTML?.slice(0, 240) ?? ""
+      }));
+      expect(focusState.inside, `focus escaped after Tab ${index + 1}: ${focusState.element}`).toBe(true);
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(profileButton).toBeFocused();
+  } finally {
+    await visitor.context.close();
+    await server.close();
+  }
+});
+
+test("nested device dialogs return to the profile register through X and backdrop", async ({ browser }) => {
+  const server = await startTestServer();
+  const visitor = await createIsolatedPage(browser, server);
+  try {
+    const page = visitor.page;
+    await page.goto(server.origin);
+    await waitForReady(page);
+
+    await page.getByRole("button", { name: "Profil öffnen" }).click();
+    await page.getByRole("button", { name: "Verwalten", exact: true }).click();
+    await page.getByRole("button", { name: "Gerät benennen" }).click();
+    await expect(page.getByRole("heading", { name: "Gerät benennen" })).toBeVisible();
+    await page.locator("#modalCloseButton").click();
+    await expect(page.locator("#profileRegister")).toBeVisible();
+
+    await page.getByRole("button", { name: "Verwalten", exact: true }).click();
+    await page.getByRole("button", { name: "Gerät hinzufügen", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Gerät hinzufügen" })).toBeVisible();
+    await page.locator("#modalLayer").click({ position: { x: 2, y: 2 } });
+    await expect(page.locator("#profileRegister")).toBeVisible();
   } finally {
     await visitor.context.close();
     await server.close();
@@ -2369,14 +2492,14 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.6 · Build 76", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.7 · Build 77", { exact: true })).toBeVisible();
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.6");
-    expect(report).toContain("Build: 76");
+    expect(report).toContain("App-Version: 0.7.7");
+    expect(report).toContain("Build: 77");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 

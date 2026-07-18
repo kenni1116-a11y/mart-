@@ -55,7 +55,7 @@ test("resizeAvatarFile scales wide images and requests compact WebP output", asy
   assert.ok(encodeCalls.every((call) => call.width === 512 && call.height === 341));
 });
 
-test("resizeAvatarFile tries the complete quality sequence and keeps the smallest fallback", async () => {
+test("resizeAvatarFile rejects images that remain above the storage limit", async () => {
   const MartAvatarLogic = loadAvatarLogic();
   const qualities = [];
   const sizes = [310, 280, 260, 250, 230].map((kilobytes) => kilobytes * 1024);
@@ -65,7 +65,7 @@ test("resizeAvatarFile tries the complete quality sequence and keeps the smalles
     }
   };
 
-  const result = await MartAvatarLogic.resizeAvatarFile({ type: "image/jpeg" }, {
+  await assert.rejects(() => MartAvatarLogic.resizeAvatarFile({ type: "image/jpeg" }, {
     targetBytes: 200 * 1024,
     decodeImage: async () => ({ width: 600, height: 600, close() {} }),
     createCanvas: () => canvas,
@@ -73,8 +73,7 @@ test("resizeAvatarFile tries the complete quality sequence and keeps the smalles
       qualities.push(quality);
       return new Blob([new Uint8Array(sizes[qualities.length - 1])], { type });
     }
-  });
+  }), /image_too_large/);
 
   assert.deepEqual(qualities, [0.86, 0.78, 0.7, 0.62, 0.58]);
-  assert.equal(result.size, 230 * 1024);
 });

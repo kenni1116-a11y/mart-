@@ -1248,10 +1248,6 @@ class SupabaseRealtimeService {
     this.url = this.config.url || this.config.projectUrl || "";
     this.publishableKey = this.config.publishableKey || this.config.anonKey || "";
     this.authUserId = "";
-    this.profileSignature = "";
-    this.profileSyncedAt = 0;
-    this.profileSyncPromise = null;
-    this.profileSyncSignature = "";
     this.client = this.createClient();
   }
 
@@ -1411,10 +1407,6 @@ class SupabaseRealtimeService {
     if (!this.client) return { ok: true };
     const { error } = await this.client.auth.signOut({ scope: "local" });
     this.authUserId = "";
-    this.profileSignature = "";
-    this.profileSyncedAt = 0;
-    this.profileSyncPromise = null;
-    this.profileSyncSignature = "";
     if (this.listChannel) {
       this.client.removeChannel?.(this.listChannel);
       this.listChannel = null;
@@ -1564,39 +1556,50 @@ class SupabaseRealtimeService {
     return { ok: true };
   }
 
-  async upsertProfile(user) {
+  async updateProfileName(user) {
     if (!this.client) return { ok: false, offline: true };
     const authUser = await this.ensureAuthenticated();
     if (!authUser?.id) return { ok: false, error: "Keine Nutzerkennung" };
     const displayName = cleanDisplayName(user.displayName, "Gast");
+    const { data, error } = await this.client.rpc("update_account_display_name", {
+      display_name: displayName
+    });
+    return error
+      ? { ok: false, error: error.message, rawError: error }
+      : { ok: true, userId: user.userId, account: data };
+  }
+
+  async updateProfileAvatar(user) {
+    if (!this.client) return { ok: false, offline: true };
+    const authUser = await this.ensureAuthenticated();
+    if (!authUser?.id) return { ok: false, error: "Keine Nutzerkennung" };
     const avatarUrl = typeof user.avatarUrl === "string" ? user.avatarUrl : "";
-    const signature = JSON.stringify([user.userId, displayName, avatarUrl]);
-    if (signature === this.profileSignature && Date.now() - this.profileSyncedAt < 60000) {
-      return { ok: true, userId: user.userId, cached: true };
+    const { data, error } = await this.client.rpc("update_account_avatar", {
+      avatar_url: avatarUrl
+    });
+    return error
+      ? { ok: false, error: error.message, rawError: error }
+      : { ok: true, userId: user.userId, account: data };
+  }
+
+  async removeAllAvatarObjects(accountId) {
+    if (!this.client || !this.userIdValue(accountId) || currentUser.userId !== accountId) {
+      return { ok: false, error: "account_mismatch" };
     }
-    if (signature === this.profileSyncSignature && this.profileSyncPromise) {
-      return this.profileSyncPromise;
-    }
-    const request = (async () => {
-      const { data, error } = await this.client.rpc("update_account_profile", {
-        display_name: displayName,
-        avatar_url: avatarUrl
-      });
-      if (error) return { ok: false, error: error.message, rawError: error };
-      this.profileSignature = signature;
-      this.profileSyncedAt = Date.now();
-      return { ok: true, userId: user.userId, account: data };
-    })();
-    this.profileSyncSignature = signature;
-    this.profileSyncPromise = request;
-    try {
-      return await request;
-    } finally {
-      if (this.profileSyncPromise === request) {
-        this.profileSyncPromise = null;
-        this.profileSyncSignature = "";
-      }
-    }
+    const authUser = await this.ensureAuthenticated();
+    if (!this.userIdValue(authUser?.id)) return { ok: false, error: "authentication_required" };
+    const bucket = this.client.storage?.from("avatars");
+    if (!bucket?.list || !bucket?.remove) return { ok: false, error: "storage_unavailable" };
+    const { data, error: listError } = await bucket.list(accountId, { limit: 100, offset: 0 });
+    if (listError) return { ok: false, error: listError.message || "avatar_list_failed" };
+    const paths = (Array.isArray(data) ? data : [])
+      .map((entry) => `${accountId}/${entry?.name ?? ""}`)
+      .filter((path) => this.isAllowedAvatarObjectPath(path, accountId));
+    if (!paths.length) return { ok: true };
+    const { error: removeError } = await bucket.remove(paths);
+    return removeError
+      ? { ok: false, error: removeError.message || "avatar_remove_failed" }
+      : { ok: true };
   }
 
   async touchDevice(label = null, platform = null) {
@@ -1632,6 +1635,10 @@ class SupabaseRealtimeService {
 
   async deleteCurrentAccount(expectedAccountId) {
     if (!this.client) return { ok: false, error: "account_unavailable" };
+    const detachResult = await this.updateProfileAvatar({ ...currentUser, avatarUrl: "" });
+    if (detachResult?.ok !== true) return { ok: false, error: detachResult?.error || "avatar_cleanup_failed" };
+    const avatarCleanup = await this.removeAllAvatarObjects(expectedAccountId);
+    if (avatarCleanup?.ok !== true) return { ok: false, error: avatarCleanup?.error || "avatar_cleanup_failed" };
     const { data, error } = await this.client.rpc("delete_current_account_v3", {
       expected_account_id: expectedAccountId
     });
@@ -2200,6 +2207,7 @@ let pendingDevicePairing = null;
 let accountDeletionFlow = null;
 let accountDeletionExpectedAccountId = "";
 let returnToProfileAfterModalClose = false;
+let profileRegisterReturnFocus = null;
 let accountSessionVersion = 0;
 let outboundSyncEnabled = false;
 let authState = {
@@ -2747,12 +2755,6 @@ async function enableAccountWrites() {
   saveCurrentUser();
   save({ broadcast: false, source: "remote" });
   outboundSyncEnabled = true;
-  try {
-    const profileResult = await collaborationService.upsertProfile?.(currentUser);
-    if (profileResult?.ok === false) markSyncError(profileResult.error || "Profil-Sync nicht erreichbar");
-  } catch (error) {
-    markSyncError(error);
-  }
   if (elements.addListButton) elements.addListButton.disabled = false;
   elements.authGate?.classList.add("is-hidden");
   elements.appShell?.classList.remove("is-hidden");
@@ -4813,6 +4815,9 @@ function avatarStatusMessage(error) {
   if (error?.message === "avatar_upload_unavailable") {
     return "Foto-Upload ist noch nicht verfügbar. Das Bild wurde nicht gespeichert.";
   }
+  if (error?.message === "image_too_large") {
+    return "Das Foto ist auch nach der Verkleinerung noch zu groß.";
+  }
   if (/image_(decode|dimensions|encode)|canvas_/i.test(error?.message ?? "")) {
     return "Das Foto konnte nicht gelesen oder verarbeitet werden.";
   }
@@ -4838,7 +4843,7 @@ async function saveProfileAvatar(resolveAvatarUrl) {
     const nextUser = { ...userAtStart, avatarUrl };
     let profileResult;
     try {
-      profileResult = await collaborationService.upsertProfile?.(nextUser);
+      profileResult = await collaborationService.updateProfileAvatar?.(nextUser);
     } catch {
       profileResult = { ok: false };
     }
@@ -4926,7 +4931,7 @@ async function removeProfileAvatar() {
     }
     let clearResult;
     try {
-      clearResult = await collaborationService.upsertProfile?.(clearedUser);
+      clearResult = await collaborationService.updateProfileAvatar?.(clearedUser);
     } catch {
       await reconcileAmbiguousAvatarWrite(identityAtStart, status);
       return;
@@ -4954,7 +4959,7 @@ async function removeProfileAvatar() {
     if (!isProfileWriteIdentityCurrent(identityAtStart)) throw new Error("profile_identity_changed");
     let rollbackResult;
     try {
-      rollbackResult = await collaborationService.upsertProfile?.(userAtStart);
+      rollbackResult = await collaborationService.updateProfileAvatar?.(userAtStart);
     } catch {
       await reconcileAmbiguousAvatarWrite(identityAtStart, status);
       return;
@@ -5063,7 +5068,7 @@ async function saveProfileName() {
   try {
     let profileResult;
     try {
-      profileResult = await collaborationService.upsertProfile?.(nextUser);
+      profileResult = await collaborationService.updateProfileName?.(nextUser);
     } catch {
       profileResult = { ok: false };
     }
@@ -5228,7 +5233,7 @@ function accountFlowError(error) {
     invalid_pairing: "Dieser QR-Code ist ungültig oder abgelaufen.",
     pairing_in_use: "Dieser QR-Code wird bereits von einem anderen Gerät verwendet.",
     already_connected: "Dieses Gerät gehört bereits zum Account.",
-    account_in_use: "Dieser Geräte-Account enthält bereits Daten. Öffne Mehr -> Account, bevor du erneut ein Gerät verbindest.",
+    account_in_use: "Dieser Geräte-Account enthält bereits Daten. Öffne dein Profil, bevor du erneut ein Gerät verbindest.",
     expired: "Der Gerätelink ist abgelaufen.",
     cancelled: "Die Geräteverbindung wurde abgebrochen.",
     pairing_failed: "Die Geräteverbindung konnte gerade nicht geprüft werden.",
@@ -5241,7 +5246,8 @@ function accountFlowError(error) {
     account_changed: "Der angezeigte Account hat sich geändert. Bitte prüfe den aktuellen Account.",
     deletion_committed: "Der Account wurde bereits gelöscht. Die lokale Abmeldung muss noch abgeschlossen werden.",
     sign_out_failed: "Der Account wurde gelöscht, aber die lokale Abmeldung ist fehlgeschlagen.",
-    account_deletion_failed: "Der Account konnte nicht gelöscht werden."
+    account_deletion_failed: "Der Account konnte nicht gelöscht werden.",
+    avatar_cleanup_failed: "Die Profilbilder konnten nicht vollständig gelöscht werden. Bitte versuche es erneut."
   };
   return messages[value] ?? authErrorMessage(value);
 }
@@ -5286,7 +5292,7 @@ function showRenameDevice(deviceId, label) {
         <button type="button" class="is-muted" data-open-devices>Abbrechen</button>
       </div>
     </div>
-  `);
+  `, { returnToProfile: true });
   window.setTimeout(() => elements.modalContent.querySelector("#deviceNameInput")?.select(), 0);
 }
 
@@ -5463,7 +5469,7 @@ async function startDevicePairing() {
         <button type="button" class="is-muted" data-cancel-device-pairing="${escapeText(result.pairingId)}">Abbrechen</button>
       </div>
     </div>
-  `);
+  `, { returnToProfile: true });
   pollOwnerPairing(result.pairingId);
 }
 
@@ -6778,6 +6784,15 @@ function closeSideRegisters() {
 
 function setProfileRegisterOpen(isOpen) {
   if (isOpen) setOptionsRegisterOpen(false);
+  const wasOpen = elements.profileRegister.classList.contains("is-open");
+  if (isOpen && !wasOpen) {
+    const activeElement = document.activeElement;
+    profileRegisterReturnFocus = activeElement instanceof HTMLElement
+      && activeElement !== document.body
+      && activeElement !== document.documentElement
+      ? activeElement
+      : elements.accountButton;
+  }
   profileRegisterSessionVersion += 1;
   elements.profileRegister.classList.toggle("is-open", isOpen);
   elements.profileRegisterScrim.classList.toggle("is-open", isOpen);
@@ -6785,7 +6800,48 @@ function setProfileRegisterOpen(isOpen) {
   elements.profileRegisterScrim.setAttribute("aria-hidden", String(!isOpen));
   elements.accountButton.setAttribute("aria-expanded", String(isOpen));
   elements.body.classList.toggle("has-open-profile", isOpen);
-  if (!isOpen) stopProfilePairing();
+  if (isOpen) {
+    window.setTimeout(() => elements.profileRegisterCloseButton.focus(), 0);
+  } else {
+    stopProfilePairing();
+    if (wasOpen) {
+      const returnTarget = profileRegisterReturnFocus?.isConnected
+        ? profileRegisterReturnFocus
+        : elements.accountButton;
+      profileRegisterReturnFocus = null;
+      window.setTimeout(() => returnTarget?.focus?.(), 0);
+    }
+  }
+}
+
+function trapProfileRegisterFocus(event) {
+  if (event.key !== "Tab" || !elements.profileRegister.classList.contains("is-open")) return false;
+  const controls = [...elements.profileRegister.querySelectorAll([
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "a[href]",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(", "))].filter((control) => {
+    const style = getComputedStyle(control);
+    return !control.hidden
+      && style.display !== "none"
+      && style.visibility !== "hidden"
+      && control.getClientRects().length > 0;
+  });
+  if (!controls.length) {
+    event.preventDefault();
+    elements.profileRegister.focus();
+    return true;
+  }
+  event.preventDefault();
+  const currentIndex = controls.indexOf(document.activeElement);
+  const nextIndex = event.shiftKey
+    ? (currentIndex <= 0 ? controls.length - 1 : currentIndex - 1)
+    : (currentIndex < 0 || currentIndex === controls.length - 1 ? 0 : currentIndex + 1);
+  controls[nextIndex].focus();
+  return true;
 }
 
 elements.authRetryButton?.addEventListener("click", connectDeviceAccount);
@@ -7077,7 +7133,18 @@ elements.profileRegisterContent.addEventListener("click", (event) => {
   }
   const paletteButton = event.target.closest("[data-avatar-palette]");
   if (paletteButton) {
-    saveProfileAvatar(async () => `initials:${paletteButton.dataset.avatarPalette}`);
+    saveProfileAvatar(async (identityAtStart, userAtStart) => {
+      const oldObjectPath = collaborationService.avatarObjectPathFromUrl?.(
+        userAtStart.avatarUrl,
+        identityAtStart.userId
+      );
+      return {
+        avatarUrl: `initials:${paletteButton.dataset.avatarPalette}`,
+        afterCommit: () => oldObjectPath
+          ? collaborationService.removeAvatarObject?.(oldObjectPath, identityAtStart.userId)
+          : Promise.resolve({ ok: true })
+      };
+    });
     return;
   }
   if (event.target.closest("[data-remove-avatar]")) {
@@ -7158,6 +7225,7 @@ elements.profileRegisterContent.addEventListener("keydown", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (trapProfileRegisterFocus(event)) return;
   if (event.key !== "Escape") return;
   if (elements.topOptions.classList.contains("is-open")) {
     setOptionsRegisterOpen(false);

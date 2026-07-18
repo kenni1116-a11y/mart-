@@ -4,13 +4,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
+const MartRelease = require(path.join(root, "app-version.js"));
 
 test("browser entrypoint loads the tested app logic before app.js", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const releaseIndex = html.indexOf('<script src="./app-version.js?v=76"></script>');
-  const logicIndex = html.indexOf('<script src="./app-logic.js?v=76"></script>');
-  const avatarLogicIndex = html.indexOf('<script src="./avatar-logic.js?v=76"></script>');
-  const appIndex = html.indexOf('<script src="./app.js?v=76"></script>');
+  const release = String(MartRelease.build);
+  const releaseIndex = html.indexOf(`<script src="./app-version.js?v=${release}"></script>`);
+  const logicIndex = html.indexOf(`<script src="./app-logic.js?v=${release}"></script>`);
+  const avatarLogicIndex = html.indexOf(`<script src="./avatar-logic.js?v=${release}"></script>`);
+  const appIndex = html.indexOf(`<script src="./app.js?v=${release}"></script>`);
 
   assert.notEqual(releaseIndex, -1);
   assert.notEqual(logicIndex, -1);
@@ -19,7 +21,7 @@ test("browser entrypoint loads the tested app logic before app.js", () => {
   assert.ok(releaseIndex < appIndex);
   assert.ok(logicIndex < appIndex);
   assert.ok(avatarLogicIndex < appIndex);
-  assert.match(html, /styles\.css\?v=76/);
+  assert.ok(html.includes(`styles.css?v=${release}`));
 });
 
 test("service worker derives its cache version from the central release metadata", () => {

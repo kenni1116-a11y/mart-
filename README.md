@@ -34,7 +34,7 @@ Danach kann die App auf dem iPhone in Safari geöffnet und über Teilen -> Zum H
 
 Die App erstellt beim ersten Start automatisch einen anonym authentifizierten Geräte-Account mit einem Namen wie `user-A4F82C1`. Einkaufszettel gehören zu einer dauerhaften Account-ID und werden lokal ebenfalls pro Account getrennt gespeichert. Eine E-Mail-Adresse ist nicht erforderlich.
 
-Unter `Mehr` -> `Account` kann der Anzeigename geändert und ein einmal sichtbarer Wiederherstellungscode erzeugt werden. Unter `Account` -> `Geräte` lassen sich weitere Geräte per fünf Minuten gültigem QR-Code, Vergleichscode und Bestätigung durch ein bereits verbundenes Gerät hinzufügen. Der Wiederherstellungscode muss außerhalb der App privat aufbewahrt werden.
+Im Profil oben rechts kann der Anzeigename geändert und ein einmal sichtbarer Wiederherstellungscode erzeugt werden. Unter `Deine Geräte` lassen sich weitere Geräte per fünf Minuten gültigem QR-Code, Vergleichscode und Bestätigung durch ein bereits verbundenes Gerät hinzufügen. Der Wiederherstellungscode muss außerhalb der App privat aufbewahrt werden.
 
 Eine **Listen-Einladung** gibt einem anderen Account Zugriff auf genau einen Einkaufszettel. Das **Geräte-Pairing** verbindet dagegen ein weiteres Gerät mit demselben Account und damit mit allen zugehörigen Zetteln. Diese Links dürfen nicht miteinander vertauscht werden.
 

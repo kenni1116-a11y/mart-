@@ -341,16 +341,16 @@ function rpc(state, token, name, args) {
     updateList(state, list, account.id);
     return { data: { ok: true, listId: list.id, ownerId: target.user_id, previousOwnerId: account.id }, error: null };
   }
-  if (name === "update_account_profile") {
+  if (name === "update_account_avatar" || name === "update_account_display_name") {
     const queuedFailure = state.avatarFailures.profileUpdate.length
       ? state.avatarFailures.profileUpdate.shift()
       : null;
     if (queuedFailure) {
-      state.avatarEvents.push({ type: "profile-update", avatarUrl: args.avatar_url || "", ok: false });
+      state.avatarEvents.push({ type: "profile-update", avatarUrl: args.avatar_url ?? account.avatarUrl, ok: false });
       return apiError(queuedFailure, "profile_sync_failed");
     }
-    account.displayName = args.display_name || account.displayName;
-    account.avatarUrl = args.avatar_url || "";
+    if (name === "update_account_display_name") account.displayName = args.display_name || account.displayName;
+    if (name === "update_account_avatar") account.avatarUrl = args.avatar_url || "";
     state.avatarEvents.push({ type: "profile-update", avatarUrl: account.avatarUrl, ok: true });
     bump(state);
     const rejectResponse = state.avatarFailures.profileUpdateResponse.length
@@ -477,6 +477,10 @@ const adapterSource = String.raw`(function () {
               const result = await api("storage-remove", { bucket, paths });
               return { data: result.data ?? null, error: result.error ?? null };
             },
+            async list(path, options = {}) {
+              const result = await api("storage-list", { bucket, path, options });
+              return { data: result.data ?? null, error: result.error ?? null };
+            },
             getPublicUrl(path) {
               return { data: { publicUrl: location.origin + "/__test__/avatar/" + path } };
             }
@@ -549,6 +553,18 @@ async function handleApi(state, payload) {
     state.avatarObjects.set(avatarObjectKey(bucket, path), { bytes, contentType });
     state.avatarEvents.push({ type: "storage-upload", path, ok: true });
     return { data: { path }, error: null };
+  }
+  if (action === "storage-list") {
+    const account = accountFor(state, token);
+    if (!account || args.bucket !== "avatars" || args.path !== account.id) {
+      return apiError("Forbidden", "forbidden");
+    }
+    const prefix = `avatars:${account.id}/`;
+    const data = [...state.avatarObjects.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => ({ name: key.slice(prefix.length) }))
+      .filter((entry) => !entry.name.includes("/"));
+    return { data, error: null };
   }
   if (action === "storage-remove") {
     const account = accountFor(state, token);

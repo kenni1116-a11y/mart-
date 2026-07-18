@@ -37,6 +37,11 @@ test("GitHub Pages deploys only after verification and retains a rollback path",
   assert.match(workflow, /pnpm test:sql:local/);
   assert.doesNotMatch(workflow, /SUPABASE_DB_URL|secrets\.SUPABASE_DB_URL/);
   assert.equal(packageJson.scripts["test:sql:local"], "bash scripts/test-supabase-local.sh");
+  const sqlRunner = read("scripts/test-supabase-local.sh");
+  assert.match(sqlRunner, /supabase\/avatar_storage_v1\.sql/);
+  assert.match(sqlRunner, /supabase\/profile_avatar_hardening_v2\.sql/);
+  assert.match(sqlRunner, /tests\/sql\/\*\.test\.sql/);
+  assert.ok(fs.existsSync(path.join(root, "tests/sql/profile_avatar_hardening_v2.test.sql")));
   assert.match(workflow, /actions\/upload-pages-artifact@v3/);
   assert.match(workflow, /actions\/deploy-pages@v4/);
   assert.match(workflow, /pnpm smoke:production/);

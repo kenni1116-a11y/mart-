@@ -64,7 +64,7 @@ test("activation storage cleanup is wired before the authoritative first pull", 
   assert.ok(resolveBody.indexOf("prepareAccountActivationStorage") < resolveBody.indexOf("return account"));
 });
 
-test("the first relational pull is read-only and profile sync starts after writes are enabled", () => {
+test("account activation keeps the authoritative server profile without writing it back", () => {
   const app = read("app.js");
   const fetchStart = app.indexOf("async fetchRelationalLists");
   const fetchEnd = app.indexOf("async fetchSharedLists", fetchStart);
@@ -74,8 +74,7 @@ test("the first relational pull is read-only and profile sync starts after write
   const enableBody = app.slice(enableStart, enableEnd);
 
   assert.doesNotMatch(fetchBody, /upsertProfile|update_account_profile/);
-  assert.match(enableBody, /collaborationService\.upsertProfile/);
-  assert.ok(enableBody.indexOf("outboundSyncEnabled = true") < enableBody.indexOf("collaborationService.upsertProfile"));
+  assert.doesNotMatch(enableBody, /upsertProfile|updateProfileName|updateProfileAvatar|update_account_profile/);
 });
 
 test("browser writes use account-bound item mutations instead of list snapshots", () => {
@@ -174,7 +173,9 @@ test("profile register wires compact identity editing and expandable account pro
   assert.match(profileBody, /data-account-protection-actions hidden/);
   assert.match(app, /function setProfileNameEditing\(isEditing\)/);
   assert.match(app, /function setAccountProtectionExpanded\(isExpanded\)/);
-  assert.match(saveBody, /collaborationService\.upsertProfile/);
+  assert.match(saveBody, /collaborationService\.updateProfileName/);
+  assert.match(app, /collaborationService\.updateProfileAvatar/);
+  assert.doesNotMatch(saveBody, /collaborationService\.upsertProfile/);
   assert.match(saveBody, /data-profile-name-status/);
   assert.doesNotMatch(saveBody, /closeSideRegisters\(\)/);
 });
@@ -208,30 +209,26 @@ test("avatar profile writes require explicit success and use the Task 5 upload c
   assert.ok(saveBody.indexOf("profileResult?.ok !== true") < saveBody.indexOf("currentUser = nextUser"));
 });
 
-test("avatar storage policy migration is account-scoped and supports safe upserts", () => {
-  const sql = read("supabase/avatar_storage_v1.sql");
+test("avatar storage hardening uses exact account paths and atomic profile RPCs", () => {
+  const sql = read("supabase/profile_avatar_hardening_v2.sql");
   const selectPolicy = sql.slice(sql.indexOf('create policy "avatars account select"'), sql.indexOf('create policy "avatars account insert"'));
   const insertPolicy = sql.slice(sql.indexOf('create policy "avatars account insert"'), sql.indexOf('create policy "avatars account update"'));
   const updatePolicy = sql.slice(sql.indexOf('create policy "avatars account update"'), sql.indexOf('create policy "avatars account delete"'));
   const deletePolicy = sql.slice(sql.indexOf('create policy "avatars account delete"'));
-  const accountFolder = /\(storage\.foldername\(name\)\)\[1\]\s*=\s*\(select private\.current_account_id\(\)::text\)/i;
-  const strictFilename = /storage\.filename\(name\)\s*~\s*'\^avatar-\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[1-5\]\[0-9a-f\]\{3\}-\[89ab\]\[0-9a-f\]\{3\}-\[0-9a-f\]\{12\}-\[ab\]\[\.\]webp\$'/i;
+  const exactPathHelper = /private\.is_account_avatar_path\(\s*name,\s*\(select private\.current_account_id\(\)\),/i;
 
-  assert.match(sql, /insert into storage\.buckets[\s\S]*'avatars'[\s\S]*204800[\s\S]*image\/webp[\s\S]*image\/jpeg[\s\S]*image\/png/i);
   assert.match(sql, /drop policy if exists "avatars account select" on storage\.objects/i);
   assert.match(sql, /create policy "avatars account select"[\s\S]*for select[\s\S]*to authenticated/i);
   assert.match(sql, /create policy "avatars account insert"[\s\S]*for insert[\s\S]*to authenticated/i);
   assert.match(sql, /create policy "avatars account update"[\s\S]*for update[\s\S]*to authenticated[\s\S]*using[\s\S]*with check/i);
   assert.match(sql, /create policy "avatars account delete"[\s\S]*for delete[\s\S]*to authenticated/i);
-  [selectPolicy, insertPolicy, updatePolicy, deletePolicy].forEach((policy) => assert.match(policy, accountFolder));
-  assert.match(sql, /storage\.filename\(name\)/i);
-  assert.match(selectPolicy, strictFilename);
-  assert.match(deletePolicy, strictFilename);
-  assert.match(insertPolicy, /'avatar-'\s*\|\|\s*\(select auth\.uid\(\)\)::text\s*\|\|\s*'-a\.webp'/i);
-  assert.match(insertPolicy, /'avatar-'\s*\|\|\s*\(select auth\.uid\(\)\)::text\s*\|\|\s*'-b\.webp'/i);
-  assert.match(updatePolicy, /using[\s\S]*with check[\s\S]*\(select auth\.uid\(\)\)::text/i);
+  [selectPolicy, insertPolicy, updatePolicy, deletePolicy].forEach((policy) => assert.match(policy, exactPathHelper));
+  assert.doesNotMatch(sql, /storage\.filename\(name\)/i);
+  assert.match(sql, /create or replace function public\.update_account_display_name/i);
+  assert.match(sql, /create or replace function public\.update_account_avatar/i);
+  assert.match(sql, /drop function if exists public\.update_account_profile\(text, text\)/i);
+  assert.match(updatePolicy, /using[\s\S]*with check[\s\S]*\(select auth\.uid\(\)\)/i);
   assert.doesNotMatch(deletePolicy, /storage\.filename\(name\)[\s\S]*\(select auth\.uid\(\)\)::text/i);
-  assert.match(sql, /public\.account_devices/i);
   assert.doesNotMatch(sql, /to public[\s\S]*for (?:insert|update|delete)/i);
 });
 

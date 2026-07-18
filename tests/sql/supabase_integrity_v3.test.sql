@@ -88,7 +88,8 @@ begin
     'public.rotate_recovery_code()',
     'public.touch_current_device(text,text)',
     'public.transfer_list_ownership_v3(text,uuid)',
-    'public.update_account_profile(text,text)'
+    'public.update_account_avatar(text)',
+    'public.update_account_display_name(text)'
   ] loop
     if to_regprocedure(required_rpc) is null
       or not has_function_privilege('authenticated', required_rpc, 'EXECUTE') then

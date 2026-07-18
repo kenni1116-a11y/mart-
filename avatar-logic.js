@@ -90,7 +90,7 @@
         if (!smallest || blob.size < smallest.size) smallest = blob;
         if (blob.size <= targetBytes) return blob;
       }
-      if (smallest) return smallest;
+      if (smallest) throw new Error("image_too_large");
       throw new Error("image_encode_failed");
     } finally {
       image?.close?.();
