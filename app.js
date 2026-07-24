@@ -4315,6 +4315,7 @@ function showImprint() {
     <div class="modal-copy">
       <p><strong>Zettel</strong></p>
       <p>${escapeText(MartRelease.label)}</p>
+      <p>Erstellt von Ken &amp; Codex (OpenAI).</p>
       <p>Angaben zum Betreiber werden hier ergänzt.</p>
       <p>Kontakt: bitte noch eintragen</p>
       <p>Verantwortlich für den Inhalt: bitte noch eintragen</p>
