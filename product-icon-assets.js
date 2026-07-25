@@ -130,6 +130,126 @@
     "path": "./assets/product-icons/01-gemuese/26-chili.svg",
     "motif": "three-chili-peppers"
   },
+  "Äpfel": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/01-aepfel.svg",
+    "motif": "apple-pair"
+  },
+  "Bananen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/02-bananen.svg",
+    "motif": "banana-bunch"
+  },
+  "Orangen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/03-orangen.svg",
+    "motif": "orange-and-slice"
+  },
+  "Zitronen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/04-zitronen.svg",
+    "motif": "lemon-pair"
+  },
+  "Limetten": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/05-limetten.svg",
+    "motif": "lime-and-slice"
+  },
+  "Erdbeeren": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/06-erdbeeren.svg",
+    "motif": "strawberry-pair"
+  },
+  "Heidelbeeren": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/07-heidelbeeren.svg",
+    "motif": "blueberry-cluster"
+  },
+  "Himbeeren": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/08-himbeeren.svg",
+    "motif": "raspberry-cluster"
+  },
+  "Trauben": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/09-trauben.svg",
+    "motif": "grape-bunch"
+  },
+  "Birnen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/10-birnen.svg",
+    "motif": "pear-pair"
+  },
+  "Kiwi": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/11-kiwi.svg",
+    "motif": "kiwi-and-slice"
+  },
+  "Mango": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/12-mango.svg",
+    "motif": "mango-and-slice"
+  },
+  "Ananas": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/13-ananas.svg",
+    "motif": "pineapple"
+  },
+  "Wassermelone": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/14-wassermelone.svg",
+    "motif": "watermelon-slice"
+  },
+  "Honigmelone": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/15-honigmelone.svg",
+    "motif": "honeydew-melon-slice"
+  },
+  "Pfirsiche": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/16-pfirsiche.svg",
+    "motif": "peach-pair"
+  },
+  "Pflaumen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/17-pflaumen.svg",
+    "motif": "plum-pair"
+  },
+  "Kirschen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/18-kirschen.svg",
+    "motif": "cherry-pair"
+  },
+  "Grapefruit": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/19-grapefruit.svg",
+    "motif": "grapefruit-and-slice"
+  },
+  "Avocado": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/20-avocado.svg",
+    "motif": "avocado-half"
+  },
+  "Mandarinen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/21-mandarinen.svg",
+    "motif": "mandarin-pair"
+  },
+  "Nektarinen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/22-nektarinen.svg",
+    "motif": "nectarine-pair"
+  },
+  "Granatapfel": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/23-granatapfel.svg",
+    "motif": "pomegranate-half"
+  },
+  "Aprikosen": {
+    "shelfId": "obst",
+    "path": "./assets/product-icons/02-obst/24-aprikosen.svg",
+    "motif": "apricot-pair"
+  },
   "Eisbergsalat": {
     "shelfId": "salat",
     "path": "./assets/product-icons/03-salate-frischetheke/01-eisbergsalat.svg",

@@ -17,13 +17,20 @@ const freshCounter = [
   "Krautsalat", "Kartoffelsalat", "Nudelsalat", "Coleslaw", "Antipasti"
 ];
 
-test("icon batch one contains 26 vegetables and 10 fresh-counter products", () => {
+const fruit = [
+  "Äpfel", "Bananen", "Orangen", "Zitronen", "Limetten", "Erdbeeren", "Heidelbeeren", "Himbeeren", "Trauben", "Birnen",
+  "Kiwi", "Mango", "Ananas", "Wassermelone", "Honigmelone", "Pfirsiche", "Pflaumen", "Kirschen", "Grapefruit", "Avocado",
+  "Mandarinen", "Nektarinen", "Granatapfel", "Aprikosen"
+];
+
+test("icon manifest contains 26 vegetables, 24 fruits, and 10 fresh-counter products", () => {
   assert.ok(fs.existsSync(manifestPath), "product-icon-assets.js is missing");
   const { productIconAssets } = require(manifestPath);
   const names = Object.keys(productIconAssets);
 
-  assert.equal(names.length, 36);
+  assert.equal(names.length, 60);
   assert.deepEqual(names.filter((name) => productIconAssets[name].shelfId === "gemuese"), vegetables);
+  assert.deepEqual(names.filter((name) => productIconAssets[name].shelfId === "obst"), fruit);
   assert.deepEqual(names.filter((name) => productIconAssets[name].shelfId === "salat"), freshCounter);
 });
 
