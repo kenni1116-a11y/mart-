@@ -52,17 +52,18 @@ test("every fruit manifest entry has a unique, safe planned asset", () => {
   }
 });
 
-test("every batch-one product has one unique, safe and recognizable SVG asset", () => {
+test("every product manifest entry has one unique, safe and recognizable SVG asset", () => {
   assert.ok(fs.existsSync(manifestPath), "product-icon-assets.js is missing");
   const { productIconAssets } = require(manifestPath);
   const paths = new Set();
   const motifs = new Set();
 
-  for (const name of [...vegetables, ...freshCounter]) {
+  for (const name of [...vegetables, ...fruit, ...freshCounter]) {
     const asset = productIconAssets[name];
     assert.ok(asset, `${name} has no asset`);
-    assert.equal(asset.shelfId, vegetables.includes(name) ? "gemuese" : "salat");
-    assert.match(asset.path, /^\.\/assets\/product-icons\/(01-gemuese|03-salate-frischetheke)\/[a-z0-9-]+\.svg$/);
+    const expectedShelfId = vegetables.includes(name) ? "gemuese" : fruit.includes(name) ? "obst" : "salat";
+    assert.equal(asset.shelfId, expectedShelfId);
+    assert.match(asset.path, /^\.\/assets\/product-icons\/(01-gemuese|02-obst|03-salate-frischetheke)\/[a-z0-9-]+\.svg$/);
     assert.match(asset.motif, /^[a-z0-9-]+$/);
     assert.ok(!paths.has(asset.path), `${name} reuses ${asset.path}`);
     assert.ok(!motifs.has(asset.motif), `${name} reuses motif ${asset.motif}`);

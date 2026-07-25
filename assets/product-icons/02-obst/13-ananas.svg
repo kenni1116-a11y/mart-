@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="pineapple">
+  <title>Ananas</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c14-8 37-9 53 0l-5 35c-15 8-36 7-48-2Z" fill="#f4bf39" opacity=".2" stroke="none"/>
+  <path d="m10 12 42 1 4 13-46 3Z" fill="#4da95a" opacity=".19" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m31 23-12-11 13 6 1-13 5 13 11-9-6 15" fill="#50ad55"/>
+    <path d="M16 39c0-13 7-21 17-21s16 8 16 21c0 11-7 18-16 18S16 50 16 39Z" fill="#f2bc2f"/>
+    <path d="m21 29 24 21m0-21L21 50m-4-11h32" fill="none" stroke="#c97a2c" stroke-width="2"/>
+    <path d="M25 22c3-2 6-3 9-3" fill="none" stroke="#fff" stroke-width="2.3" opacity=".65"/>
+  </g>
+</svg>

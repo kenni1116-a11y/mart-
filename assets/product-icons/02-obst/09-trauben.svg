@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="grape-bunch">
+  <title>Trauben</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M6 17c13-8 36-9 52 0l-5 35c-14 8-35 7-47-1Z" fill="#7957ad" opacity=".18" stroke="none"/>
+  <path d="m9 12 43 1 4 13-46 3Z" fill="#70bc56" opacity=".17" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M31 22c-1-8 3-12 10-14m-6 9c5-3 10-2 15 2-5 4-10 4-15 1Z" fill="#53a854"/>
+    <g fill="#744ca2"><circle cx="27" cy="30" r="7"/><circle cx="39" cy="30" r="7"/><circle cx="22" cy="41" r="7"/><circle cx="34" cy="41" r="7"/><circle cx="46" cy="41" r="7"/><circle cx="28" cy="51" r="6"/><circle cx="40" cy="51" r="6"/></g>
+    <path d="M23 28c2-2 4-3 6-2m7 1c2-2 4-2 6-1" fill="none" stroke="#cbb6dc" stroke-width="1.7"/>
+  </g>
+</svg>

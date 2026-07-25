@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="strawberry-pair">
+  <title>Erdbeeren</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c12-8 37-9 53 0l-5 35c-15 7-35 7-48-2Z" fill="#ee3f5d" opacity=".18" stroke="none"/>
+  <path d="m10 12 42 1 4 13-45 3Z" fill="#55b958" opacity=".17" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 29c7-5 16-3 20 3-2 11-8 20-15 21-7-2-9-14-5-24Z" fill="#ef4057"/>
+    <path d="M31 28c7-6 16-4 20 2 0 11-6 21-14 22-8-2-10-13-6-24Z" fill="#f45a64"/>
+    <path d="m11 29 7-7 4 7 4-7 5 9m0-3 7-7 4 7 5-7 4 8" fill="#48a851"/>
+    <g fill="#ffd84d" stroke="none"><circle cx="18" cy="35" r="1.2"/><circle cx="24" cy="37" r="1.2"/><circle cx="19" cy="43" r="1.2"/><circle cx="39" cy="35" r="1.2"/><circle cx="45" cy="38" r="1.2"/><circle cx="39" cy="45" r="1.2"/></g>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="kiwi-and-slice">
+  <title>Kiwi</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 18c14-8 38-9 53 0l-5 34c-14 8-36 7-48-2Z" fill="#9cc949" opacity=".2" stroke="none"/>
+  <path d="m10 12 42 1 4 13-46 3Z" fill="#f4aa4b" opacity=".17" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="25" cy="37" r="15" fill="#8a5a39"/>
+    <circle cx="25" cy="37" r="11.5" fill="#a8cf53"/>
+    <circle cx="25" cy="37" r="3" fill="#f7edaa"/>
+    <path d="m25 25 1 8m6-5-4 6m8 4-8 0m4 7-5-5m-4 9 1-8m-7 4 5-5m-9-4 8 1m-4-8 5 5" fill="none" stroke="#3f3a2d" stroke-width="1.25"/>
+    <path d="M40 27c6-6 15-4 17 3 2 8-4 18-13 22-6-2-9-10-7-16 1-4 1-6 3-9Z" fill="#d7e261"/>
+    <path d="M43 29c4-4 9-4 12-1" fill="none" stroke="#fff" stroke-width="2.4" opacity=".75"/>
+  </g>
+</svg>

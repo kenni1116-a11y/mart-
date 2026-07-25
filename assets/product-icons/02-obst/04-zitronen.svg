@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="lemon-pair">
+  <title>Zitronen</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 16c12-8 37-9 53 1l-5 35c-17 7-36 6-48-2Z" fill="#ffe04a" opacity=".24" stroke="none"/>
+  <path d="m9 13 44-3 3 14-46 3Z" fill="#4cab62" opacity=".14" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 38c2-10 11-18 20-19 8 0 12 6 10 14-2 10-11 18-21 18-8 0-11-5-9-13Z" fill="#ffe23d"/>
+    <path d="M29 38c2-9 9-16 17-17 8 0 12 6 10 14-2 9-9 16-18 17-8 0-11-6-9-14Z" fill="#f5d22d"/>
+    <path d="m8 38-4 3m34-3-4 3m22-3 4-3" fill="none"/>
+    <path d="M15 34c2-5 5-8 9-9m13 8c2-4 5-6 9-7" fill="none" stroke="#fff" stroke-width="2.5" opacity=".8"/>
+  </g>
+</svg>

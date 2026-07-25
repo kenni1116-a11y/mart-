@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="mango-and-slice">
+  <title>Mango</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c14-8 37-9 53 0l-5 35c-15 7-36 7-48-2Z" fill="#ffae3b" opacity=".2" stroke="none"/>
+  <path d="m10 12 42 1 4 13-46 3Z" fill="#69b951" opacity=".17" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 40c0-12 8-23 20-25 10-1 15 6 12 16-3 12-13 22-24 23-7-2-8-8-8-14Z" fill="#f4a72c"/>
+    <path d="M18 36c2-9 8-15 16-17" fill="none" stroke="#fff" stroke-width="2.7" opacity=".8"/>
+    <path d="M36 27c5-6 14-6 18 0 4 7 0 17-9 23-7-1-11-8-9-15 0-3-1-5 0-8Z" fill="#9cc54a"/>
+    <path d="M42 29c4-3 8-3 11-1" fill="none" stroke="#f6d94c" stroke-width="3"/>
+    <path d="M34 17c3-4 7-5 11-4" fill="none" stroke="#408e4a" stroke-width="2.8"/>
+  </g>
+</svg>

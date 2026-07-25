@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="plum-pair">
+  <title>Pflaumen</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 18c14-8 37-9 53 0l-5 34c-14 8-36 7-48-2Z" fill="#765397" opacity=".18" stroke="none"/>
+  <path d="m10 12 42 1 4 13-46 3Z" fill="#e06e85" opacity=".15" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="19" cy="40" rx="10" ry="12" fill="#624187"/><ellipse cx="31" cy="31" rx="10" ry="12" fill="#79509a"/><ellipse cx="43" cy="41" rx="10" ry="12" fill="#573878"/><ellipse cx="31" cy="48" rx="10" ry="9" fill="#8457a6"/>
+    <path d="M31 20c1-5 4-7 8-8m-13 34c2-4 4-5 7-6m-18-2c2-4 4-5 7-5" fill="none" stroke="#bca7ce" stroke-width="1.8"/>
+  </g>
+</svg>

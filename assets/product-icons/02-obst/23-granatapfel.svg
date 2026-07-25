@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="pomegranate-half">
+  <title>Granatapfel</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c14-8 37-9 53 0l-5 35c-15 8-36 7-48-2Z" fill="#c9344d" opacity=".2" stroke="none"/>
+  <path d="m10 12 42 1 4 13-46 3Z" fill="#ffd646" opacity=".18" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m25 22 3-10 4 5 4-5 3 10c9 4 14 12 13 22-1 11-9 18-20 18s-20-7-20-18c-1-10 5-18 13-22Z" fill="#c9364e"/>
+    <path d="M17 39c2-9 8-14 15-14s13 5 15 14c-1 9-7 16-15 16s-14-7-15-16Z" fill="#f5c7a6"/>
+    <g fill="#d22e45" stroke="#9d263c" stroke-width=".7"><circle cx="24" cy="35" r="3"/><circle cx="32" cy="32" r="3"/><circle cx="40" cy="35" r="3"/><circle cx="20" cy="42" r="3"/><circle cx="28" cy="41" r="3"/><circle cx="36" cy="42" r="3"/><circle cx="44" cy="43" r="3"/><circle cx="25" cy="49" r="3"/><circle cx="33" cy="49" r="3"/><circle cx="40" cy="49" r="3"/></g>
+    <path d="M17 39c2-9 8-14 15-14" fill="none" stroke="#fff" stroke-width="2.2" opacity=".68"/>
+  </g>
+</svg>

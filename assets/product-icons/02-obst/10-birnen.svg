@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="pear-pair">
+  <title>Birnen</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c14-8 37-9 53 0l-5 35c-15 8-36 7-48-2Z" fill="#b5d84c" opacity=".2" stroke="none"/>
+  <path d="m10 11 42 2 4 13-46 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 41c0-7 5-10 7-16 1-5-1-9 4-12 5-2 9 2 8 7-1 6 6 9 6 18 0 10-7 16-14 16-7 0-11-5-11-13Z" fill="#a9c943"/>
+    <path d="M34 42c0-7 4-10 7-16 2-5 0-10 5-12 5-2 9 2 8 7-1 6 6 10 6 18 0 9-7 15-14 15-7 0-12-4-12-12Z" fill="#d2df57"/>
+    <path d="m27 14 2-6m19 7 2-6m-22 9c3-3 6-4 10-2m8 2c3-3 6-3 10-1" fill="none" stroke="#4b8d45" stroke-width="2.7"/>
+    <path d="M19 38c2-4 4-6 7-7m14 7c2-4 4-6 7-7" fill="none" stroke="#fff" stroke-width="2.5" opacity=".78"/>
+  </g>
+</svg>

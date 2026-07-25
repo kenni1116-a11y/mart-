@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="grapefruit-and-slice">
+  <title>Grapefruit</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 18c14-8 37-9 53 0l-5 34c-14 8-36 7-48-2Z" fill="#f3736d" opacity=".18" stroke="none"/>
+  <path d="m10 12 42 1 4 13-46 3Z" fill="#ffd646" opacity=".2" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="37" r="15" fill="#f29b53"/>
+    <circle cx="43" cy="39" r="14" fill="#ffd27d"/>
+    <circle cx="43" cy="39" r="10.5" fill="#f27675"/>
+    <path d="M43 28.5v21M32.5 39h21m-17.5-7.5 14 15m0-15-14 15" fill="none" stroke="#f7c3ab" stroke-width="1.4"/>
+    <path d="M18 32c2-4 5-6 9-6" fill="none" stroke="#fff" stroke-width="2.4" opacity=".78"/>
+  </g>
+</svg>

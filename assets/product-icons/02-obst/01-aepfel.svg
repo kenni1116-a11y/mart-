@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="product-pop-icon product-asset-icon" width="64" height="64" viewBox="0 0 64 64" role="img" data-product-illustration="apple-pair">
+  <title>Äpfel</title>
+  <rect width="64" height="64" fill="#fff"/>
+  <path d="M5 17c14-9 38-9 53 0l-4 35c-16 8-37 7-49-2Z" fill="#ef3f32" opacity=".16" stroke="none"/>
+  <path d="m9 13 39-4 7 13-42 5Z" fill="#ffd646" opacity=".24" stroke="none"/>
+  <g stroke="#171513" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 39c0-11 6-18 15-18 5 0 7 3 9 3 2-2 5-3 9-2 7 1 11 8 10 17-1 10-7 17-17 17-6 0-9-3-11-3-3 2-7 3-10 1-4-3-5-9-5-15Z" fill="#ee4236"/>
+    <path d="M28 23c1-5 3-8 7-10m-5 7c-4-4-8-5-13-3" fill="none" stroke="#3e934b" stroke-width="3.4"/>
+    <path d="M17 36c2-5 5-7 9-8m12 1c5-2 9 1 10 5" fill="none" stroke="#fff" stroke-width="2.5" opacity=".78"/>
+    <path d="M42 20c4-4 9-3 12 1-4 4-9 5-13 3Z" fill="#c4da42"/>
+  </g>
+</svg>
