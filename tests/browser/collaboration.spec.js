@@ -2482,7 +2482,7 @@ test("compact shared iPhone note layout stays readable and touchable at both wid
   }
 });
 
-test("imprint and bugreport show the central app version and device context", async ({ browser }) => {
+test("imprint omits the operator placeholder and bugreport shows build 78 device context", async ({ browser }) => {
   const server = await startTestServer();
   const visitor = await createIsolatedPage(browser, server);
 
@@ -2494,14 +2494,15 @@ test("imprint and bugreport show the central app version and device context", as
     await expect(visitor.page.getByRole("button", { name: "Optionen öffnen" })).toHaveAttribute("aria-expanded", "true");
     await visitor.page.locator("#imprintButton").click();
     await expect(visitor.page.getByRole("heading", { name: "Impressum" })).toBeVisible();
-    await expect(visitor.page.getByText("Version 0.7.7 · Build 77", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Version 0.7.8 · Build 78", { exact: true })).toBeVisible();
+    await expect(visitor.page.getByText("Angaben zum Betreiber werden hier ergänzt.", { exact: true })).toHaveCount(0);
 
     await visitor.page.locator("#modalCloseButton").click();
     await visitor.page.getByRole("button", { name: "Optionen öffnen" }).click();
     await visitor.page.locator("#bugreportButton").click();
     const report = await visitor.page.locator("#bugReportText").inputValue();
-    expect(report).toContain("App-Version: 0.7.7");
-    expect(report).toContain("Build: 77");
+    expect(report).toContain("App-Version: 0.7.8");
+    expect(report).toContain("Build: 78");
     expect(report).toContain("Gerät/Browser:");
     expect(report).toContain("Bildschirm: 402 × 874");
 

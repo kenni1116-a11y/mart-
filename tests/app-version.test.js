@@ -6,10 +6,10 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const MartRelease = require(path.join(root, "app-version.js"));
 
-test("release metadata exposes one display label for version 0.7.7 build 77", () => {
-  assert.equal(MartRelease.version, "0.7.7");
-  assert.equal(MartRelease.build, 77);
-  assert.equal(MartRelease.label, "Version 0.7.7 · Build 77");
+test("release metadata exposes one display label for version 0.7.8 build 78", () => {
+  assert.equal(MartRelease.version, "0.7.8");
+  assert.equal(MartRelease.build, 78);
+  assert.equal(MartRelease.label, "Version 0.7.8 · Build 78");
 });
 
 test("bug report details contain useful release and device context without account data", () => {
@@ -21,8 +21,8 @@ test("bug report details contain useful release and device context without accou
     standalone: true,
     viewport: { width: 393, height: 852 }
   }), [
-    "App-Version: 0.7.7",
-    "Build: 77",
+    "App-Version: 0.7.8",
+    "Build: 78",
     "Adresse: https://example.test/mart-/",
     "Gerät/Browser: Mobile Safari Test",
     "Ansicht: Installierte Web-App",
