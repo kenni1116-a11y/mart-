@@ -34,6 +34,24 @@ test("icon manifest contains 26 vegetables, 24 fruits, and 10 fresh-counter prod
   assert.deepEqual(names.filter((name) => productIconAssets[name].shelfId === "salat"), freshCounter);
 });
 
+test("every fruit manifest entry has a unique, safe planned asset", () => {
+  const { productIconAssets } = require(manifestPath);
+  const paths = new Set();
+  const motifs = new Set();
+
+  for (const name of fruit) {
+    const asset = productIconAssets[name];
+    assert.ok(asset, `${name} has no asset`);
+    assert.equal(asset.shelfId, "obst");
+    assert.match(asset.path, /^\.\/assets\/product-icons\/02-obst\/[a-z0-9-]+\.svg$/);
+    assert.match(asset.motif, /^[a-z0-9-]+$/);
+    assert.ok(!paths.has(asset.path), `${name} reuses ${asset.path}`);
+    assert.ok(!motifs.has(asset.motif), `${name} reuses motif ${asset.motif}`);
+    paths.add(asset.path);
+    motifs.add(asset.motif);
+  }
+});
+
 test("every batch-one product has one unique, safe and recognizable SVG asset", () => {
   assert.ok(fs.existsSync(manifestPath), "product-icon-assets.js is missing");
   const { productIconAssets } = require(manifestPath);
