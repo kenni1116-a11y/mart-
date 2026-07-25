@@ -31,10 +31,10 @@
 - Consumes: `MartRelease.version`, `MartRelease.build`, `MartRelease.label`
 - Produces: Build-78-Cache- und Anzeigewerte
 
-- [ ] **Step 1: Tests auf Build 78 und das bereinigte Impressum umstellen**
-- [ ] **Step 2: Die betroffenen Tests ausfuehren und den erwarteten Fehlschlag bestaetigen**
-- [ ] **Step 3: Betreiber-Satz entfernen, Release-Metadaten und Asset-Queries aktualisieren**
-- [ ] **Step 4: Release- und Asset-Tests erneut ausfuehren**
+- [x] **Step 1: Tests auf Build 78 und das bereinigte Impressum umstellen**
+- [x] **Step 2: Die betroffenen Tests ausfuehren und den erwarteten Fehlschlag bestaetigen**
+- [x] **Step 3: Betreiber-Satz entfernen, Release-Metadaten und Asset-Queries aktualisieren**
+- [x] **Step 4: Release- und Asset-Tests erneut ausfuehren**
 
 ### Task 2: Obst-Asset-Vertrag
 
@@ -46,10 +46,10 @@
 - Consumes: `MartProductIconAssets.getProductIconAsset(name, shelfId)`
 - Produces: 24 Manifest-Eintraege mit `shelfId: "obst"`
 
-- [ ] **Step 1: Den Test um die 24 Obstprodukte in Katalogreihenfolge erweitern**
-- [ ] **Step 2: Den Test ausfuehren und den erwarteten Fehlschlag bestaetigen**
-- [ ] **Step 3: Die 24 eindeutigen Obst-Eintraege im Manifest ergaenzen**
-- [ ] **Step 4: Den Manifest-Test erneut ausfuehren; die bestehende Dateipruefung bleibt in diesem Task auf Batch eins begrenzt**
+- [x] **Step 1: Den Test um die 24 Obstprodukte in Katalogreihenfolge erweitern**
+- [x] **Step 2: Den Test ausfuehren und den erwarteten Fehlschlag bestaetigen**
+- [x] **Step 3: Die 24 eindeutigen Obst-Eintraege im Manifest ergaenzen**
+- [x] **Step 4: Den Manifest-Test erneut ausfuehren; die bestehende Dateipruefung bleibt in diesem Task auf Batch eins begrenzt**
 
 ### Task 3: Individuelle Obst-SVGs
 
@@ -84,9 +84,9 @@
 - Consumes: Pfade und Motive aus `product-icon-assets.js`
 - Produces: sichere, erkennbare `64 x 64`-SVG-Dateien
 
-- [ ] **Step 1: Die Dateipruefung testgetrieben auf Gemuese, Frischetheke und Obst erweitern und den erwarteten Fehlschlag bestaetigen**
-- [ ] **Step 2: Alle 24 SVGs mit Titel, Motivkennung, weissem Hintergrund und Pop-Art-Konturen erstellen**
-- [ ] **Step 3: Asset-Test ausfuehren und alle Manifest-/Dateivertraege bestaetigen**
+- [x] **Step 1: Die Dateipruefung testgetrieben auf Gemuese, Frischetheke und Obst erweitern und den erwarteten Fehlschlag bestaetigen**
+- [x] **Step 2: Alle 24 SVGs mit Titel, Motivkennung, weissem Hintergrund und Pop-Art-Konturen erstellen**
+- [x] **Step 3: Asset-Test ausfuehren und alle Manifest-/Dateivertraege bestaetigen**
 
 ### Task 4: Gesamtpruefung und Auslieferung
 
@@ -97,7 +97,7 @@
 - Consumes: Build-78-App und vollstaendigen Obst-Batch
 - Produces: geprueften GitHub-Pages-Release
 
-- [ ] **Step 1: Unit-, Syntax-, Diff- und vollstaendige Release-Pruefung ausfuehren**
-- [ ] **Step 2: Obstregal in WebKit auf iPhone-Breite visuell kontrollieren**
+- [x] **Step 1: Unit-, Syntax-, Diff- und vollstaendige Release-Pruefung ausfuehren**
+- [x] **Step 2: Obstregal in WebKit auf iPhone-Breite visuell kontrollieren**
 - [ ] **Step 3: Nur die beabsichtigten Dateien committen und auf `main` pushen**
 - [ ] **Step 4: GitHub Actions und die produktiv ausgelieferten Build-78-Dateien pruefen**
