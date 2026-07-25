@@ -49,10 +49,12 @@
 - [ ] **Step 1: Den Test um die 24 Obstprodukte in Katalogreihenfolge erweitern**
 - [ ] **Step 2: Den Test ausfuehren und den erwarteten Fehlschlag bestaetigen**
 - [ ] **Step 3: Die 24 eindeutigen Obst-Eintraege im Manifest ergaenzen**
+- [ ] **Step 4: Den Manifest-Test erneut ausfuehren; die bestehende Dateipruefung bleibt in diesem Task auf Batch eins begrenzt**
 
 ### Task 3: Individuelle Obst-SVGs
 
 **Files:**
+- Modify: `tests/product-icon-assets.test.js`
 - Create: `assets/product-icons/02-obst/01-aepfel.svg`
 - Create: `assets/product-icons/02-obst/02-bananen.svg`
 - Create: `assets/product-icons/02-obst/03-orangen.svg`
@@ -82,8 +84,9 @@
 - Consumes: Pfade und Motive aus `product-icon-assets.js`
 - Produces: sichere, erkennbare `64 x 64`-SVG-Dateien
 
-- [ ] **Step 1: Alle 24 SVGs mit Titel, Motivkennung, weissem Hintergrund und Pop-Art-Konturen erstellen**
-- [ ] **Step 2: Asset-Test ausfuehren und alle Manifest-/Dateivertraege bestaetigen**
+- [ ] **Step 1: Die Dateipruefung testgetrieben auf Gemuese, Frischetheke und Obst erweitern und den erwarteten Fehlschlag bestaetigen**
+- [ ] **Step 2: Alle 24 SVGs mit Titel, Motivkennung, weissem Hintergrund und Pop-Art-Konturen erstellen**
+- [ ] **Step 3: Asset-Test ausfuehren und alle Manifest-/Dateivertraege bestaetigen**
 
 ### Task 4: Gesamtpruefung und Auslieferung
 
